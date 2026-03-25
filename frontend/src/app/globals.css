@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Dark mode temel görünüm (seçili elemanların text/bg sınıflarıyla çakışmayı azaltmak için) */
+.dark body {
+  background-color: #0f172a !important; /* slate-900 */
+  color: #e5e7eb !important; /* gray-200 */
+}
+
+/* Yaygın metin renklerini dark modda görünür yapmak için */
+.dark .text-slate-900 {
+  color: #e5e7eb !important;
+}
+
+.dark .text-slate-600 {
+  color: #cbd5e1 !important; /* slate-400 */
+}
