@@ -185,44 +185,53 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-5 p-4 md:p-8">
-      <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-        <div className="flex items-center justify-between gap-3">
+      <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Image
               src="/logo.jpg"
               alt="Yeşil İmaj Tekstil Logo"
-              width={52}
-              height={52}
-              className="rounded-md border border-slate-200 object-contain"
+              width={48}
+              height={48}
+              className="shrink-0 rounded-md border border-slate-200 object-contain"
             />
             <div>
-              <h1 className="text-xl font-semibold">Yeşil İmaj Tekstil</h1>
-              <p className="mt-1 text-sm text-slate-600">Üretim Takip Programı</p>
+              <h1 className="text-base font-semibold leading-tight sm:text-xl">Yeşil İmaj Tekstil</h1>
+              <p className="text-xs text-slate-600 sm:text-sm">Üretim Takip Programı</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-600">Kullanıcı: {currentUser}</span>
-            <button onClick={handleLogout} className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+          <div className="flex items-center gap-2">
+            <span className="hidden text-sm text-slate-600 sm:inline">Kullanıcı: {currentUser}</span>
+            <button
+              onClick={handleLogout}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
+            >
               Çıkış Yap
             </button>
           </div>
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-        <div className="flex items-center gap-3">
-          <label htmlFor="date" className="text-sm font-medium">
-            Tarih
-          </label>
-          <input
-            id="date"
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2"
-          />
+      <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:p-4">
+        {/* Tarih + Günlük Toplam */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label htmlFor="date" className="text-sm font-medium">Tarih</label>
+            <input
+              id="date"
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700"
+            />
+          </div>
+          <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+            Günlük Toplam: {dailyTotal}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Aksiyon butonları — sarılabilir satır */}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           {isAdmin && (
             <>
               <Link href="/analysis" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
@@ -252,9 +261,6 @@ export default function HomePage() {
           >
             Excel Export
           </button>
-          <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-            Günlük Toplam: {dailyTotal}
-          </div>
         </div>
       </section>
 

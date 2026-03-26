@@ -46,12 +46,19 @@ const PROCESS_OPTIONS = [
   "YIKAMA TALİMATI",
 ].sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
 
+const TIME_FIELDS = [
+  { key: "t1000" as const, label: "10:00" },
+  { key: "t1300" as const, label: "13:00" },
+  { key: "t1600" as const, label: "16:00" },
+  { key: "t1830" as const, label: "18:30" },
+];
+
 function teamLabel(team: Team) {
-  if (team === "SAG_ON") return "SAĞ ÖN";
-  if (team === "SOL_ON") return "SOL ÖN";
+  if (team === "SAG_ON")        return "SAĞ ÖN";
+  if (team === "SOL_ON")        return "SOL ÖN";
   if (team === "YAKA_HAZIRLIK") return "YAKA HAZIRLIK";
   if (team === "ARKA_HAZIRLIK") return "ARKA HAZIRLIK";
-  if (team === "BITIM") return "BİTİM";
+  if (team === "BITIM")         return "BİTİM";
   return "ADET";
 }
 
@@ -62,9 +69,9 @@ export default function ProductionTable({
   onEditWorker,
   canDeleteWorkers,
 }: ProductionTableProps) {
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId]         = useState<number | null>(null);
   const [editingProcess, setEditingProcess] = useState<string>("");
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]               = useState(false);
 
   const canDelete = Boolean(canDeleteWorkers);
 
@@ -92,30 +99,35 @@ export default function ProductionTable({
 
   let rowNo = 1;
 
-  return (
-    <div className="overflow-auto rounded-lg border border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-      <table className="w-full min-w-[960px] border-collapse text-sm">
-        <thead className="bg-slate-800 text-white">
-          <tr>
-            <th className="px-3 py-2">No</th>
-            <th className="px-3 py-2">Ad Soyad</th>
-            <th className="px-3 py-2">Proses</th>
-            <th className="px-3 py-2">10:00</th>
-            <th className="px-3 py-2">13:00</th>
-            <th className="px-3 py-2">16:00</th>
-            <th className="px-3 py-2">18:30</th>
-            <th className="px-3 py-2">Toplam</th>
-            <th className="px-3 py-2">İşlem</th>
-          </tr>
-        </thead>
-        <tbody>
-          {TEAM_ORDER.map((team) => {
-            const teamRows = rows.filter((r) => r.team === team);
-            if (teamRows.length === 0) return null;
-            const startNo = rowNo;
-            rowNo += teamRows.length;
+  const sections = TEAM_ORDER.map((team) => {
+    const teamRows = rows.filter((r) => r.team === team);
+    if (teamRows.length === 0) return null;
+    const startNo = rowNo;
+    rowNo += teamRows.length;
+    return { team, teamRows, startNo };
+  }).filter(Boolean) as { team: Team; teamRows: ProductionRow[]; startNo: number }[];
 
-            return (
+  return (
+    <div className="rounded-lg border border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+
+      {/* ══════════ MASAÜSTÜ TABLO (md ve üzeri) ══════════ */}
+      <div className="hidden overflow-auto md:block">
+        <table className="w-full min-w-[960px] border-collapse text-sm">
+          <thead className="bg-slate-800 text-white">
+            <tr>
+              <th className="px-3 py-2">No</th>
+              <th className="px-3 py-2">Ad Soyad</th>
+              <th className="px-3 py-2">Proses</th>
+              <th className="px-3 py-2">10:00</th>
+              <th className="px-3 py-2">13:00</th>
+              <th className="px-3 py-2">16:00</th>
+              <th className="px-3 py-2">18:30</th>
+              <th className="px-3 py-2">Toplam</th>
+              <th className="px-3 py-2">İşlem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sections.map(({ team, teamRows, startNo }) => (
               <>
                 <tr key={`header-${team}`} className="bg-slate-200 dark:bg-slate-700">
                   <td colSpan={9} className="px-3 py-2 text-left text-sm font-semibold">
@@ -125,7 +137,6 @@ export default function ProductionTable({
                 {teamRows.map((row, index) => {
                   const total = row.t1000 + row.t1300 + row.t1600 + row.t1830;
                   const isEditing = editingId === row.workerId;
-
                   return (
                     <tr
                       key={row.workerId}
@@ -133,8 +144,6 @@ export default function ProductionTable({
                     >
                       <td className="px-3 py-2 text-center">{startNo + index}</td>
                       <td className="px-3 py-2">{row.name}</td>
-
-                      {/* Proses — düzenleme modunda dropdown, normal modda metin */}
                       <td className="px-3 py-2">
                         {isEditing ? (
                           <select
@@ -151,21 +160,18 @@ export default function ProductionTable({
                           row.process
                         )}
                       </td>
-
-                      {(["t1000", "t1300", "t1600", "t1830"] as const).map((field) => (
-                        <td key={field} className="px-2 py-1">
+                      {TIME_FIELDS.map(({ key }) => (
+                        <td key={key} className="px-2 py-1">
                           <input
                             type="number"
                             min={0}
-                            value={row[field]}
-                            onChange={(e) => onCellChange(row.workerId, field, Number(e.target.value) || 0)}
+                            value={row[key]}
+                            onChange={(e) => onCellChange(row.workerId, key, Number(e.target.value) || 0)}
                             className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-right outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-300"
                           />
                         </td>
                       ))}
-
                       <td className="px-3 py-2 text-right font-semibold">{total}</td>
-
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center justify-center gap-1">
                           {isEditing ? (
@@ -174,32 +180,24 @@ export default function ProductionTable({
                                 onClick={() => void saveEdit(row.workerId)}
                                 disabled={saving}
                                 className="rounded border border-emerald-400 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                              >
-                                Kaydet
-                              </button>
+                              >Kaydet</button>
                               <button
                                 onClick={cancelEdit}
                                 disabled={saving}
                                 className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
-                              >
-                                İptal
-                              </button>
+                              >İptal</button>
                             </>
                           ) : (
                             <>
                               <button
                                 onClick={() => startEdit(row)}
                                 className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/20"
-                              >
-                                Düzenle
-                              </button>
+                              >Düzenle</button>
                               {canDelete ? (
                                 <button
                                   onClick={() => onDeleteWorker(row.workerId, row.name)}
                                   className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-700/60 dark:text-red-200 dark:hover:bg-red-900/20"
-                                >
-                                  Sil
-                                </button>
+                                >Sil</button>
                               ) : (
                                 <span className="text-xs text-slate-400 dark:text-slate-500">-</span>
                               )}
@@ -211,10 +209,107 @@ export default function ProductionTable({
                   );
                 })}
               </>
-            );
-          })}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ══════════ MOBİL KART GÖRÜNÜMÜ (md altı) ══════════ */}
+      <div className="divide-y divide-slate-200 dark:divide-slate-700 md:hidden">
+        {sections.map(({ team, teamRows, startNo }) => (
+          <div key={team}>
+            {/* Takım başlığı */}
+            <div className="bg-slate-200 px-4 py-2 text-sm font-semibold dark:bg-slate-700">
+              {teamLabel(team)}
+            </div>
+
+            {teamRows.map((row, index) => {
+              const total = row.t1000 + row.t1300 + row.t1600 + row.t1830;
+              const isEditing = editingId === row.workerId;
+
+              return (
+                <div
+                  key={row.workerId}
+                  className="p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60"
+                >
+                  {/* İşçi bilgisi satırı */}
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="mr-1.5 text-xs text-slate-400">{startNo + index}.</span>
+                      <span className="font-medium">{row.name}</span>
+                      {isEditing ? (
+                        <select
+                          value={editingProcess}
+                          onChange={(e) => setEditingProcess(e.target.value)}
+                          className="mt-1 block w-full rounded border border-blue-400 bg-white px-2 py-1.5 text-sm dark:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                        >
+                          {PROCESS_OPTIONS.map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{row.process}</p>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <span className="text-xs text-slate-500">Toplam</span>
+                      <p className="text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{total}</p>
+                    </div>
+                  </div>
+
+                  {/* Saat dilimleri 2×2 grid */}
+                  <div className="mb-2 grid grid-cols-2 gap-2">
+                    {TIME_FIELDS.map(({ key, label }) => (
+                      <div key={key} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-600 dark:bg-slate-700">
+                        <span className="w-10 text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={row[key]}
+                          onChange={(e) => onCellChange(row.workerId, key, Number(e.target.value) || 0)}
+                          className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none focus:text-blue-600 dark:focus:text-blue-300"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Aksiyon butonları */}
+                  <div className="flex gap-2">
+                    {isEditing ? (
+                      <>
+                        <button
+                          onClick={() => void saveEdit(row.workerId)}
+                          disabled={saving}
+                          className="flex-1 rounded-lg border border-emerald-400 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                        >Kaydet</button>
+                        <button
+                          onClick={cancelEdit}
+                          disabled={saving}
+                          className="flex-1 rounded-lg border border-slate-300 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
+                        >İptal</button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => startEdit(row)}
+                          className="flex-1 rounded-lg border border-blue-300 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                        >Düzenle</button>
+                        {canDelete && (
+                          <button
+                            onClick={() => onDeleteWorker(row.workerId, row.name)}
+                            className="flex-1 rounded-lg border border-red-300 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-700/60 dark:text-red-200 dark:hover:bg-red-900/20"
+                          >Sil</button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

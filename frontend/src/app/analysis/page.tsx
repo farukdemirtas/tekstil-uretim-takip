@@ -352,11 +352,11 @@ export default function AnalysisPage() {
             )}
           </h2>
           {rows.length > 0 && (
-            <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
               <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-emerald-500" /> En iyi 10</span>
               <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-blue-500" /> Orta</span>
               <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-red-500" /> En kötü 10</span>
-              <span className="text-xs italic opacity-70">Satırın üzerine gelin → detay</span>
+              <span className="hidden italic opacity-70 sm:inline">Satıra tıkla → detay</span>
             </div>
           )}
         </div>
@@ -377,24 +377,28 @@ export default function AnalysisPage() {
                 : isBottom
                   ? "text-red-500 dark:text-red-400 font-bold"
                   : "text-slate-500";
-              const isHovered = hoveredId === row.workerId;
+              const isActive = hoveredId === row.workerId;
               return (
                 <div
                   key={row.workerId}
-                  className={`grid grid-cols-[28px_220px_1fr_80px] items-center gap-2 rounded px-1 py-0.5 text-sm transition-colors ${isHovered ? "bg-slate-100 dark:bg-slate-700/60" : "hover:bg-slate-50 dark:hover:bg-slate-700/30"} cursor-default`}
+                  className={`grid cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm transition-colors
+                    grid-cols-[24px_minmax(0,1fr)_2fr_56px]
+                    sm:grid-cols-[28px_minmax(0,200px)_1fr_72px]
+                    ${isActive ? "bg-slate-100 dark:bg-slate-700/60" : "hover:bg-slate-50 dark:hover:bg-slate-700/30"}`}
                   onMouseEnter={(e: RMouseEvent) => {
                     setHoveredId(row.workerId);
                     setTooltipPos({ x: e.clientX, y: e.clientY });
                   }}
                   onMouseMove={(e: RMouseEvent) => setTooltipPos({ x: e.clientX, y: e.clientY })}
                   onMouseLeave={() => setHoveredId(null)}
+                  onClick={() => setHoveredId(isActive ? null : row.workerId)}
                 >
-                  <span className={rankColor}>{index + 1}</span>
-                  <span className="truncate">{row.name}</span>
-                  <div className="h-5 rounded bg-slate-200 dark:bg-slate-700">
-                    <div className={`h-5 rounded ${barColor} transition-all duration-500`} style={{ width: `${width}%` }} />
+                  <span className={`text-xs ${rankColor}`}>{index + 1}</span>
+                  <span className="truncate text-xs sm:text-sm">{row.name}</span>
+                  <div className="h-4 rounded bg-slate-200 dark:bg-slate-700 sm:h-5">
+                    <div className={`h-full rounded ${barColor} transition-all duration-500`} style={{ width: `${width}%` }} />
                   </div>
-                  <span className="text-right font-semibold">{row.totalProduction}</span>
+                  <span className="text-right text-xs font-semibold sm:text-sm">{row.totalProduction}</span>
                 </div>
               );
             })}
@@ -402,7 +406,7 @@ export default function AnalysisPage() {
         )}
       </section>
 
-      {/* ── Hover Detay Tooltip ── */}
+      {/* ── Detay Paneli (Hover=masaüstü, Click=mobil) ── */}
       {hoveredId !== null && (() => {
         const worker   = rows.find((r) => r.workerId === hoveredId);
         if (!worker) return null;
@@ -410,18 +414,36 @@ export default function AnalysisPage() {
         const avg      = days.length > 0 ? Math.round(days.reduce((s, d) => s + d.production, 0) / days.length) : 0;
         const rank     = rows.findIndex((r) => r.workerId === hoveredId) + 1;
 
+        const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
         const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
         const vh = typeof window !== "undefined" ? window.innerHeight : 800;
         const cardW = 320;
-        const cardH = 260;
+        const cardH = 270;
         const left = tooltipPos.x + 16 + cardW > vw ? tooltipPos.x - cardW - 16 : tooltipPos.x + 16;
         const top  = tooltipPos.y + 16 + cardH > vh ? tooltipPos.y - cardH - 8  : tooltipPos.y + 16;
 
+        /* Mobilde ekran altında sabit panel */
+        const mobileStyle: React.CSSProperties = {
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50,
+          borderRadius: "12px 12px 0 0",
+        };
+        const desktopStyle: React.CSSProperties = { position: "fixed", left, top, zIndex: 50 };
+
         return (
           <div
-            className="pointer-events-none fixed z-50 w-80 rounded-xl border border-slate-200 bg-white p-4 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-            style={{ left, top }}
+            className={`w-full border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 sm:w-80 sm:rounded-xl ${isMobile ? "" : "pointer-events-none"}`}
+            style={isMobile ? mobileStyle : desktopStyle}
           >
+            {/* Mobilde kapatma çubuğu */}
+            {isMobile && (
+              <button
+                className="mb-3 flex w-full items-center justify-between text-xs text-slate-400 sm:hidden"
+                onClick={() => setHoveredId(null)}
+              >
+                <span className="font-medium text-slate-600 dark:text-slate-300">Detay</span>
+                <span className="text-lg leading-none">✕</span>
+              </button>
+            )}
             {/* Başlık */}
             <div className="mb-3 border-b border-slate-100 pb-2 dark:border-slate-700">
               <div className="font-semibold">{worker.name}</div>

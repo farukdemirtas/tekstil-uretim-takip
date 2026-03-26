@@ -22,18 +22,32 @@ export default function AdminPanel({ rows }: AdminPanelProps) {
     return { workerCount, total, teamTotals };
   }, [rows]);
 
+  const tiles = [
+    { label: "Çalışan",        value: stats.workerCount,              accent: "text-slate-700 dark:text-slate-200" },
+    { label: "Günlük Toplam",  value: stats.total,                    accent: "text-emerald-700 dark:text-emerald-300" },
+    { label: "Sağ Ön",         value: stats.teamTotals.SAG_ON,        accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Sol Ön",         value: stats.teamTotals.SOL_ON,        accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Yaka Hazırlık",  value: stats.teamTotals.YAKA_HAZIRLIK, accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Arka Hazırlık",  value: stats.teamTotals.ARKA_HAZIRLIK, accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Bitim",          value: stats.teamTotals.BITIM,         accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Adet",           value: stats.teamTotals.ADET,          accent: "text-slate-600 dark:text-slate-300" },
+  ];
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-      <h2 className="mb-3 text-base font-semibold">Admin Panel (Özet)</h2>
-      <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-        <div className="rounded bg-slate-100 p-3 dark:bg-slate-700 dark:text-slate-100">Çalışan: {stats.workerCount}</div>
-        <div className="rounded bg-slate-100 p-3 dark:bg-slate-700 dark:text-slate-100">Günlük Toplam: {stats.total}</div>
-        <div className="rounded bg-slate-100 p-3 dark:bg-slate-700 dark:text-slate-100">SAĞ ÖN: {stats.teamTotals.SAG_ON}</div>
-        <div className="rounded bg-slate-100 p-3 dark:bg-slate-700 dark:text-slate-100">SOL ÖN: {stats.teamTotals.SOL_ON}</div>
-        <div className="rounded bg-slate-100 p-3 dark:bg-slate-700 dark:text-slate-100">YAKA HAZIRLIK: {stats.teamTotals.YAKA_HAZIRLIK}</div>
-        <div className="rounded bg-slate-100 p-3 dark:bg-slate-700 dark:text-slate-100">ARKA HAZIRLIK: {stats.teamTotals.ARKA_HAZIRLIK}</div>
-        <div className="rounded bg-slate-100 p-3 dark:bg-slate-700 dark:text-slate-100">BİTİM: {stats.teamTotals.BITIM}</div>
-        <div className="rounded bg-slate-100 p-3 dark:bg-slate-700 dark:text-slate-100">ADET: {stats.teamTotals.ADET}</div>
+    <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 md:p-4">
+      <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200 md:text-base">
+        Günlük Özet
+      </h2>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:gap-3">
+        {tiles.map(({ label, value, accent }) => (
+          <div
+            key={label}
+            className="flex flex-col rounded-lg bg-slate-50 p-2.5 dark:bg-slate-700/60 md:p-3"
+          >
+            <span className="truncate text-xs text-slate-500 dark:text-slate-400">{label}</span>
+            <span className={`mt-0.5 text-lg font-bold leading-tight ${accent}`}>{value}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
