@@ -14,6 +14,8 @@ import {
   getDailyEntries,
   getDailyTrendAnalytics,
   getRangeStageTotals,
+  getWorkerComparisonData,
+  getWorkerHourlyBreakdown,
   getWorkerDailyAnalytics,
   createUser,
   deleteUser,
@@ -95,7 +97,7 @@ app.post("/api/auth/login", (req, res) => {
   verifyUserPassword({ username, password })
     .then((user) => {
       if (!user) return res.status(401).json({ message: "Kullanıcı adı veya şifre hatalı" });
-      const exp = Date.now() + 1000 * 60 * 60 * 24; // 24 saat
+      const exp = Date.now() + 1000 * 60 * 60 * 24 * 30; // 30 gün
       const payload = { id: user.id, username: user.username, role: user.role, exp };
       const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
       const sig = createHmac("sha256", TOKEN_SECRET).update(payloadB64).digest("hex");
@@ -266,6 +268,44 @@ app.get("/api/production/range-totals", requireAuth, async (req, res) => {
     res.json(totals);
   } catch (error) {
     res.status(500).json({ message: "Tarih aralığı verisi alınamadı", error: String(error) });
+  }
+});
+
+app.get("/api/analytics/worker-comparison", requireAuth, async (req, res) => {
+  const { worker1, worker2, startDate, endDate } = req.query;
+  if (!worker1 || !worker2 || !startDate || !endDate) {
+    return res.status(400).json({ message: "worker1, worker2, startDate ve endDate zorunlu" });
+  }
+  if (worker1 === worker2) {
+    return res.status(400).json({ message: "Aynı kişi iki kez seçilemez" });
+  }
+  try {
+    const data = await getWorkerComparisonData({
+      worker1Id: Number(worker1),
+      worker2Id: Number(worker2),
+      startDate: String(startDate),
+      endDate: String(endDate),
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ message: "Karşılaştırma verisi alınamadı", error: String(error) });
+  }
+});
+
+app.get("/api/analytics/worker-hourly", requireAuth, async (req, res) => {
+  const { workerId, startDate, endDate } = req.query;
+  if (!workerId || !startDate || !endDate) {
+    return res.status(400).json({ message: "workerId, startDate ve endDate zorunlu" });
+  }
+  try {
+    const data = await getWorkerHourlyBreakdown({
+      workerId: Number(workerId),
+      startDate: String(startDate),
+      endDate: String(endDate),
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ message: "Saatlik veri alınamadı", error: String(error) });
   }
 });
 

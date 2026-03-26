@@ -228,6 +228,9 @@ export default function HomePage() {
               <Link href="/analysis" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
                 Analiz
               </Link>
+              <Link href="/karsilastirma" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
+                Karşılaştırma
+              </Link>
               <Link href="/users" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
                 Kullanıcılar
               </Link>

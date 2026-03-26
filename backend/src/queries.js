@@ -354,6 +354,118 @@ export function getRangeStageTotals(startDate, endDate) {
   });
 }
 
+export function getWorkerComparisonData({ worker1Id, worker2Id, startDate, endDate }) {
+  return new Promise((resolve, reject) => {
+    // Hourly totals + summary for both workers
+    db.all(
+      `
+      SELECT
+        w.id          AS workerId,
+        w.name,
+        w.team,
+        w.process,
+        COALESCE(SUM(p.t1000), 0) AS t1000,
+        COALESCE(SUM(p.t1300), 0) AS t1300,
+        COALESCE(SUM(p.t1600), 0) AS t1600,
+        COALESCE(SUM(p.t1830), 0) AS t1830,
+        COALESCE(SUM(COALESCE(p.t1000,0) + COALESCE(p.t1300,0) + COALESCE(p.t1600,0) + COALESCE(p.t1830,0)), 0) AS total,
+        COUNT(DISTINCT p.production_date) AS activeDays
+      FROM workers w
+      LEFT JOIN production_entries p
+        ON p.worker_id = w.id
+        AND p.production_date BETWEEN ? AND ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      WHERE w.id IN (?, ?)
+      GROUP BY w.id
+      `,
+      [startDate, endDate, worker1Id, worker2Id],
+      (err, workerRows) => {
+        if (err) return reject(err);
+
+        // Daily totals for both workers
+        db.all(
+          `
+          SELECT
+            p.production_date AS date,
+            w.id AS workerId,
+            COALESCE(p.t1000,0) + COALESCE(p.t1300,0) + COALESCE(p.t1600,0) + COALESCE(p.t1830,0) AS production
+          FROM production_entries p
+          JOIN workers w ON w.id = p.worker_id
+          WHERE p.worker_id IN (?, ?)
+            AND p.production_date BETWEEN ? AND ?
+            AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+            AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+          ORDER BY p.production_date ASC
+          `,
+          [worker1Id, worker2Id, startDate, endDate],
+          (err2, dailyRows) => {
+            if (err2) return reject(err2);
+
+            const toNum = (v) => Number(v) || 0;
+            const fmt = (r) => r ? {
+              workerId: r.workerId,
+              name: r.name,
+              team: r.team,
+              process: r.process,
+              t1000: toNum(r.t1000),
+              t1300: toNum(r.t1300),
+              t1600: toNum(r.t1600),
+              t1830: toNum(r.t1830),
+              total: toNum(r.total),
+              activeDays: toNum(r.activeDays),
+            } : null;
+
+            const dateMap = new Map();
+            for (const row of dailyRows) {
+              if (!dateMap.has(row.date)) dateMap.set(row.date, { date: row.date, w1: 0, w2: 0 });
+              const entry = dateMap.get(row.date);
+              if (Number(row.workerId) === Number(worker1Id)) entry.w1 = toNum(row.production);
+              else entry.w2 = toNum(row.production);
+            }
+
+            resolve({
+              worker1: fmt(workerRows.find((r) => Number(r.workerId) === Number(worker1Id))),
+              worker2: fmt(workerRows.find((r) => Number(r.workerId) === Number(worker2Id))),
+              daily: [...dateMap.values()],
+            });
+          }
+        );
+      }
+    );
+  });
+}
+
+export function getWorkerHourlyBreakdown({ workerId, startDate, endDate }) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `
+      SELECT
+        COALESCE(SUM(p.t1000), 0) AS t1000,
+        COALESCE(SUM(p.t1300), 0) AS t1300,
+        COALESCE(SUM(p.t1600), 0) AS t1600,
+        COALESCE(SUM(p.t1830), 0) AS t1830
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.worker_id = ?
+        AND p.production_date BETWEEN ? AND ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      `,
+      [workerId, startDate, endDate],
+      (err, row) => {
+        if (err) return reject(err);
+        resolve({
+          t1000: Number(row?.t1000) || 0,
+          t1300: Number(row?.t1300) || 0,
+          t1600: Number(row?.t1600) || 0,
+          t1830: Number(row?.t1830) || 0,
+        });
+      }
+    );
+  });
+}
+
 export function getUsers() {
   return new Promise((resolve, reject) => {
     db.all("SELECT id, username, role, created_at FROM users ORDER BY id DESC", [], (err, rows) => {

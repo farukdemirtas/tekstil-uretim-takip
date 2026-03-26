@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as RMouseEvent } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { getDailyTrendAnalytics, getTopWorkersAnalytics, getWorkerDailyAnalytics, setAuthToken } from "@/lib/api";
+import { getDailyTrendAnalytics, getTopWorkersAnalytics, getWorkerDailyAnalytics, getWorkerHourlyBreakdown, setAuthToken } from "@/lib/api";
+import type { WorkerHourlyBreakdown } from "@/lib/api";
 import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
 
 const AUTO_REFRESH_MS = 30_000;
@@ -13,6 +15,18 @@ const AUTO_REFRESH_MS = 30_000;
 function getToday() {
   return new Date().toISOString().slice(0, 10);
 }
+
+const TEAM_LABELS: Record<string, string> = {
+  SAG_ON:         "Sağ Ön",
+  SOL_ON:         "Sol Ön",
+  YAKA_HAZIRLIK:  "Yaka Hazırlık",
+  ARKA_HAZIRLIK:  "Arka Hazırlık",
+  BITIM:          "Bitim",
+  ADET:           "Adet",
+  DUSME:          "Düşme",
+  DUZME:          "Düzme",
+};
+function teamLabel(t: string) { return TEAM_LABELS[t] ?? t; }
 
 export default function AnalysisPage() {
   const [startDate, setStartDate] = useState(getToday());
@@ -26,6 +40,11 @@ export default function AnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [hoveredId, setHoveredId]     = useState<number | null>(null);
+  const [tooltipPos, setTooltipPos]   = useState({ x: 0, y: 0 });
+  const [hourlyData, setHourlyData]   = useState<WorkerHourlyBreakdown | null>(null);
+  const [hourlyLoading, setHourlyLoading] = useState(false);
+  const hourlyCache = useRef<Map<number, WorkerHourlyBreakdown>>(new Map());
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -34,7 +53,7 @@ export default function AnalysisPage() {
     setError(null);
     try {
       const [topWorkers, trend, workerDaily] = await Promise.all([
-        getTopWorkersAnalytics({ startDate, endDate, team: teamFilter, hour: hourFilter, limit: 20 }),
+        getTopWorkersAnalytics({ startDate, endDate, team: teamFilter, hour: hourFilter, limit: 9999 }),
         getDailyTrendAnalytics({ startDate, endDate, team: teamFilter, hour: hourFilter }),
         getWorkerDailyAnalytics({ startDate, endDate, team: teamFilter, hour: hourFilter })
       ]);
@@ -71,6 +90,24 @@ export default function AnalysisPage() {
     }, AUTO_REFRESH_MS);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [loadData]);
+
+  /* ── Hover değişince saatlik veriyi çek (cache ile) ── */
+  useEffect(() => {
+    if (hoveredId === null) { setHourlyData(null); return; }
+    if (hourlyCache.current.has(hoveredId)) {
+      setHourlyData(hourlyCache.current.get(hoveredId)!);
+      return;
+    }
+    setHourlyLoading(true);
+    setHourlyData(null);
+    getWorkerHourlyBreakdown({ workerId: hoveredId, startDate, endDate })
+      .then((data) => {
+        hourlyCache.current.set(hoveredId, data);
+        setHourlyData(data);
+      })
+      .catch(() => setHourlyData({ t1000: 0, t1300: 0, t1600: 0, t1830: 0 }))
+      .finally(() => setHourlyLoading(false));
+  }, [hoveredId, startDate, endDate]);
 
   const maxValue = useMemo(
     () => rows.reduce((max, row) => (row.totalProduction > max ? row.totalProduction : max), 0),
@@ -181,9 +218,9 @@ export default function AnalysisPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">Analiz - En Çok Çalışan İşçi</h1>
+            <h1 className="text-xl font-semibold">Analiz - İşçi Verim Sıralaması</h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              Grafik ve tablo verisi tarih aralığı, grup ve saat filtresine göre hesaplanır.
+              Seçilen tarih aralığında veri girilen tüm işçiler sıralanır.
             </p>
             {lastUpdated && (
               <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
@@ -305,21 +342,57 @@ export default function AnalysisPage() {
       )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-        <h2 className="mb-3 text-base font-semibold">Grafik</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">
+            Grafik
+            {rows.length > 0 && (
+              <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
+                ({rows.length} işçi)
+              </span>
+            )}
+          </h2>
+          {rows.length > 0 && (
+            <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-emerald-500" /> En iyi 10</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-blue-500" /> Orta</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-red-500" /> En kötü 10</span>
+              <span className="text-xs italic opacity-70">Satırın üzerine gelin → detay</span>
+            </div>
+          )}
+        </div>
         {loading ? (
           <div className="text-sm text-slate-600">Yükleniyor...</div>
         ) : rows.length === 0 ? (
           <div className="text-sm text-slate-600">Seçilen aralıkta veri bulunamadı.</div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {rows.map((row, index) => {
-              const width = maxValue > 0 ? Math.max(4, Math.round((row.totalProduction / maxValue) * 100)) : 0;
+              const width    = maxValue > 0 ? Math.max(4, Math.round((row.totalProduction / maxValue) * 100)) : 0;
+              const total    = rows.length;
+              const isTop    = index < 10;
+              const isBottom = index >= total - 10 && total > 10;
+              const barColor = isTop ? "bg-emerald-500" : isBottom ? "bg-red-500" : "bg-blue-500";
+              const rankColor = isTop
+                ? "text-emerald-600 dark:text-emerald-400 font-bold"
+                : isBottom
+                  ? "text-red-500 dark:text-red-400 font-bold"
+                  : "text-slate-500";
+              const isHovered = hoveredId === row.workerId;
               return (
-                <div key={row.workerId} className="grid grid-cols-[24px_220px_1fr_80px] items-center gap-2 text-sm">
-                  <span className="text-slate-500">{index + 1}</span>
+                <div
+                  key={row.workerId}
+                  className={`grid grid-cols-[28px_220px_1fr_80px] items-center gap-2 rounded px-1 py-0.5 text-sm transition-colors ${isHovered ? "bg-slate-100 dark:bg-slate-700/60" : "hover:bg-slate-50 dark:hover:bg-slate-700/30"} cursor-default`}
+                  onMouseEnter={(e: RMouseEvent) => {
+                    setHoveredId(row.workerId);
+                    setTooltipPos({ x: e.clientX, y: e.clientY });
+                  }}
+                  onMouseMove={(e: RMouseEvent) => setTooltipPos({ x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setHoveredId(null)}
+                >
+                  <span className={rankColor}>{index + 1}</span>
                   <span className="truncate">{row.name}</span>
-                  <div className="h-5 rounded bg-slate-200">
-                    <div className="h-5 rounded bg-emerald-500" style={{ width: `${width}%` }} />
+                  <div className="h-5 rounded bg-slate-200 dark:bg-slate-700">
+                    <div className={`h-5 rounded ${barColor} transition-all duration-500`} style={{ width: `${width}%` }} />
                   </div>
                   <span className="text-right font-semibold">{row.totalProduction}</span>
                 </div>
@@ -328,6 +401,97 @@ export default function AnalysisPage() {
           </div>
         )}
       </section>
+
+      {/* ── Hover Detay Tooltip ── */}
+      {hoveredId !== null && (() => {
+        const worker   = rows.find((r) => r.workerId === hoveredId);
+        if (!worker) return null;
+        const days     = workerDailyRows.filter((r) => r.workerId === hoveredId);
+        const avg      = days.length > 0 ? Math.round(days.reduce((s, d) => s + d.production, 0) / days.length) : 0;
+        const rank     = rows.findIndex((r) => r.workerId === hoveredId) + 1;
+
+        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        const cardW = 320;
+        const cardH = 260;
+        const left = tooltipPos.x + 16 + cardW > vw ? tooltipPos.x - cardW - 16 : tooltipPos.x + 16;
+        const top  = tooltipPos.y + 16 + cardH > vh ? tooltipPos.y - cardH - 8  : tooltipPos.y + 16;
+
+        return (
+          <div
+            className="pointer-events-none fixed z-50 w-80 rounded-xl border border-slate-200 bg-white p-4 shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            style={{ left, top }}
+          >
+            {/* Başlık */}
+            <div className="mb-3 border-b border-slate-100 pb-2 dark:border-slate-700">
+              <div className="font-semibold">{worker.name}</div>
+              <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500 dark:text-slate-400">
+                <span>{teamLabel(worker.team)}</span>
+                <span>·</span>
+                <span>{worker.process}</span>
+                <span>·</span>
+                <span>#{rank}. sıra</span>
+              </div>
+            </div>
+
+            {/* Özet istatistikler */}
+            <div className="mb-3 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30">
+                <div className="text-lg font-bold text-emerald-600 dark:text-emerald-300">{worker.totalProduction}</div>
+                <div className="text-xs text-slate-500">Toplam</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30">
+                <div className="text-lg font-bold text-blue-600 dark:text-blue-300">{worker.activeDays}</div>
+                <div className="text-xs text-slate-500">Çalışılan Gün</div>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30">
+                <div className="text-lg font-bold text-violet-600 dark:text-violet-300">{avg}</div>
+                <div className="text-xs text-slate-500">Günlük Ort.</div>
+              </div>
+            </div>
+
+            {/* Saatlik bar grafik */}
+            <div>
+              <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                Saatlik Üretim (seçili tarih aralığı toplamı)
+              </div>
+              {hourlyLoading ? (
+                <div className="text-xs text-slate-400">Yükleniyor...</div>
+              ) : hourlyData ? (() => {
+                const slots = [
+                  { label: "10:00", key: "t1000" as const, color: "bg-violet-500" },
+                  { label: "13:00", key: "t1300" as const, color: "bg-blue-500"   },
+                  { label: "16:00", key: "t1600" as const, color: "bg-emerald-500" },
+                  { label: "18:30", key: "t1830" as const, color: "bg-amber-500"  },
+                ];
+                const slotMax = Math.max(...slots.map((s) => hourlyData[s.key]), 1);
+                return (
+                  <div className="space-y-1.5">
+                    {slots.map((s) => {
+                      const val   = hourlyData[s.key];
+                      const pct   = Math.round((val / slotMax) * 100);
+                      return (
+                        <div key={s.key} className="flex items-center gap-2 text-xs">
+                          <span className="w-10 shrink-0 text-right text-slate-500 dark:text-slate-400">{s.label}</span>
+                          <div className="flex-1 rounded bg-slate-100 dark:bg-slate-700" style={{ height: 14 }}>
+                            <div
+                              className={`${s.color} rounded transition-all duration-500`}
+                              style={{ width: `${pct}%`, height: 14 }}
+                            />
+                          </div>
+                          <span className="w-10 shrink-0 font-semibold">{val}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })() : (
+                <div className="text-xs text-slate-400">Veri bulunamadı.</div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <h2 className="mb-3 text-base font-semibold">Günlük Trend Çizgisi</h2>
