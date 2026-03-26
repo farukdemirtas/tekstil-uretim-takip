@@ -1,24 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getDailyTrendAnalytics, getTopWorkersAnalytics, getWorkerDailyAnalytics, setAuthToken } from "@/lib/api";
 import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
 
+const AUTO_REFRESH_MS = 30_000;
+
 function getToday() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function getMonthStart() {
-  const today = new Date();
-  return new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-}
-
 export default function AnalysisPage() {
-  const [startDate, setStartDate] = useState(getMonthStart());
+  const [startDate, setStartDate] = useState(getToday());
   const [endDate, setEndDate] = useState(getToday());
   const [teamFilter, setTeamFilter] = useState<Team | "">("");
   const [hourFilter, setHourFilter] = useState<HourFilter>("");
@@ -28,9 +25,12 @@ export default function AnalysisPage() {
   const [workerSearch, setWorkerSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
 
-  async function loadData() {
-    setLoading(true);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const [topWorkers, trend, workerDaily] = await Promise.all([
@@ -41,28 +41,36 @@ export default function AnalysisPage() {
       setRows(topWorkers);
       setTrendRows(trend);
       setWorkerDailyRows(workerDaily);
+      setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Analiz verisi yüklenemedi");
+      if (!silent) setError(err instanceof Error ? err.message : "Analiz verisi yüklenemedi");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }
+  }, [startDate, endDate, teamFilter, hourFilter]);
 
+  /* ── Kimlik doğrulama + ilk yükleme ── */
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
     const role = window.localStorage.getItem("auth_role");
-    if (!token) {
-      window.location.href = "/";
-      return;
-    }
-    if (role !== "admin") {
+    if (!token || role !== "admin") {
       window.location.href = "/";
       return;
     }
     setAuthToken(token);
     void loadData();
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ── Otomatik yenileme: filtreler değişince interval sıfırlanır ── */
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      void loadData(true);
+    }, AUTO_REFRESH_MS);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [loadData]);
 
   const maxValue = useMemo(
     () => rows.reduce((max, row) => (row.totalProduction > max ? row.totalProduction : max), 0),
@@ -174,9 +182,16 @@ export default function AnalysisPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">Analiz - En Çok Çalışan İşçi</h1>
-            <p className="mt-1 text-sm text-slate-600">Grafik ve tablo verisi tarih aralığı, grup ve saat filtresine göre hesaplanır.</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              Grafik ve tablo verisi tarih aralığı, grup ve saat filtresine göre hesaplanır.
+            </p>
+            {lastUpdated && (
+              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                Son güncelleme: {lastUpdated} &nbsp;·&nbsp; Her 30 sn otomatik yenilenir
+              </p>
+            )}
           </div>
-          <Link href="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+          <Link href="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-700">
             Üretim Ekranı
           </Link>
         </div>

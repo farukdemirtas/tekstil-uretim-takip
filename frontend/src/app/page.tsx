@@ -247,7 +247,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {isAdmin && <WorkerForm onSubmit={handleAddWorker} />}
+      <WorkerForm onSubmit={handleAddWorker} />
 
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
@@ -264,7 +264,7 @@ export default function HomePage() {
           rows={rows}
           onCellChange={(id, field, value) => void handleCellChange(id, field, value)}
           onDeleteWorker={(id, name) => void handleDeleteWorker(id, name)}
-          canDeleteWorkers={isAdmin}
+          canDeleteWorkers={true}
         />
       )}
 

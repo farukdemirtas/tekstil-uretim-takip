@@ -8,6 +8,7 @@ import {
   deleteWorkerForDate,
   getDailyEntries,
   getDailyTrendAnalytics,
+  getRangeStageTotals,
   getWorkerDailyAnalytics,
   createUser,
   deleteUser,
@@ -154,7 +155,7 @@ app.get("/api/workers", async (_req, res) => {
   }
 });
 
-app.post("/api/workers", requireAdmin, async (req, res) => {
+app.post("/api/workers", requireAuth, async (req, res) => {
   const { name, team, process } = req.body;
   if (!name || !team || !process) {
     return res.status(400).json({ message: "name, team ve process zorunlu" });
@@ -172,7 +173,7 @@ app.post("/api/workers", requireAdmin, async (req, res) => {
   }
 });
 
-app.delete("/api/workers/:id", requireAdmin, async (req, res) => {
+app.delete("/api/workers/:id", requireAuth, async (req, res) => {
   const workerId = Number(req.params.id);
   if (!workerId) {
     return res.status(400).json({ message: "Geçersiz worker id" });
@@ -191,6 +192,19 @@ app.delete("/api/workers/:id", requireAdmin, async (req, res) => {
     return res.json({ ok: true });
   } catch (error) {
     return res.status(500).json({ message: "Çalışan silinemedi", error: String(error) });
+  }
+});
+
+app.get("/api/production/range-totals", requireAuth, async (req, res) => {
+  const { startDate, endDate } = req.query;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
+  }
+  try {
+    const totals = await getRangeStageTotals(String(startDate), String(endDate));
+    res.json(totals);
+  } catch (error) {
+    res.status(500).json({ message: "Tarih aralığı verisi alınamadı", error: String(error) });
   }
 });
 

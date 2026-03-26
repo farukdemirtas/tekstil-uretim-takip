@@ -85,6 +85,22 @@ export async function saveProductionBulk(payload: {
   if (!response.ok) throw new Error("Toplu kayıt başarısız");
 }
 
+export async function getRangeStageTotals(startDate: string, endDate: string): Promise<{
+  SAG_ON: number;
+  SOL_ON: number;
+  YAKA_HAZIRLIK: number;
+  ARKA_HAZIRLIK: number;
+  BITIM: number;
+}> {
+  const query = new URLSearchParams({ startDate, endDate }).toString();
+  const response = await fetch(`${API_BASE}/production/range-totals?${query}`, {
+    cache: "no-store",
+    headers: authHeaders()
+  });
+  if (!response.ok) throw new Error("Tarih aralığı verisi alınamadı");
+  return response.json();
+}
+
 export async function getTopWorkersAnalytics(params: {
   startDate: string;
   endDate: string;

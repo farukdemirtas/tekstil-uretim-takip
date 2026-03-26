@@ -265,6 +265,37 @@ export function getWorkerDailyAnalytics({ startDate, endDate, team = "", hourCol
   });
 }
 
+export function getRangeStageTotals(startDate, endDate) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `
+      SELECT
+        w.team,
+        SUM(
+          COALESCE(p.t1000, 0) +
+          COALESCE(p.t1300, 0) +
+          COALESCE(p.t1600, 0) +
+          COALESCE(p.t1830, 0)
+        ) AS total
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.production_date BETWEEN ? AND ?
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      GROUP BY w.team
+      `,
+      [startDate, endDate],
+      (err, rows) => {
+        if (err) return reject(err);
+        const totals = { SAG_ON: 0, SOL_ON: 0, YAKA_HAZIRLIK: 0, ARKA_HAZIRLIK: 0, BITIM: 0 };
+        for (const row of rows) {
+          if (row.team in totals) totals[row.team] = Number(row.total) || 0;
+        }
+        resolve(totals);
+      }
+    );
+  });
+}
+
 export function getUsers() {
   return new Promise((resolve, reject) => {
     db.all("SELECT id, username, role, created_at FROM users ORDER BY id DESC", [], (err, rows) => {
