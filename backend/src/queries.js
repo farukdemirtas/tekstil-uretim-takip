@@ -16,10 +16,49 @@ function constantTimeEqual(a, b) {
   }
 }
 
+export function getWorkerNames() {
+  return new Promise((resolve, reject) => {
+    db.all("SELECT id, name FROM worker_names ORDER BY name COLLATE NOCASE", [], (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows);
+    });
+  });
+}
+
+export function addWorkerName(name) {
+  return new Promise((resolve, reject) => {
+    db.run("INSERT INTO worker_names (name) VALUES (?)", [name.trim().toUpperCase()], function (err) {
+      if (err) return reject(err);
+      resolve({ id: this.lastID, name: name.trim().toUpperCase() });
+    });
+  });
+}
+
+export function updateWorkerName(id, name) {
+  return new Promise((resolve, reject) => {
+    db.run("UPDATE worker_names SET name = ? WHERE id = ?", [name.trim().toUpperCase(), id], function (err) {
+      if (err) return reject(err);
+      resolve({ updated: this.changes > 0 });
+    });
+  });
+}
+
+export function deleteWorkerName(id) {
+  return new Promise((resolve, reject) => {
+    db.run("DELETE FROM worker_names WHERE id = ?", [id], function (err) {
+      if (err) return reject(err);
+      resolve({ deleted: this.changes > 0 });
+    });
+  });
+}
+
 export function getWorkers() {
   return new Promise((resolve, reject) => {
     db.all(
-      "SELECT id, name, team, process FROM workers ORDER BY team, process, name",
+      `SELECT id, name, team, process, created_at
+       FROM workers
+       WHERE deleted_at IS NULL
+       ORDER BY team, process, name`,
       [],
       (err, rows) => {
         if (err) return reject(err);
@@ -29,14 +68,28 @@ export function getWorkers() {
   });
 }
 
-export function createWorker({ name, team, process }) {
+export function createWorker({ name, team, process, created_at }) {
+  const addedDate = created_at || new Date().toISOString().slice(0, 10);
   return new Promise((resolve, reject) => {
     db.run(
-      "INSERT INTO workers (name, team, process) VALUES (?, ?, ?)",
-      [name, team, process],
+      "INSERT INTO workers (name, team, process, created_at) VALUES (?, ?, ?, ?)",
+      [name, team, process, addedDate],
       function onInsert(err) {
         if (err) return reject(err);
-        resolve({ id: this.lastID, name, team, process });
+        resolve({ id: this.lastID, name, team, process, created_at: addedDate });
+      }
+    );
+  });
+}
+
+export function updateWorker(workerId, { process }) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE workers SET process = ? WHERE id = ?",
+      [process, workerId],
+      function onUpdate(err) {
+        if (err) return reject(err);
+        resolve({ updated: this.changes > 0 });
       }
     );
   });
@@ -83,10 +136,11 @@ export function getDailyEntries(date) {
       LEFT JOIN production_entries p
         ON p.worker_id = w.id
         AND p.production_date = ?
-      WHERE (w.deleted_at IS NULL OR w.deleted_at > ?)
+      WHERE (w.created_at IS NULL OR w.created_at <= ?)
+        AND (w.deleted_at IS NULL OR w.deleted_at > ?)
       ORDER BY w.team, w.process, w.name
       `,
-      [date, date],
+      [date, date, date],
       (err, rows) => {
         if (err) return reject(err);
         resolve(rows);
@@ -182,6 +236,7 @@ export function getTopWorkersAnalytics({ startDate, endDate, team = "", limit = 
       JOIN production_entries p ON p.worker_id = w.id
       WHERE p.production_date BETWEEN ? AND ?
         AND (? = '' OR w.team = ?)
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
       GROUP BY w.id, w.name, w.team, w.process
       ORDER BY totalProduction DESC, w.name ASC
@@ -214,6 +269,7 @@ export function getDailyTrendAnalytics({ startDate, endDate, team = "", hourColu
       JOIN workers w ON w.id = p.worker_id
       WHERE p.production_date BETWEEN ? AND ?
         AND (? = '' OR w.team = ?)
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
       GROUP BY p.production_date
       ORDER BY p.production_date ASC
@@ -248,6 +304,7 @@ export function getWorkerDailyAnalytics({ startDate, endDate, team = "", hourCol
       JOIN workers w ON w.id = p.worker_id
       WHERE p.production_date BETWEEN ? AND ?
         AND (? = '' OR w.team = ?)
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
       ORDER BY p.production_date ASC, production DESC, w.name ASC
       `,
@@ -280,6 +337,7 @@ export function getRangeStageTotals(startDate, endDate) {
       FROM production_entries p
       JOIN workers w ON w.id = p.worker_id
       WHERE p.production_date BETWEEN ? AND ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
       GROUP BY w.team
       `,

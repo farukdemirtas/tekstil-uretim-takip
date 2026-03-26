@@ -22,6 +22,7 @@ export function initDb() {
         name TEXT NOT NULL,
         team TEXT NOT NULL CHECK(team IN ('SAG_ON', 'SOL_ON', 'YAKA_HAZIRLIK', 'ARKA_HAZIRLIK', 'BITIM', 'ADET')),
         process TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (date('now')),
         deleted_at TEXT
       )
     `);
@@ -42,11 +43,10 @@ export function initDb() {
           !schemaSql.includes("BITIM") ||
           !schemaSql.includes("ADET");
 
-        const hasDeletedAt = schemaSql.includes("deleted_at");
+        const hasDeletedAt  = schemaSql.includes("deleted_at");
+        const hasCreatedAt  = schemaSql.includes("created_at");
 
         if (needsTeamMigration) {
-          // Eski workers tablosu sadece SAG_ON/SOL_ON kabul ediyor.
-          // Yeni tabloya tüm ekipleri taşıyıp isim değiştiriyoruz.
           db.exec(
             `
             PRAGMA foreign_keys = OFF;
@@ -56,10 +56,11 @@ export function initDb() {
               name TEXT NOT NULL,
               team TEXT NOT NULL CHECK(team IN ('SAG_ON', 'SOL_ON', 'YAKA_HAZIRLIK', 'ARKA_HAZIRLIK', 'BITIM', 'ADET')),
               process TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT (date('now')),
               deleted_at TEXT
             );
-            INSERT INTO workers_new (id, name, team, process, deleted_at)
-            SELECT id, name, team, process, NULL FROM workers;
+            INSERT INTO workers_new (id, name, team, process, created_at, deleted_at)
+            SELECT id, name, team, process, date('now'), NULL FROM workers;
             DROP TABLE workers;
             ALTER TABLE workers_new RENAME TO workers;
             COMMIT;
@@ -83,6 +84,30 @@ export function initDb() {
             }
           });
         }
+
+        if (!hasCreatedAt) {
+          /* SQLite ALTER TABLE ADD COLUMN, fonksiyon default'u desteklemiyor;
+             önce NULL olarak ekle, sonra mevcut satırları bugünün tarihiyle doldur. */
+          db.run("ALTER TABLE workers ADD COLUMN created_at TEXT", (alterErr) => {
+            if (alterErr) {
+              const msg = String(alterErr.message || alterErr);
+              if (!msg.toLowerCase().includes("duplicate column name")) {
+                // eslint-disable-next-line no-console
+                console.error("DB migration (created_at) error:", msg);
+              }
+              return;
+            }
+            db.run(
+              "UPDATE workers SET created_at = date('now') WHERE created_at IS NULL",
+              (updateErr) => {
+                if (updateErr) {
+                  // eslint-disable-next-line no-console
+                  console.error("DB migration (created_at backfill) error:", String(updateErr));
+                }
+              }
+            );
+          });
+        }
       }
     );
 
@@ -99,6 +124,45 @@ export function initDb() {
         FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
       )
     `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS worker_names (
+        id   INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE
+      )
+    `);
+
+    /* İsim havuzunu mevcut workers tablosundan doldur (ilk kurulumda) */
+    db.get("SELECT COUNT(*) AS cnt FROM worker_names", [], (err, row) => {
+      if (err || (row && row.cnt > 0)) return;
+      const initialNames = [
+        "ADNAN ŞEREF","AHMET ERİŞMİŞ","ALEYNA TAŞKARA","ARZU KARAGÜDEKOGLU","AYNUR BİNAY",
+        "AYŞE BAYRAM","BAĞDAGÜL KARAGÜLMEZ","BERRİN ŞENOL","BETÜL KESKİN","BEYZA KESKİN",
+        "BEYZANUR KORKMAZ","BÜŞRA DERE","CANSU DİLER","CEMİLE ŞAHİN","CEMİLE TULUM",
+        "CEMİLE SARI","DERYA ERSOY ATABEK","DİLEK ATAKAN","EDANUR BOLAT","ELİF ÖZDEMİR",
+        "ELİF PAK","ELVAN ÖZKAN","EMİNE ERATA","EMİNE AKIN","EMİNE ARSLAN",
+        "EMİNE HACIHAMZAOĞLU","EMİNE BİLEN","EMİNE İLHAN","ENVER TURAN","ERCAN KAYA",
+        "ESMA ÖZYAVUZ","EYÜP AKYÜZ","FADİME DİLER","FAHRİYE YILMAZ","FATMA BİGEÇ",
+        "FERHAT ALTUN","FİLİZ BÜTÜN","FURKAN ERTÜRK","GÜLEN ÖKSÜZ","GÜLER AKER",
+        "GÜLPERİ DİLER","GÜLSÜM YILDIRIM","GÜRSÜN KALAYCI","HAKAN ÇAKIR","HALİME ŞENER",
+        "HAMİT BAYRAM","HANİFE YEŞİL","HATİCE YILDIRIM","HATİCE ŞAHAN","HATUN ZORLU",
+        "HAVA ÇAKIR","HAVVANUR ÖZTÜRK","HEDİYE AYIK","HUSSEIN MAKHZOUM","HÜLYA ARAZ",
+        "HÜLYA UÇAR","İREM AYIK","İSHAK NURİ ÇELİK","KADİR CEYLAN","KAYMAK SOYLU",
+        "LEYLA CERRAH","LEYLA ERTÜRK","MAHMUT ÖZGÜNEŞ","MEDİHA YEŞİLTAŞ","MELAHAT YETKİN",
+        "MELİSA YETKİN","MERVE CİNCİL","MERVE ÖNDER","MEVLÜDE AKÇAY","MUHAMMET KILIÇ",
+        "MUSTAFA KEMAL ARSLAN","MÜBERRA GÖREN","NAGİHAN KÜÇÜKDURSUN","NERİMAN AYDINHAN",
+        "NERİMAN YAVUZ","NEŞE CERRAH","NURAY KALOĞLU","NURGEL UYAR","OMAR MAKHZOUM",
+        "ÖZLEM SOYÇİÇEK","PINAR ÖKSÜZ","RABİA ÜSTÜN","RUQIA JALAL","SALİH BİLEN",
+        "SAYNUR ÖZKAN","SEDANUR ÇETİNER","SEDEF GÜNER BERBER","SEHER AKGÜL","SELCAN YILDIZ",
+        "SELMA DEMİRBAŞ","SEMANUR TURAN","SERKAN BATUM","SEVDA GÜLMEZ","SEVDA KÖKÇE",
+        "SEVDA ÇAMURCU","SEVGİ DEMİR","SEVİM BAŞ","SİBEL TAŞKIN","SÜNDÜZ YAVUZ",
+        "ŞEREF BAŞBOĞA","ŞEVVAL BAYRİ","TALİP SAGLAM","TOLGA KAYA","TÜLAY ÇİLİNGİR",
+        "TÜRKAN BAŞ","YAĞMUR ÇOŞKUN","YILDIZ MERT","YUSUF YAVUZ","ZAHİDE GÜLDANE","ZEYNEP BUZDAN"
+      ];
+      const stmt = db.prepare("INSERT OR IGNORE INTO worker_names (name) VALUES (?)");
+      for (const n of initialNames) stmt.run([n]);
+      stmt.finalize();
+    });
 
     db.run(`
       CREATE TABLE IF NOT EXISTS users (

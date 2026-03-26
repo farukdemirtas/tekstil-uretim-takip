@@ -3,7 +3,12 @@ import cors from "cors";
 import { createHmac } from "crypto";
 import { initDb } from "./db.js";
 import {
+  getWorkerNames,
+  addWorkerName,
+  updateWorkerName,
+  deleteWorkerName,
   createWorker,
+  updateWorker,
   deleteWorker,
   deleteWorkerForDate,
   getDailyEntries,
@@ -155,8 +160,45 @@ app.get("/api/workers", async (_req, res) => {
   }
 });
 
+/* ── İsim Havuzu (worker_names) ── */
+app.get("/api/worker-names", requireAuth, async (req, res) => {
+  try { res.json(await getWorkerNames()); }
+  catch (e) { res.status(500).json({ message: String(e) }); }
+});
+
+app.post("/api/worker-names", requireAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ message: "İsim boş olamaz" });
+  try { res.status(201).json(await addWorkerName(name)); }
+  catch (e) {
+    const msg = String(e);
+    if (msg.includes("UNIQUE")) return res.status(409).json({ message: "Bu isim zaten kayıtlı" });
+    res.status(500).json({ message: msg });
+  }
+});
+
+app.put("/api/worker-names/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ message: "İsim boş olamaz" });
+  try {
+    const r = await updateWorkerName(id, name);
+    if (!r.updated) return res.status(404).json({ message: "Bulunamadı" });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: String(e) }); }
+});
+
+app.delete("/api/worker-names/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const r = await deleteWorkerName(id);
+    if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: String(e) }); }
+});
+
 app.post("/api/workers", requireAuth, async (req, res) => {
-  const { name, team, process } = req.body;
+  const { name, team, process, addedDate } = req.body;
   if (!name || !team || !process) {
     return res.status(400).json({ message: "name, team ve process zorunlu" });
   }
@@ -165,11 +207,30 @@ app.post("/api/workers", requireAuth, async (req, res) => {
     return res.status(400).json({ message: "Geçersiz grup" });
   }
 
+  /* addedDate gönderilmezse bugünün tarihi kullanılır */
+  const created_at = addedDate || new Date().toISOString().slice(0, 10);
+
   try {
-    const worker = await createWorker({ name, team, process });
+    const worker = await createWorker({ name, team, process, created_at });
     res.status(201).json(worker);
   } catch (error) {
     res.status(500).json({ message: "Çalışan eklenemedi", error: String(error) });
+  }
+});
+
+app.put("/api/workers/:id", requireAuth, async (req, res) => {
+  const workerId = Number(req.params.id);
+  if (!workerId) return res.status(400).json({ message: "Geçersiz worker id" });
+
+  const { process } = req.body;
+  if (!process) return res.status(400).json({ message: "process zorunlu" });
+
+  try {
+    const result = await updateWorker(workerId, { process });
+    if (!result.updated) return res.status(404).json({ message: "Çalışan bulunamadı" });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "Çalışan güncellenemedi", error: String(error) });
   }
 });
 

@@ -9,7 +9,7 @@ import AdminPanel from "@/components/AdminPanel";
 import LoginForm from "@/components/LoginForm";
 import ProductionTable from "@/components/ProductionTable";
 import WorkerForm from "@/components/WorkerForm";
-import { addWorker, getProduction, login, removeWorker, saveProduction, setAuthToken } from "@/lib/api";
+import { addWorker, getProduction, login, removeWorker, saveProduction, setAuthToken, updateWorker } from "@/lib/api";
 import { ProductionRow, Team } from "@/lib/types";
 
 function getToday() {
@@ -122,7 +122,7 @@ export default function HomePage() {
   }
 
   async function handleAddWorker(payload: { name: string; team: Team; process: string }) {
-    await addWorker(payload);
+    await addWorker({ ...payload, addedDate: selectedDate });
     await loadDateData(selectedDate);
   }
 
@@ -165,6 +165,11 @@ export default function HomePage() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Üretim");
     XLSX.writeFile(workbook, `üretim-${selectedDate}.xlsx`);
+  }
+
+  async function handleEditWorker(workerId: number, process: string) {
+    await updateWorker(workerId, { process });
+    await loadDateData(selectedDate);
   }
 
   async function handleDeleteWorker(workerId: number, workerName: string) {
@@ -226,6 +231,9 @@ export default function HomePage() {
               <Link href="/users" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
                 Kullanıcılar
               </Link>
+              <Link href="/ayarlar" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
+                Ayarlar
+              </Link>
               <button
                 onClick={pushToHedefTakip}
                 className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700"
@@ -264,6 +272,7 @@ export default function HomePage() {
           rows={rows}
           onCellChange={(id, field, value) => void handleCellChange(id, field, value)}
           onDeleteWorker={(id, name) => void handleDeleteWorker(id, name)}
+          onEditWorker={handleEditWorker}
           canDeleteWorkers={true}
         />
       )}

@@ -21,13 +21,43 @@ export async function login(payload: { username: string; password: string }): Pr
   return response.json();
 }
 
+export async function getWorkerNames(): Promise<{ id: number; name: string }[]> {
+  const res = await fetch(`${API_BASE}/worker-names`, { cache: "no-store", headers: authHeaders() });
+  if (!res.ok) throw new Error("İsim listesi alınamadı");
+  return res.json();
+}
+
+export async function addWorkerName(name: string): Promise<{ id: number; name: string }> {
+  const res = await fetch(`${API_BASE}/worker-names`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ name })
+  });
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error((d as {message?:string}).message ?? "Eklenemedi"); }
+  return res.json();
+}
+
+export async function updateWorkerName(id: number, name: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/worker-names/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ name })
+  });
+  if (!res.ok) throw new Error("Güncellenemedi");
+}
+
+export async function deleteWorkerName(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/worker-names/${id}`, { method: "DELETE", headers: authHeaders() });
+  if (!res.ok) throw new Error("Silinemedi");
+}
+
 export async function getWorkers(): Promise<Worker[]> {
   const response = await fetch(`${API_BASE}/workers`, { cache: "no-store", headers: authHeaders() });
   if (!response.ok) throw new Error("Çalışanlar alınamadı");
   return response.json();
 }
 
-export async function addWorker(payload: { name: string; team: Team; process: string }): Promise<Worker> {
+export async function addWorker(payload: { name: string; team: Team; process: string; addedDate?: string }): Promise<Worker> {
   const response = await fetch(`${API_BASE}/workers`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -35,6 +65,15 @@ export async function addWorker(payload: { name: string; team: Team; process: st
   });
   if (!response.ok) throw new Error("Çalışan eklenemedi");
   return response.json();
+}
+
+export async function updateWorker(workerId: number, payload: { process: string }): Promise<void> {
+  const response = await fetch(`${API_BASE}/workers/${workerId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error("Çalışan güncellenemedi");
 }
 
 export async function removeWorker(workerId: number, date: string): Promise<void> {

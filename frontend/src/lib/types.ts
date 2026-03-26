@@ -5,6 +5,7 @@ export type Worker = {
   name: string;
   team: Team;
   process: string;
+  created_at?: string;
 };
 
 export type ProductionRow = {
