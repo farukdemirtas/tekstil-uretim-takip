@@ -9,7 +9,18 @@ import AdminPanel from "@/components/AdminPanel";
 import LoginForm from "@/components/LoginForm";
 import ProductionTable from "@/components/ProductionTable";
 import WorkerForm from "@/components/WorkerForm";
-import { addWorker, getHedefTakipStageTotals, getProduction, login, removeWorker, saveProduction, setAuthToken, updateWorker } from "@/lib/api";
+import {
+  addWorker,
+  getDayProductMeta,
+  getHedefTakipStageTotals,
+  getProduction,
+  login,
+  removeWorker,
+  saveDayProductMeta,
+  saveProduction,
+  setAuthToken,
+  updateWorker,
+} from "@/lib/api";
 import { ProductionRow, Team } from "@/lib/types";
 
 function getToday() {
@@ -33,6 +44,10 @@ export default function HomePage() {
   const [rows, setRows] = useState<ProductionRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [productName, setProductName] = useState("");
+  const [productModel, setProductModel] = useState("");
+  const [productMetaSaving, setProductMetaSaving] = useState(false);
+  const [productMetaSaved, setProductMetaSaved] = useState(false);
   const router = useRouter();
 
   const isAdmin = role === "admin";
@@ -52,13 +67,36 @@ export default function HomePage() {
   async function loadDateData(date: string) {
     setLoading(true);
     setError(null);
+    setProductMetaSaved(false);
     try {
-      const data = await getProduction(date);
+      const [data, meta] = await Promise.all([
+        getProduction(date),
+        getDayProductMeta(date).catch(() => ({ productName: "", productModel: "" })),
+      ]);
       setRows(data);
+      setProductName(meta.productName);
+      setProductModel(meta.productModel);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function persistProductMeta() {
+    setProductMetaSaving(true);
+    try {
+      await saveDayProductMeta({
+        date: selectedDate,
+        productName,
+        productModel,
+      });
+      setProductMetaSaved(true);
+      window.setTimeout(() => setProductMetaSaved(false), 2500);
+    } catch {
+      setError("Ürün adı / model kaydedilemedi.");
+    } finally {
+      setProductMetaSaving(false);
     }
   }
 
@@ -251,6 +289,56 @@ export default function HomePage() {
           >
             Excel Export
           </button>
+        </div>
+      </section>
+
+      {/* Ürün adı / model — Çalışan ekleme ve tablonun üstü */}
+      <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:p-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+            Çalışılacak ürün (seçili tarih)
+          </h2>
+          <div className="flex items-center gap-2 text-xs">
+            {productMetaSaving && (
+              <span className="text-slate-500 dark:text-slate-400">Kaydediliyor...</span>
+            )}
+            {productMetaSaved && !productMetaSaving && (
+              <span className="text-emerald-600 dark:text-emerald-400">Kaydedildi</span>
+            )}
+          </div>
+        </div>
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+          Seçili tarih için çalışılacak ürünün adı ve modeli. Alanlardan çıkınca otomatik kaydedilir.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="product-name" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Ürün adı
+            </label>
+            <input
+              id="product-name"
+              type="text"
+              value={productName}
+              onChange={(e) => setProductName(e.target.value)}
+              onBlur={() => void persistProductMeta()}
+              placeholder="Örn. Polo tişört"
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="product-model" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Model
+            </label>
+            <input
+              id="product-model"
+              type="text"
+              value={productModel}
+              onChange={(e) => setProductModel(e.target.value)}
+              onBlur={() => void persistProductMeta()}
+              placeholder="Örn. YM-2026-04"
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
+            />
+          </div>
         </div>
       </section>
 

@@ -149,6 +149,43 @@ export function getDailyEntries(date) {
   });
 }
 
+export function getDayProductMeta(date) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      "SELECT product_name AS productName, product_model AS productModel FROM daily_product_meta WHERE production_date = ?",
+      [date],
+      (err, row) => {
+        if (err) return reject(err);
+        resolve({
+          productName: row?.productName != null ? String(row.productName) : "",
+          productModel: row?.productModel != null ? String(row.productModel) : "",
+        });
+      }
+    );
+  });
+}
+
+export function upsertDayProductMeta({ date, productName, productModel }) {
+  const name = String(productName ?? "").trim();
+  const model = String(productModel ?? "").trim();
+  return new Promise((resolve, reject) => {
+    db.run(
+      `
+      INSERT INTO daily_product_meta (production_date, product_name, product_model)
+      VALUES (?, ?, ?)
+      ON CONFLICT(production_date) DO UPDATE SET
+        product_name = excluded.product_name,
+        product_model = excluded.product_model
+      `,
+      [date, name, model],
+      (err) => {
+        if (err) return reject(err);
+        resolve({ productName: name, productModel: model });
+      }
+    );
+  });
+}
+
 export function upsertEntry({ workerId, date, t1000, t1300, t1600, t1830 }) {
   return new Promise((resolve, reject) => {
     db.run(

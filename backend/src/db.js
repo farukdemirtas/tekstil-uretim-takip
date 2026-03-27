@@ -126,6 +126,14 @@ export function initDb() {
     `);
 
     db.run(`
+      CREATE TABLE IF NOT EXISTS daily_product_meta (
+        production_date TEXT PRIMARY KEY,
+        product_name TEXT NOT NULL DEFAULT '',
+        product_model TEXT NOT NULL DEFAULT ''
+      )
+    `);
+
+    db.run(`
       CREATE TABLE IF NOT EXISTS worker_names (
         id   INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE

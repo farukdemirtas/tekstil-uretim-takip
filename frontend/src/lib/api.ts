@@ -111,6 +111,31 @@ export async function getProduction(date: string): Promise<ProductionRow[]> {
   return response.json();
 }
 
+export type DayProductMeta = { productName: string; productModel: string };
+
+export async function getDayProductMeta(date: string): Promise<DayProductMeta> {
+  const response = await apiFetch(`${API_BASE}/production/day-meta?date=${encodeURIComponent(date)}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Gün ürün bilgisi alınamadı");
+  return response.json();
+}
+
+export async function saveDayProductMeta(payload: {
+  date: string;
+  productName: string;
+  productModel: string;
+}): Promise<DayProductMeta> {
+  const response = await apiFetch(`${API_BASE}/production/day-meta`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error("Ürün bilgisi kaydedilemedi");
+  return response.json();
+}
+
 export async function saveProduction(payload: {
   workerId: number;
   date: string;

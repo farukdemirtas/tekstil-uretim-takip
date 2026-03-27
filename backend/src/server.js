@@ -12,6 +12,8 @@ import {
   deleteWorker,
   deleteWorkerForDate,
   getDailyEntries,
+  getDayProductMeta,
+  upsertDayProductMeta,
   getDailyTrendAnalytics,
   getRangeStageTotals,
   getHedefTakipStageTotals,
@@ -320,6 +322,32 @@ app.get("/api/analytics/worker-hourly", requireAuth, async (req, res) => {
     res.json(data);
   } catch (error) {
     res.status(500).json({ message: "Saatlik veri alınamadı", error: String(error) });
+  }
+});
+
+app.get("/api/production/day-meta", async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu (YYYY-MM-DD)" });
+  try {
+    const meta = await getDayProductMeta(String(date));
+    res.json(meta);
+  } catch (error) {
+    res.status(500).json({ message: "Gün ürün bilgisi alınamadı", error: String(error) });
+  }
+});
+
+app.put("/api/production/day-meta", async (req, res) => {
+  const { date, productName, productModel } = req.body || {};
+  if (!date) return res.status(400).json({ message: "date zorunlu (YYYY-MM-DD)" });
+  try {
+    const meta = await upsertDayProductMeta({
+      date: String(date),
+      productName: productName ?? "",
+      productModel: productModel ?? "",
+    });
+    res.json(meta);
+  } catch (error) {
+    res.status(500).json({ message: "Ürün bilgisi kaydedilemedi", error: String(error) });
   }
 });
 
