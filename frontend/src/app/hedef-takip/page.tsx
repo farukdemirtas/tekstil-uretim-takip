@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { getRangeStageTotals, setAuthToken } from "@/lib/api";
+import { getHedefTakipStageTotals, setAuthToken } from "@/lib/api";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
 const AUTO_REFRESH_MS = 30_000;
@@ -103,7 +103,7 @@ export default function HedefTakip() {
     if (!silent) setRangeLoading(true);
     setRangeError("");
     try {
-      const totals = await getRangeStageTotals(start, end);
+      const totals = await getHedefTakipStageTotals(start, end);
       setSagOn(totals.SAG_ON);
       setSolOn(totals.SOL_ON);
       setYaka(totals.YAKA_HAZIRLIK);

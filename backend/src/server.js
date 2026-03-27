@@ -14,6 +14,7 @@ import {
   getDailyEntries,
   getDailyTrendAnalytics,
   getRangeStageTotals,
+  getHedefTakipStageTotals,
   getWorkerComparisonData,
   getWorkerHourlyBreakdown,
   getWorkerDailyAnalytics,
@@ -268,6 +269,19 @@ app.get("/api/production/range-totals", requireAuth, async (req, res) => {
     res.json(totals);
   } catch (error) {
     res.status(500).json({ message: "Tarih aralığı verisi alınamadı", error: String(error) });
+  }
+});
+
+app.get("/api/production/hedef-stage-totals", requireAuth, async (req, res) => {
+  const { startDate, endDate } = req.query;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
+  }
+  try {
+    const totals = await getHedefTakipStageTotals(String(startDate), String(endDate));
+    res.json(totals);
+  } catch (error) {
+    res.status(500).json({ message: "Hedef takip verisi alınamadı", error: String(error) });
   }
 });
 

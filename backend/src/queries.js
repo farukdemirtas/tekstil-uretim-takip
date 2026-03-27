@@ -354,6 +354,41 @@ export function getRangeStageTotals(startDate, endDate) {
   });
 }
 
+/** Hedef Takip ekranı: takım + belirli proseslere göre aşama adetleri */
+export function getHedefTakipStageTotals(startDate, endDate) {
+  const line =
+    "COALESCE(p.t1000, 0) + COALESCE(p.t1300, 0) + COALESCE(p.t1600, 0) + COALESCE(p.t1830, 0)";
+  return new Promise((resolve, reject) => {
+    db.get(
+      `
+      SELECT
+        COALESCE(SUM(CASE WHEN w.team = 'SAG_ON' AND w.process = 'SAĞ KOL ÇIMA' THEN ${line} ELSE 0 END), 0) AS sag_on,
+        COALESCE(SUM(CASE WHEN w.team = 'SOL_ON' AND w.process = 'SOL KOL ÇIMA' THEN ${line} ELSE 0 END), 0) AS sol_on,
+        COALESCE(SUM(CASE WHEN w.team = 'YAKA_HAZIRLIK' AND w.process = 'YAKA İÇ ÇIMA' THEN ${line} ELSE 0 END), 0) AS yaka,
+        COALESCE(SUM(CASE WHEN w.team = 'ARKA_HAZIRLIK' AND w.process = 'ARKA KOL ÇIMA' THEN ${line} ELSE 0 END), 0) AS arka_raw,
+        COALESCE(SUM(CASE WHEN w.team = 'BITIM' AND w.process = 'YIKAMA TALİMATI' THEN ${line} ELSE 0 END), 0) AS bitim
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.production_date BETWEEN ? AND ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      `,
+      [startDate, endDate],
+      (err, row) => {
+        if (err) return reject(err);
+        const arkaRaw = Number(row.arka_raw) || 0;
+        resolve({
+          SAG_ON: Number(row.sag_on) || 0,
+          SOL_ON: Number(row.sol_on) || 0,
+          YAKA_HAZIRLIK: Number(row.yaka) || 0,
+          ARKA_HAZIRLIK: arkaRaw / 2,
+          BITIM: Number(row.bitim) || 0,
+        });
+      }
+    );
+  });
+}
+
 export function getWorkerComparisonData({ worker1Id, worker2Id, startDate, endDate }) {
   return new Promise((resolve, reject) => {
     // Hourly totals + summary for both workers

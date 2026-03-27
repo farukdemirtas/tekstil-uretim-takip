@@ -161,6 +161,23 @@ export async function getRangeStageTotals(startDate: string, endDate: string): P
   return response.json();
 }
 
+/** Hedef Takip: proses bazlı aşama toplamları */
+export async function getHedefTakipStageTotals(startDate: string, endDate: string): Promise<{
+  SAG_ON: number;
+  SOL_ON: number;
+  YAKA_HAZIRLIK: number;
+  ARKA_HAZIRLIK: number;
+  BITIM: number;
+}> {
+  const query = new URLSearchParams({ startDate, endDate }).toString();
+  const response = await apiFetch(`${API_BASE}/production/hedef-stage-totals?${query}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Hedef takip verisi alınamadı");
+  return response.json();
+}
+
 export async function getTopWorkersAnalytics(params: {
   startDate: string;
   endDate: string;

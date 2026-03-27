@@ -9,7 +9,7 @@ import AdminPanel from "@/components/AdminPanel";
 import LoginForm from "@/components/LoginForm";
 import ProductionTable from "@/components/ProductionTable";
 import WorkerForm from "@/components/WorkerForm";
-import { addWorker, getProduction, login, removeWorker, saveProduction, setAuthToken, updateWorker } from "@/lib/api";
+import { addWorker, getHedefTakipStageTotals, getProduction, login, removeWorker, saveProduction, setAuthToken, updateWorker } from "@/lib/api";
 import { ProductionRow, Team } from "@/lib/types";
 
 function getToday() {
@@ -93,31 +93,21 @@ export default function HomePage() {
     setRows([]);
   }
 
-  function pushToHedefTakip() {
-    // Admin panel özetini temsil eden takım toplamlarını alıp hedef-takip sayfasına bırakıyoruz.
-    const totals = {
-      sagOn: 0,
-      solOn: 0,
-      yaka: 0,
-      arka: 0,
-      bitim: 0
-    };
-
-    for (const row of rows) {
-      const sum = row.t1000 + row.t1300 + row.t1600 + row.t1830;
-      if (row.team === "SAG_ON") totals.sagOn += sum;
-      else if (row.team === "SOL_ON") totals.solOn += sum;
-      else if (row.team === "YAKA_HAZIRLIK") totals.yaka += sum;
-      else if (row.team === "ARKA_HAZIRLIK") totals.arka += sum;
-      else if (row.team === "BITIM") totals.bitim += sum;
-    }
-
+  async function pushToHedefTakip() {
+    /* Hedef Takip ile aynı proses kuralları: API'den seçili günün toplamları */
     try {
+      const t = await getHedefTakipStageTotals(selectedDate, selectedDate);
+      const totals = {
+        sagOn: t.SAG_ON,
+        solOn: t.SOL_ON,
+        yaka: t.YAKA_HAZIRLIK,
+        arka: t.ARKA_HAZIRLIK,
+        bitim: t.BITIM,
+      };
       window.localStorage.setItem("hedef_takip_stage_totals_v1", JSON.stringify({ ...totals, date: selectedDate }));
     } catch {
-      // localStorage erişimi kısıtlıysa sayfa yine çalışır, sadece değerler 0 görünür.
+      /* API başarısızsa eski davranışa düşme — boş veya önceki cache */
     }
-
     router.push("/hedef-takip");
   }
 
@@ -247,7 +237,7 @@ export default function HomePage() {
                 Ayarlar
               </Link>
               <button
-                onClick={pushToHedefTakip}
+                onClick={() => void pushToHedefTakip()}
                 className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700"
                 type="button"
               >
