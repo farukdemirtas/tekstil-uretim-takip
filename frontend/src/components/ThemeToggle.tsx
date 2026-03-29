@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type Theme = "light" | "dark";
 
 export default function ThemeToggle() {
+  const pathname = usePathname();
   const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
@@ -16,6 +18,8 @@ export default function ThemeToggle() {
   }, []);
 
   const label = useMemo(() => (theme === "dark" ? "Açık Mod" : "Koyu Mod"), [theme]);
+
+  if (pathname === "/ekran1") return null;
 
   function toggleTheme() {
     const next: Theme = theme === "dark" ? "light" : "dark";
