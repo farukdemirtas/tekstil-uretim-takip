@@ -16,14 +16,16 @@ const PROCESS_OPTIONS = [
   "YAKA REGOLA","YAKA TAKMA","YAKA UCU","YAKA ÜST TULUM","YAKA YAN VURMA","YAN ÇATMA","YIKAMA TALİMATI",
 ].sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
 
-const TEAM_OPTIONS: Array<{ value: Team; label: string }> = [
-  { value: "ADET",          label: "ADET" },
+const TEAM_CHOICES: Array<{ value: Team; label: string }> = [
+  { value: "ADET", label: "ADET" },
   { value: "ARKA_HAZIRLIK", label: "ARKA HAZIRLIK" },
-  { value: "BITIM",         label: "BİTİM" },
-  { value: "SAG_ON",        label: "SAĞ ÖN" },
-  { value: "SOL_ON",        label: "SOL ÖN" },
-  { value: "YAKA_HAZIRLIK", label: "YAKA HAZIRLIK" },
-].sort((a, b) => a.label.localeCompare(b.label, "tr", { sensitivity: "base" }));
+  { value: "BITIM", label: "BİTİM" },
+  { value: "SAG_ON", label: "SAĞ ÖN" },
+  { value: "SOL_ON", label: "SOL ÖN" },
+  { value: "YAKA_HAZIRLIK", label: "YAKA HAZIRLIK" }
+];
+
+const TEAM_OPTIONS = TEAM_CHOICES.slice().sort((a, b) => a.label.localeCompare(b.label, "tr", { sensitivity: "base" }));
 
 export default function WorkerForm({ onSubmit }: WorkerFormProps) {
   const [names, setNames]     = useState<string[]>([]);

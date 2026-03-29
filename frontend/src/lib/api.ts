@@ -7,7 +7,7 @@ export function setAuthToken(token: string) {
   authToken = token;
 }
 
-function authHeaders() {
+function authHeaders(): Record<string, string> {
   return authToken ? { "x-auth-token": authToken } : {};
 }
 
