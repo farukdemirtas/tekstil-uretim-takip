@@ -1,13 +1,38 @@
 import sqlite3 from "sqlite3";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pbkdf2Sync, randomBytes } from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dbPath = path.resolve(__dirname, "../data/production.db");
+const dataDir = path.resolve(__dirname, "../data");
+const dbPath = path.join(dataDir, "production.db");
 
-const db = new sqlite3.Database(dbPath);
+try {
+  fs.mkdirSync(dataDir, { recursive: true });
+} catch (e) {
+  // eslint-disable-next-line no-console
+  console.error("Veritabanı klasörü oluşturulamadı:", dataDir, e);
+  process.exit(1);
+}
+
+const db = new sqlite3.Database(
+  dbPath,
+  sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
+  (err) => {
+    if (err) {
+      // eslint-disable-next-line no-console
+      console.error("SQLite açılamadı:", dbPath, err.message);
+      process.exit(1);
+    }
+  }
+);
+
+db.on("error", (err) => {
+  // eslint-disable-next-line no-console
+  console.error("SQLite hatası:", err.message);
+});
 
 export function initDb() {
   const AUTH_USER = process.env.APP_USERNAME || "admin";
