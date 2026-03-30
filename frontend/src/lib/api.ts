@@ -1,6 +1,12 @@
 import { DailyTrendPoint, HourFilter, ProductionRow, Team, TopWorkerAnalytics, User, Worker, WorkerDailyAnalytics } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000/api";
+/** Üretimde Nginx aynı hostta /api → backend ise env gerekmez; tarayıcı /api kullanır. */
+function apiBase(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  if (typeof window !== "undefined") return "/api";
+  return "http://localhost:4000/api";
+}
 let authToken = "";
 
 export function setAuthToken(token: string) {
@@ -33,7 +39,7 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 }
 
 export async function login(payload: { username: string; password: string }): Promise<{ token: string; username: string; role: string }> {
-  const response = await fetch(`${API_BASE}/auth/login`, {
+  const response = await fetch(`${apiBase()}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -43,13 +49,13 @@ export async function login(payload: { username: string; password: string }): Pr
 }
 
 export async function getWorkerNames(): Promise<{ id: number; name: string }[]> {
-  const res = await apiFetch(`${API_BASE}/worker-names`, { cache: "no-store", headers: authHeaders() });
+  const res = await apiFetch(`${apiBase()}/worker-names`, { cache: "no-store", headers: authHeaders() });
   if (!res.ok) throw new Error("İsim listesi alınamadı");
   return res.json();
 }
 
 export async function addWorkerName(name: string): Promise<{ id: number; name: string }> {
-  const res = await apiFetch(`${API_BASE}/worker-names`, {
+  const res = await apiFetch(`${apiBase()}/worker-names`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ name })
@@ -59,7 +65,7 @@ export async function addWorkerName(name: string): Promise<{ id: number; name: s
 }
 
 export async function updateWorkerName(id: number, name: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/worker-names/${id}`, {
+  const res = await apiFetch(`${apiBase()}/worker-names/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ name })
@@ -68,18 +74,18 @@ export async function updateWorkerName(id: number, name: string): Promise<void> 
 }
 
 export async function deleteWorkerName(id: number): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/worker-names/${id}`, { method: "DELETE", headers: authHeaders() });
+  const res = await apiFetch(`${apiBase()}/worker-names/${id}`, { method: "DELETE", headers: authHeaders() });
   if (!res.ok) throw new Error("Silinemedi");
 }
 
 export async function getWorkers(): Promise<Worker[]> {
-  const response = await apiFetch(`${API_BASE}/workers`, { cache: "no-store", headers: authHeaders() });
+  const response = await apiFetch(`${apiBase()}/workers`, { cache: "no-store", headers: authHeaders() });
   if (!response.ok) throw new Error("Çalışanlar alınamadı");
   return response.json();
 }
 
 export async function addWorker(payload: { name: string; team: Team; process: string; addedDate?: string }): Promise<Worker> {
-  const response = await apiFetch(`${API_BASE}/workers`, {
+  const response = await apiFetch(`${apiBase()}/workers`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload)
@@ -89,7 +95,7 @@ export async function addWorker(payload: { name: string; team: Team; process: st
 }
 
 export async function updateWorker(workerId: number, payload: { process: string }): Promise<void> {
-  const response = await apiFetch(`${API_BASE}/workers/${workerId}`, {
+  const response = await apiFetch(`${apiBase()}/workers/${workerId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload)
@@ -98,7 +104,7 @@ export async function updateWorker(workerId: number, payload: { process: string 
 }
 
 export async function removeWorker(workerId: number, date: string): Promise<void> {
-  const response = await apiFetch(`${API_BASE}/workers/${workerId}?date=${encodeURIComponent(date)}`, {
+  const response = await apiFetch(`${apiBase()}/workers/${workerId}?date=${encodeURIComponent(date)}`, {
     method: "DELETE",
     headers: { ...authHeaders() }
   });
@@ -106,7 +112,7 @@ export async function removeWorker(workerId: number, date: string): Promise<void
 }
 
 export async function getProduction(date: string): Promise<ProductionRow[]> {
-  const response = await apiFetch(`${API_BASE}/production?date=${date}`, { cache: "no-store", headers: authHeaders() });
+  const response = await apiFetch(`${apiBase()}/production?date=${date}`, { cache: "no-store", headers: authHeaders() });
   if (!response.ok) throw new Error("Üretim verisi alınamadı");
   return response.json();
 }
@@ -114,7 +120,7 @@ export async function getProduction(date: string): Promise<ProductionRow[]> {
 export type DayProductMeta = { productName: string; productModel: string };
 
 export async function getDayProductMeta(date: string): Promise<DayProductMeta> {
-  const response = await apiFetch(`${API_BASE}/production/day-meta?date=${encodeURIComponent(date)}`, {
+  const response = await apiFetch(`${apiBase()}/production/day-meta?date=${encodeURIComponent(date)}`, {
     cache: "no-store",
     headers: authHeaders(),
   });
@@ -127,7 +133,7 @@ export async function saveDayProductMeta(payload: {
   productName: string;
   productModel: string;
 }): Promise<DayProductMeta> {
-  const response = await apiFetch(`${API_BASE}/production/day-meta`, {
+  const response = await apiFetch(`${apiBase()}/production/day-meta`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
@@ -144,7 +150,7 @@ export async function saveProduction(payload: {
   t1600: number;
   t1830: number;
 }): Promise<void> {
-  const response = await apiFetch(`${API_BASE}/production`, {
+  const response = await apiFetch(`${apiBase()}/production`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload)
@@ -162,7 +168,7 @@ export async function saveProductionBulk(payload: {
     t1830: number;
   }>;
 }): Promise<void> {
-  const response = await apiFetch(`${API_BASE}/production/bulk`, {
+  const response = await apiFetch(`${apiBase()}/production/bulk`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload)
@@ -178,7 +184,7 @@ export async function getRangeStageTotals(startDate: string, endDate: string): P
   BITIM: number;
 }> {
   const query = new URLSearchParams({ startDate, endDate }).toString();
-  const response = await apiFetch(`${API_BASE}/production/range-totals?${query}`, {
+  const response = await apiFetch(`${apiBase()}/production/range-totals?${query}`, {
     cache: "no-store",
     headers: authHeaders()
   });
@@ -195,7 +201,7 @@ export async function getHedefTakipStageTotals(startDate: string, endDate: strin
   BITIM: number;
 }> {
   const query = new URLSearchParams({ startDate, endDate }).toString();
-  const response = await apiFetch(`${API_BASE}/production/hedef-stage-totals?${query}`, {
+  const response = await apiFetch(`${apiBase()}/production/hedef-stage-totals?${query}`, {
     cache: "no-store",
     headers: authHeaders(),
   });
@@ -218,7 +224,7 @@ export async function getTopWorkersAnalytics(params: {
     limit: String(params.limit ?? 20)
   }).toString();
 
-  const response = await apiFetch(`${API_BASE}/analytics/top-workers?${query}`, {
+  const response = await apiFetch(`${apiBase()}/analytics/top-workers?${query}`, {
     cache: "no-store",
     headers: authHeaders()
   });
@@ -238,7 +244,7 @@ export async function getWorkerHourlyBreakdown(params: {
     startDate: params.startDate,
     endDate: params.endDate,
   }).toString();
-  const res = await apiFetch(`${API_BASE}/analytics/worker-hourly?${query}`, {
+  const res = await apiFetch(`${apiBase()}/analytics/worker-hourly?${query}`, {
     cache: "no-store",
     headers: authHeaders(),
   });
@@ -259,7 +265,7 @@ export async function getDailyTrendAnalytics(params: {
     hour: params.hour ?? ""
   }).toString();
 
-  const response = await apiFetch(`${API_BASE}/analytics/daily-trend?${query}`, {
+  const response = await apiFetch(`${apiBase()}/analytics/daily-trend?${query}`, {
     cache: "no-store",
     headers: authHeaders()
   });
@@ -280,7 +286,7 @@ export async function getWorkerDailyAnalytics(params: {
     hour: params.hour ?? ""
   }).toString();
 
-  const response = await apiFetch(`${API_BASE}/analytics/worker-daily?${query}`, {
+  const response = await apiFetch(`${apiBase()}/analytics/worker-daily?${query}`, {
     cache: "no-store",
     headers: authHeaders()
   });
@@ -289,13 +295,13 @@ export async function getWorkerDailyAnalytics(params: {
 }
 
 export async function getUsers(): Promise<User[]> {
-  const response = await apiFetch(`${API_BASE}/users`, { cache: "no-store", headers: authHeaders() });
+  const response = await apiFetch(`${apiBase()}/users`, { cache: "no-store", headers: authHeaders() });
   if (!response.ok) throw new Error("Kullanıcılar alınamadı");
   return response.json();
 }
 
 export async function addUser(payload: { username: string; password: string }): Promise<User> {
-  const response = await apiFetch(`${API_BASE}/users`, {
+  const response = await apiFetch(`${apiBase()}/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload)
@@ -305,7 +311,7 @@ export async function addUser(payload: { username: string; password: string }): 
 }
 
 export async function deleteUser(userId: number): Promise<void> {
-  const response = await apiFetch(`${API_BASE}/users/${userId}`, {
+  const response = await apiFetch(`${apiBase()}/users/${userId}`, {
     method: "DELETE",
     headers: { ...authHeaders() }
   });
@@ -313,7 +319,7 @@ export async function deleteUser(userId: number): Promise<void> {
 }
 
 export async function resetUserPassword(userId: number, password: string): Promise<void> {
-  const response = await apiFetch(`${API_BASE}/users/${userId}/reset-password`, {
+  const response = await apiFetch(`${apiBase()}/users/${userId}/reset-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ password })
@@ -352,7 +358,7 @@ export async function getWorkerComparison(params: {
     startDate: params.startDate,
     endDate: params.endDate,
   }).toString();
-  const res = await apiFetch(`${API_BASE}/analytics/worker-comparison?${query}`, {
+  const res = await apiFetch(`${apiBase()}/analytics/worker-comparison?${query}`, {
     cache: "no-store",
     headers: authHeaders(),
   });
