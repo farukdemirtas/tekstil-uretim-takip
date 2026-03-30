@@ -34,7 +34,7 @@ import {
 const app = express();
 const PORT = process.env.PORT || 4000;
 const AUTH_USER = process.env.APP_USERNAME || "admin";
-const AUTH_PASS = process.env.APP_PASSWORD || "1234";
+const AUTH_PASS = process.env.APP_PASSWORD || "admin55";
 // Token secret (eski sürümde "token sabiti" gibi kullanılıyordu).
 // Burada signing secret olarak kullanıyoruz.
 const AUTH_TOKEN = process.env.APP_TOKEN || "yeva-local-token";

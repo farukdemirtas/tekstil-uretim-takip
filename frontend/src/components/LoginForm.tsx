@@ -8,8 +8,8 @@ type LoginFormProps = {
 };
 
 export default function LoginForm({ onLogin }: LoginFormProps) {
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("1234");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

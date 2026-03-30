@@ -36,7 +36,7 @@ db.on("error", (err) => {
 
 export function initDb() {
   const AUTH_USER = process.env.APP_USERNAME || "admin";
-  const AUTH_PASS = process.env.APP_PASSWORD || "1234";
+  const AUTH_PASS = process.env.APP_PASSWORD || "admin55";
 
   db.serialize(() => {
     db.run("PRAGMA foreign_keys = ON");

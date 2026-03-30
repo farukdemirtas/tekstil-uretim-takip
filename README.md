@@ -112,11 +112,6 @@ npm run dev:frontend
 - `production_entries` tablosunda `worker_id + production_date` benzersizdir.
 - SQLite dosyasi: `backend/data/production.db`
 
-## Giris Bilgileri (Varsayilan)
-
-- Kullanici adi: `admin`
-- Sifre: `1234`
-
 Isterseniz backend icin ortam degiskenleri tanimlayarak degistirebilirsiniz:
 
 - `APP_USERNAME`
