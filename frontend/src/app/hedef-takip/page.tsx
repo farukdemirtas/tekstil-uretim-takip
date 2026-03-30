@@ -285,7 +285,7 @@ export default function HedefTakip() {
         <ProgressCard label="Sol Ön"        value={solOn} percent={solOnPercent} color="from-sky-500 to-sky-600"         target={target} remaining={solOnKalan} />
         <ProgressCard label="Yaka Hazırlık" value={yaka}  percent={yakaPercent}  color="from-violet-500 to-violet-600"  target={target} remaining={yakaKalan}  />
         <ProgressCard label="Arka Hazırlık" value={arka}  percent={arkaPercent}  color="from-amber-500 to-amber-600"    target={target} remaining={arkaKalan}  />
-        <ProgressCard label="Bitim"         value={bitim} percent={bitimPercent} color="from-rose-500 to-rose-600"      target={target} remaining={bitimKalan} />
+        <ProgressCard label="Bitim (DÜĞME)" value={bitim} percent={bitimPercent} color="from-rose-500 to-rose-600"      target={target} remaining={bitimKalan} />
 
         {/* Genel İlerleme */}
         <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -293,7 +293,7 @@ export default function HedefTakip() {
             <div>
               <h2 className="text-base font-semibold">Genel İlerleme</h2>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                Genel ilerleme = min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim)
+                Genel ilerleme = min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim). Bitim aşaması BITIM + DÜĞME prosesine göre hesaplanır.
               </p>
             </div>
             <div className="text-right">

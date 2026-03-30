@@ -1,47 +1,62 @@
 "use client";
 
 import { useMemo } from "react";
-import { ProductionRow, Team } from "@/lib/types";
 
-type AdminPanelProps = {
-  rows: ProductionRow[];
+/** `/api/production/hedef-stage-totals` ile Hedef Takip ekranında kullanılan aynı aşama toplamları */
+export type HedefStageTotals = {
+  SAG_ON: number;
+  SOL_ON: number;
+  YAKA_HAZIRLIK: number;
+  ARKA_HAZIRLIK: number;
+  BITIM: number;
 };
 
-export default function AdminPanel({ rows }: AdminPanelProps) {
-  const stats = useMemo(() => {
-    const workerCount = rows.length;
-    const total = rows.reduce((acc, row) => acc + row.t1000 + row.t1300 + row.t1600 + row.t1830, 0);
-    const teamTotals = rows.reduce<Record<Team, number>>(
-      (acc, row) => {
-        const rowTotal = row.t1000 + row.t1300 + row.t1600 + row.t1830;
-        acc[row.team] += rowTotal;
-        return acc;
-      },
-      { SAG_ON: 0, SOL_ON: 0, YAKA_HAZIRLIK: 0, ARKA_HAZIRLIK: 0, BITIM: 0, ADET: 0 }
-    );
-    return { workerCount, total, teamTotals };
-  }, [rows]);
+type AdminPanelProps = {
+  workerCount: number;
+  stageTotals: HedefStageTotals;
+};
 
-  const tiles = [
-    { label: "Çalışan",        value: stats.workerCount,              accent: "text-slate-700 dark:text-slate-200" },
-    { label: "Günlük Toplam",  value: stats.total,                    accent: "text-emerald-700 dark:text-emerald-300" },
-    { label: "Sağ Ön",         value: stats.teamTotals.SAG_ON,        accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Sol Ön",         value: stats.teamTotals.SOL_ON,        accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Yaka Hazırlık",  value: stats.teamTotals.YAKA_HAZIRLIK, accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Arka Hazırlık",  value: stats.teamTotals.ARKA_HAZIRLIK, accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Bitim",          value: stats.teamTotals.BITIM,         accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Adet",           value: stats.teamTotals.ADET,          accent: "text-slate-600 dark:text-slate-300" },
+export default function AdminPanel({ workerCount, stageTotals }: AdminPanelProps) {
+  const genelTamamlanan = useMemo(
+    () =>
+      Math.min(
+        stageTotals.SAG_ON,
+        stageTotals.SOL_ON,
+        stageTotals.YAKA_HAZIRLIK,
+        stageTotals.ARKA_HAZIRLIK,
+        stageTotals.BITIM
+      ),
+    [stageTotals]
+  );
+
+  const tiles: Array<{ label: string; value: number; accent: string; title?: string }> = [
+    { label: "Çalışan", value: workerCount, accent: "text-slate-700 dark:text-slate-200" },
+    {
+      label: "Genel tamamlanan",
+      value: genelTamamlanan,
+      accent: "text-emerald-700 dark:text-emerald-300",
+      title: "Hedef Takip ile aynı: min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim)",
+    },
+    { label: "Sağ Ön (SAĞ KOL ÇIMA)", value: stageTotals.SAG_ON, accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Sol Ön (SOL KOL ÇIMA)", value: stageTotals.SOL_ON, accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Yaka (YAKA İÇ ÇIMA)", value: stageTotals.YAKA_HAZIRLIK, accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Arka (ARKA KOL ÇIMA ÷2)", value: stageTotals.ARKA_HAZIRLIK, accent: "text-slate-600 dark:text-slate-300" },
+    { label: "Bitim (DÜĞME)", value: stageTotals.BITIM, accent: "text-slate-600 dark:text-slate-300" },
   ];
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 md:p-4">
-      <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200 md:text-base">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-200 md:text-base">
         Günlük Özet
       </h2>
+      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+        Hedef Takip ile aynı formül: belirli prosesler, Arka toplamı yarıya bölünür, Bitim BITIM + DÜĞME; genel = en düşük aşama.
+      </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:gap-3">
-        {tiles.map(({ label, value, accent }) => (
+        {tiles.map(({ label, value, accent, title }) => (
           <div
             key={label}
+            title={title}
             className="flex flex-col rounded-lg bg-slate-50 p-2.5 dark:bg-slate-700/60 md:p-3"
           >
             <span className="truncate text-xs text-slate-500 dark:text-slate-400">{label}</span>

@@ -391,7 +391,7 @@ export function getRangeStageTotals(startDate, endDate) {
   });
 }
 
-/** Hedef Takip ekranı: takım + belirli proseslere göre aşama adetleri */
+/** Hedef Takip ekranı: takım + belirli proseslere göre aşama adetleri (Bitim = BITIM + DÜĞME) */
 export function getHedefTakipStageTotals(startDate, endDate) {
   const line =
     "COALESCE(p.t1000, 0) + COALESCE(p.t1300, 0) + COALESCE(p.t1600, 0) + COALESCE(p.t1830, 0)";
@@ -403,7 +403,7 @@ export function getHedefTakipStageTotals(startDate, endDate) {
         COALESCE(SUM(CASE WHEN w.team = 'SOL_ON' AND w.process = 'SOL KOL ÇIMA' THEN ${line} ELSE 0 END), 0) AS sol_on,
         COALESCE(SUM(CASE WHEN w.team = 'YAKA_HAZIRLIK' AND w.process = 'YAKA İÇ ÇIMA' THEN ${line} ELSE 0 END), 0) AS yaka,
         COALESCE(SUM(CASE WHEN w.team = 'ARKA_HAZIRLIK' AND w.process = 'ARKA KOL ÇIMA' THEN ${line} ELSE 0 END), 0) AS arka_raw,
-        COALESCE(SUM(CASE WHEN w.team = 'BITIM' AND w.process = 'YIKAMA TALİMATI' THEN ${line} ELSE 0 END), 0) AS bitim
+        COALESCE(SUM(CASE WHEN w.team = 'BITIM' AND w.process = 'DÜĞME' THEN ${line} ELSE 0 END), 0) AS bitim
       FROM production_entries p
       JOIN workers w ON w.id = p.worker_id
       WHERE p.production_date BETWEEN ? AND ?

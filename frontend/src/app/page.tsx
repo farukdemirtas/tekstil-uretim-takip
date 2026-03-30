@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import AdminPanel from "@/components/AdminPanel";
+import AdminPanel, { type HedefStageTotals } from "@/components/AdminPanel";
 import LoginForm from "@/components/LoginForm";
 import ProductionTable from "@/components/ProductionTable";
 import WorkerForm from "@/components/WorkerForm";
@@ -42,6 +42,13 @@ export default function HomePage() {
   const [role, setRole] = useState<string>("data_entry");
   const [selectedDate, setSelectedDate] = useState<string>(getToday());
   const [rows, setRows] = useState<ProductionRow[]>([]);
+  const [hedefStageTotals, setHedefStageTotals] = useState<HedefStageTotals>({
+    SAG_ON: 0,
+    SOL_ON: 0,
+    YAKA_HAZIRLIK: 0,
+    ARKA_HAZIRLIK: 0,
+    BITIM: 0,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [productName, setProductName] = useState("");
@@ -69,13 +76,21 @@ export default function HomePage() {
     setError(null);
     setProductMetaSaved(false);
     try {
-      const [data, meta] = await Promise.all([
+      const [data, meta, hedef] = await Promise.all([
         getProduction(date),
         getDayProductMeta(date).catch(() => ({ productName: "", productModel: "" })),
+        getHedefTakipStageTotals(date, date).catch(() => ({
+          SAG_ON: 0,
+          SOL_ON: 0,
+          YAKA_HAZIRLIK: 0,
+          ARKA_HAZIRLIK: 0,
+          BITIM: 0,
+        })),
       ]);
       setRows(data);
       setProductName(meta.productName);
       setProductModel(meta.productModel);
+      setHedefStageTotals(hedef);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu");
     } finally {
@@ -169,11 +184,26 @@ export default function HomePage() {
       t1600: target.t1600,
       t1830: target.t1830
     });
+
+    try {
+      const ht = await getHedefTakipStageTotals(selectedDate, selectedDate);
+      setHedefStageTotals(ht);
+    } catch {
+      /* özet güncellenemezse sessiz geç */
+    }
   }
 
-  const dailyTotal = useMemo(
-    () => rows.reduce((acc, row) => acc + row.t1000 + row.t1300 + row.t1600 + row.t1830, 0),
-    [rows]
+  /** Hedef Takip ile aynı: min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim) */
+  const genelTamamlanan = useMemo(
+    () =>
+      Math.min(
+        hedefStageTotals.SAG_ON,
+        hedefStageTotals.SOL_ON,
+        hedefStageTotals.YAKA_HAZIRLIK,
+        hedefStageTotals.ARKA_HAZIRLIK,
+        hedefStageTotals.BITIM
+      ),
+    [hedefStageTotals]
   );
 
   function handleExportExcel() {
@@ -241,7 +271,7 @@ export default function HomePage() {
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:p-4">
-        {/* Tarih + Günlük Toplam */}
+        {/* Tarih + genel tamamlanan (Hedef Takip formülü) */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <label htmlFor="date" className="text-sm font-medium">Tarih</label>
@@ -253,8 +283,11 @@ export default function HomePage() {
               className="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700"
             />
           </div>
-          <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-            Günlük Toplam: {dailyTotal}
+          <div
+            className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
+            title="Hedef Takip formülü: min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim)"
+          >
+            Genel tamamlanan: {genelTamamlanan}
           </div>
         </div>
 
@@ -364,7 +397,7 @@ export default function HomePage() {
         />
       )}
 
-      <AdminPanel rows={rows} />
+      <AdminPanel workerCount={rows.length} stageTotals={hedefStageTotals} />
     </main>
   );
 }

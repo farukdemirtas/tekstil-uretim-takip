@@ -53,6 +53,18 @@ const TIME_FIELDS = [
   { key: "t1830" as const, label: "18:30" },
 ];
 
+/** Veri 0 iken kutucukta boş göster; girişi kolaylaştırır (DB/API yine 0). */
+function cellInputValue(n: number): string {
+  return n === 0 ? "" : String(n);
+}
+
+function parseTimeCell(raw: string): number {
+  if (raw === "") return 0;
+  const n = Number.parseInt(raw, 10);
+  if (Number.isNaN(n) || n < 0) return 0;
+  return n;
+}
+
 function teamLabel(team: Team) {
   if (team === "SAG_ON")        return "SAĞ ÖN";
   if (team === "SOL_ON")        return "SOL ÖN";
@@ -165,8 +177,8 @@ export default function ProductionTable({
                           <input
                             type="number"
                             min={0}
-                            value={row[key]}
-                            onChange={(e) => onCellChange(row.workerId, key, Number(e.target.value) || 0)}
+                            value={cellInputValue(row[key])}
+                            onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
                             className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-right outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-300"
                           />
                         </td>
@@ -266,8 +278,8 @@ export default function ProductionTable({
                           type="number"
                           inputMode="numeric"
                           min={0}
-                          value={row[key]}
-                          onChange={(e) => onCellChange(row.workerId, key, Number(e.target.value) || 0)}
+                          value={cellInputValue(row[key])}
+                          onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
                           className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none focus:text-blue-600 dark:focus:text-blue-300"
                         />
                       </div>
