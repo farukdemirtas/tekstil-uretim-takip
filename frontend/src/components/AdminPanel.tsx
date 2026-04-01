@@ -46,12 +46,9 @@ export default function AdminPanel({ workerCount, stageTotals }: AdminPanelProps
 
   return (
     <div className="surface-card">
-      <h2 className="mb-1 text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">
+      <h2 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">
         Günlük Özet
       </h2>
-      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-        Hedef Takip ile aynı formül: belirli prosesler, Arka toplamı yarıya bölünür, Bitim BITIM + DÜĞME; genel = en düşük aşama.
-      </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:gap-3">
         {tiles.map(({ label, value, accent, title }) => (
           <div

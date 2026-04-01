@@ -335,12 +335,12 @@ export default function HomePage() {
             </button>
           ) : null}
           {hasPermission("ekran1") ? (
-            <Link href="/ekran1" className="btn-nav">
+            <Link href="/ekran1" className="btn-nav" target="_blank" rel="noopener noreferrer">
               EKRAN1
             </Link>
           ) : null}
           {hasPermission("ekran2") ? (
-            <Link href="/ekran2" className="btn-nav">
+            <Link href="/ekran2" className="btn-nav" target="_blank" rel="noopener noreferrer">
               EKRAN2
             </Link>
           ) : null}
