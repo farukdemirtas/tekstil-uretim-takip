@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getWorkers, getWorkerComparison, setAuthToken } from "@/lib/api";
+import { hasPermission } from "@/lib/permissions";
 import type { WorkerComparisonData, WorkerCompStat } from "@/lib/api";
 import type { Worker } from "@/lib/types";
 
@@ -199,7 +200,10 @@ export default function KarsilastirmaPage() {
   /* Auth guard + load worker list */
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
-    if (!token) { window.location.href = "/"; return; }
+    if (!token || !hasPermission("karsilastirma")) {
+      window.location.href = "/";
+      return;
+    }
     setAuthToken(token);
     setIsReady(true);
     getWorkers()

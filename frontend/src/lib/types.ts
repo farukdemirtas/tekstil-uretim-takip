@@ -45,8 +45,20 @@ export type WorkerDailyAnalytics = {
 
 export type HourFilter = "" | "t1000" | "t1300" | "t1600" | "t1830";
 
+/** Sunucu ile aynı anahtarlar (JWT ve PATCH) */
+export type AppPermissions = {
+  analysis: boolean;
+  karsilastirma: boolean;
+  ayarlar: boolean;
+  hedefTakip: boolean;
+  ekran1: boolean;
+  ekran2: boolean;
+};
+
 export type User = {
   id: number;
   username: string;
+  role: string;
   created_at?: string;
+  permissions?: AppPermissions;
 };

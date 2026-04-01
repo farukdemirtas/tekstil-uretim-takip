@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { addWorkerName, deleteWorkerName, getWorkerNames, setAuthToken, updateWorkerName } from "@/lib/api";
+import { hasPermission } from "@/lib/permissions";
 
 type WorkerName = { id: number; name: string };
 
@@ -23,8 +24,10 @@ export default function AyarlarPage() {
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
-    const role  = window.localStorage.getItem("auth_role");
-    if (!token || role !== "admin") { window.location.href = "/"; return; }
+    if (!token || !hasPermission("ayarlar")) {
+      window.location.href = "/";
+      return;
+    }
     setAuthToken(token);
     void load();
   }, []);

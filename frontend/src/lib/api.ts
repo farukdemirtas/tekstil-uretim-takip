@@ -1,4 +1,5 @@
-import { DailyTrendPoint, HourFilter, ProductionRow, Team, TopWorkerAnalytics, User, Worker, WorkerDailyAnalytics } from "./types";
+import { AppPermissions, DailyTrendPoint, HourFilter, ProductionRow, Team, TopWorkerAnalytics, User, Worker, WorkerDailyAnalytics } from "./types";
+import { clearStoredPermissions } from "./permissions";
 
 /**
  * Geliştirme: tarayıcıda her zaman `/api` — `next.config` rewrite ile backend (varsayılan 127.0.0.1:4000).
@@ -35,6 +36,7 @@ function handleUnauthorized() {
     window.localStorage.removeItem("auth_token");
     window.localStorage.removeItem("auth_user");
     window.localStorage.removeItem("auth_role");
+    clearStoredPermissions();
     window.location.href = "/";
   }
 }
@@ -49,7 +51,10 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   return res;
 }
 
-export async function login(payload: { username: string; password: string }): Promise<{ token: string; username: string; role: string }> {
+export async function login(payload: {
+  username: string;
+  password: string;
+}): Promise<{ token: string; username: string; role: string; permissions?: AppPermissions }> {
   const response = await fetch(`${apiBase()}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -336,6 +341,20 @@ export async function resetUserPassword(userId: number, password: string): Promi
     body: JSON.stringify({ password })
   });
   if (!response.ok) throw new Error("Şifre sıfırlanamadı");
+}
+
+export async function updateUserPermissions(userId: number, permissions: AppPermissions): Promise<AppPermissions> {
+  const response = await apiFetch(`${apiBase()}/users/${userId}/permissions`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(permissions),
+  });
+  if (!response.ok) {
+    const d = (await response.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Yetkiler güncellenemedi");
+  }
+  const data = (await response.json()) as { permissions: AppPermissions };
+  return data.permissions;
 }
 
 export type WorkerCompStat = {

@@ -22,14 +22,17 @@ import {
   getWorkerDailyAnalytics,
   createUser,
   deleteUser,
+  getUserById,
   getUsers,
   resetUserPassword,
+  updateUserPermissions,
   verifyUserPassword,
   getTopWorkersAnalytics,
   getWorkers,
   upsertEntriesBulk,
   upsertEntry
 } from "./queries.js";
+import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -91,6 +94,28 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+function requirePermission(key) {
+  return (req, res, next) => {
+    const u = req.user;
+    if (!u) return res.status(403).json({ message: "Yetersiz yetki" });
+    if (u.role === "admin") return next();
+    const p = u.permissions || {};
+    if (p[key]) return next();
+    return res.status(403).json({ message: "Yetersiz yetki" });
+  };
+}
+
+function requireAnyPermission(keys) {
+  return (req, res, next) => {
+    const u = req.user;
+    if (!u) return res.status(403).json({ message: "Yetersiz yetki" });
+    if (u.role === "admin") return next();
+    const p = u.permissions || {};
+    if (keys.some((k) => p[k])) return next();
+    return res.status(403).json({ message: "Yetersiz yetki" });
+  };
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -101,11 +126,12 @@ app.post("/api/auth/login", (req, res) => {
     .then((user) => {
       if (!user) return res.status(401).json({ message: "Kullanıcı adı veya şifre hatalı" });
       const exp = Date.now() + 1000 * 60 * 60 * 24 * 30; // 30 gün
-      const payload = { id: user.id, username: user.username, role: user.role, exp };
+      const permissions = normalizePermissions(user.permissions, user.role);
+      const payload = { id: user.id, username: user.username, role: user.role, permissions, exp };
       const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
       const sig = createHmac("sha256", TOKEN_SECRET).update(payloadB64).digest("hex");
       const token = `v1.${payloadB64}.${sig}`;
-      return res.json({ token, username: user.username, role: user.role });
+      return res.json({ token, username: user.username, role: user.role, permissions });
     })
     .catch(() => res.status(500).json({ message: "Giriş doğrulanamadı" }));
 });
@@ -113,7 +139,15 @@ app.post("/api/auth/login", (req, res) => {
 app.get("/api/users", requireAdmin, async (_req, res) => {
   try {
     const users = await getUsers();
-    res.json(users);
+    res.json(
+      users.map((u) => ({
+        id: u.id,
+        username: u.username,
+        role: u.role,
+        created_at: u.created_at,
+        permissions: normalizePermissions(u.permissions, u.role),
+      }))
+    );
   } catch (error) {
     res.status(500).json({ message: "Kullanıcılar alınamadı", error: String(error) });
   }
@@ -156,6 +190,27 @@ app.post("/api/users/:id/reset-password", requireAdmin, async (req, res) => {
   }
 });
 
+app.patch("/api/users/:id/permissions", requireAdmin, async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!userId) return res.status(400).json({ message: "Geçersiz kullanıcı id" });
+
+  try {
+    const row = await getUserById(userId);
+    if (!row) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+    if (row.role !== "data_entry") {
+      return res.status(400).json({ message: "Yönetici hesaplarının yetkileri değiştirilemez" });
+    }
+    const current = normalizePermissions(row.permissions, row.role);
+    const merged = mergePermissionsPatch(current, req.body || {});
+    const json = permissionsJsonForDb(merged);
+    const result = await updateUserPermissions({ userId, permissionsJson: json });
+    if (!result.updated) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+    res.json({ ok: true, permissions: merged });
+  } catch (error) {
+    res.status(500).json({ message: "Yetkiler güncellenemedi", error: String(error) });
+  }
+});
+
 app.get("/api/workers", async (_req, res) => {
   try {
     const workers = await getWorkers();
@@ -171,7 +226,7 @@ app.get("/api/worker-names", requireAuth, async (req, res) => {
   catch (e) { res.status(500).json({ message: String(e) }); }
 });
 
-app.post("/api/worker-names", requireAdmin, async (req, res) => {
+app.post("/api/worker-names", requirePermission("ayarlar"), async (req, res) => {
   const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ message: "İsim boş olamaz" });
   try { res.status(201).json(await addWorkerName(name)); }
@@ -182,7 +237,7 @@ app.post("/api/worker-names", requireAdmin, async (req, res) => {
   }
 });
 
-app.put("/api/worker-names/:id", requireAdmin, async (req, res) => {
+app.put("/api/worker-names/:id", requirePermission("ayarlar"), async (req, res) => {
   const id = Number(req.params.id);
   const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ message: "İsim boş olamaz" });
@@ -193,7 +248,7 @@ app.put("/api/worker-names/:id", requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ message: String(e) }); }
 });
 
-app.delete("/api/worker-names/:id", requireAdmin, async (req, res) => {
+app.delete("/api/worker-names/:id", requirePermission("ayarlar"), async (req, res) => {
   const id = Number(req.params.id);
   try {
     const r = await deleteWorkerName(id);
@@ -287,7 +342,7 @@ app.get("/api/production/hedef-stage-totals", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/analytics/worker-comparison", requireAuth, async (req, res) => {
+app.get("/api/analytics/worker-comparison", requirePermission("karsilastirma"), async (req, res) => {
   const { worker1, worker2, startDate, endDate } = req.query;
   if (!worker1 || !worker2 || !startDate || !endDate) {
     return res.status(400).json({ message: "worker1, worker2, startDate ve endDate zorunlu" });
@@ -308,7 +363,7 @@ app.get("/api/analytics/worker-comparison", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/analytics/worker-hourly", requireAuth, async (req, res) => {
+app.get("/api/analytics/worker-hourly", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
   const { workerId, startDate, endDate } = req.query;
   if (!workerId || !startDate || !endDate) {
     return res.status(400).json({ message: "workerId, startDate ve endDate zorunlu" });
@@ -365,7 +420,7 @@ app.get("/api/production", async (req, res) => {
   }
 });
 
-app.get("/api/analytics/top-workers", requireAdmin, async (req, res) => {
+app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
   const { startDate, endDate, team = "", limit = "20", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
@@ -392,7 +447,7 @@ app.get("/api/analytics/top-workers", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/analytics/daily-trend", requireAdmin, async (req, res) => {
+app.get("/api/analytics/daily-trend", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
   const { startDate, endDate, team = "", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
@@ -417,7 +472,7 @@ app.get("/api/analytics/daily-trend", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/analytics/worker-daily", requireAdmin, async (req, res) => {
+app.get("/api/analytics/worker-daily", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
   const { startDate, endDate, team = "", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });

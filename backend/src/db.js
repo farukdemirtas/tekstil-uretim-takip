@@ -223,6 +223,19 @@ export function initDb() {
     // Admin kullanıcısının rolünü admin yap.
     db.run("UPDATE users SET role = 'admin' WHERE username = ?", [AUTH_USER], () => {});
 
+    db.run(
+      "ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'",
+      (permErr) => {
+        if (permErr) {
+          const msg = String(permErr.message || permErr);
+          if (!msg.toLowerCase().includes("duplicate column name")) {
+            // eslint-disable-next-line no-console
+            console.error("DB migration (users.permissions) error:", msg);
+          }
+        }
+      }
+    );
+
     // Bootstrap admin kullanıcısı (tablo boşsa)
     db.get("SELECT 1 FROM users WHERE username = ? LIMIT 1", [AUTH_USER], (err, row) => {
       if (err) return;

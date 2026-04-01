@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getHedefTakipStageTotals, setAuthToken } from "@/lib/api";
+import { hasPermission } from "@/lib/permissions";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
 const AUTO_REFRESH_MS = 30_000;
@@ -50,9 +51,12 @@ export default function HedefTakip() {
 
   /* ─── Sayfa yüklenince localStorage'dan ayarları geri yükle ─── */
   useEffect(() => {
-    /* Auth token'ı modüle tanıt */
     const token = window.localStorage.getItem("auth_token");
-    if (token) setAuthToken(token);
+    if (!token || !hasPermission("hedefTakip")) {
+      window.location.href = "/";
+      return;
+    }
+    setAuthToken(token);
 
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);

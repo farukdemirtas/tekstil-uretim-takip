@@ -20,6 +20,7 @@ import {
   setAuthToken,
   updateWorker,
 } from "@/lib/api";
+import { hasPermission, isAdminRole, persistPermissions, clearStoredPermissions } from "@/lib/permissions";
 import { ProductionRow, Team } from "@/lib/types";
 
 function getToday() {
@@ -56,7 +57,7 @@ export default function HomePage() {
   const [productMetaSaved, setProductMetaSaved] = useState(false);
   const router = useRouter();
 
-  const isAdmin = role === "admin";
+  const [, setPermTick] = useState(0);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -67,6 +68,7 @@ export default function HomePage() {
       setCurrentUser(username);
       if (storedRole) setRole(storedRole);
       setIsAuthenticated(true);
+      setPermTick((n) => n + 1);
     }
   }, []);
 
@@ -129,6 +131,12 @@ export default function HomePage() {
       window.localStorage.setItem("auth_role", result.role);
       setRole(result.role);
     }
+    if (result.permissions && typeof result.permissions === "object") {
+      persistPermissions(result.permissions);
+    } else {
+      clearStoredPermissions();
+    }
+    setPermTick((n) => n + 1);
     setCurrentUser(result.username);
     setIsAuthenticated(true);
     await loadDateData(selectedDate);
@@ -139,6 +147,7 @@ export default function HomePage() {
     window.localStorage.removeItem("auth_token");
     window.localStorage.removeItem("auth_user");
     window.localStorage.removeItem("auth_role");
+    clearStoredPermissions();
     setCurrentUser("");
     setRole("data_entry");
     setIsAuthenticated(false);
@@ -300,29 +309,41 @@ export default function HomePage() {
 
         {/* Aksiyon butonları — sarılabilir satır */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {isAdmin && (
-            <>
-              <Link href="/analysis" className="btn-nav">
-                Analiz
-              </Link>
-              <Link href="/karsilastirma" className="btn-nav">
-                Karşılaştırma
-              </Link>
-              <Link href="/users" className="btn-nav">
-                Kullanıcılar
-              </Link>
-              <Link href="/ayarlar" className="btn-nav">
-                Ayarlar
-              </Link>
-              <button
-                onClick={() => void pushToHedefTakip()}
-                className="btn-nav"
-                type="button"
-              >
-                Hedef Takip
-              </button>
-            </>
-          )}
+          {hasPermission("analysis") ? (
+            <Link href="/analysis" className="btn-nav">
+              Analiz
+            </Link>
+          ) : null}
+          {hasPermission("karsilastirma") ? (
+            <Link href="/karsilastirma" className="btn-nav">
+              Karşılaştırma
+            </Link>
+          ) : null}
+          {isAdminRole() ? (
+            <Link href="/users" className="btn-nav">
+              Kullanıcılar
+            </Link>
+          ) : null}
+          {hasPermission("ayarlar") ? (
+            <Link href="/ayarlar" className="btn-nav">
+              Ayarlar
+            </Link>
+          ) : null}
+          {hasPermission("hedefTakip") ? (
+            <button onClick={() => void pushToHedefTakip()} className="btn-nav" type="button">
+              Hedef Takip
+            </button>
+          ) : null}
+          {hasPermission("ekran1") ? (
+            <Link href="/ekran1" className="btn-nav">
+              EKRAN1
+            </Link>
+          ) : null}
+          {hasPermission("ekran2") ? (
+            <Link href="/ekran2" className="btn-nav">
+              EKRAN2
+            </Link>
+          ) : null}
           <button
             onClick={handleExportExcel}
             className="btn-nav"

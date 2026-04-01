@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getDailyTrendAnalytics, getTopWorkersAnalytics, getWorkerDailyAnalytics, getWorkerHourlyBreakdown, setAuthToken } from "@/lib/api";
+import { hasPermission } from "@/lib/permissions";
 import { rankTercileStyles } from "@/lib/rankTercile";
 import type { WorkerHourlyBreakdown } from "@/lib/api";
 import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
@@ -72,8 +73,7 @@ export default function AnalysisPage() {
   /* ── Kimlik doğrulama + ilk yükleme ── */
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
-    const role = window.localStorage.getItem("auth_role");
-    if (!token || role !== "admin") {
+    if (!token || !hasPermission("analysis")) {
       window.location.href = "/";
       return;
     }

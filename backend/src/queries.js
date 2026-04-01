@@ -1,5 +1,8 @@
 import db from "./db.js";
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from "crypto";
+import { DEFAULT_DATA_ENTRY_PERMISSIONS, permissionsJsonForDb } from "./permissions.js";
+
+const DEFAULT_PERMS_JSON = permissionsJsonForDb(DEFAULT_DATA_ENTRY_PERMISSIONS);
 
 function hashPassword(password, salt) {
   return pbkdf2Sync(password, salt, 310000, 64, "sha512").toString("hex");
@@ -540,10 +543,27 @@ export function getWorkerHourlyBreakdown({ workerId, startDate, endDate }) {
 
 export function getUsers() {
   return new Promise((resolve, reject) => {
-    db.all("SELECT id, username, role, created_at FROM users ORDER BY id DESC", [], (err, rows) => {
-      if (err) return reject(err);
-      resolve(rows);
-    });
+    db.all(
+      "SELECT id, username, role, created_at, IFNULL(permissions, '{}') AS permissions FROM users ORDER BY id DESC",
+      [],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows);
+      }
+    );
+  });
+}
+
+export function getUserById(userId) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      "SELECT id, username, role, IFNULL(permissions, '{}') AS permissions FROM users WHERE id = ? LIMIT 1",
+      [userId],
+      (err, row) => {
+        if (err) return reject(err);
+        resolve(row || null);
+      }
+    );
   });
 }
 
@@ -557,8 +577,8 @@ export function createUser({ username, password }) {
     const password_hash = hashPassword(String(password), salt);
 
     db.run(
-      "INSERT INTO users (username, password_hash, salt, role) VALUES (?, ?, ?, 'data_entry')",
-      [trimmed, password_hash, salt],
+      "INSERT INTO users (username, password_hash, salt, role, permissions) VALUES (?, ?, ?, 'data_entry', ?)",
+      [trimmed, password_hash, salt, DEFAULT_PERMS_JSON],
       function onInsert(err) {
         if (err) return reject(err);
         resolve({ id: this.lastID, username: trimmed, role: "data_entry" });
@@ -573,6 +593,19 @@ export function deleteUser(userId) {
       if (err) return reject(err);
       resolve({ deleted: this.changes > 0 });
     });
+  });
+}
+
+export function updateUserPermissions({ userId, permissionsJson }) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE users SET permissions = ? WHERE id = ? AND role = 'data_entry'",
+      [permissionsJson, userId],
+      function onUpdate(err) {
+        if (err) return reject(err);
+        resolve({ updated: this.changes > 0 });
+      }
+    );
   });
 }
 
@@ -600,7 +633,7 @@ export function verifyUserPassword({ username, password }) {
     if (!trimmed) return resolve(null);
 
     db.get(
-      "SELECT id, username, role, password_hash, salt FROM users WHERE username = ? LIMIT 1",
+      "SELECT id, username, role, password_hash, salt, IFNULL(permissions, '{}') AS permissions FROM users WHERE username = ? LIMIT 1",
       [trimmed],
       (err, row) => {
         if (err) return reject(err);
@@ -610,7 +643,12 @@ export function verifyUserPassword({ username, password }) {
         const ok = constantTimeEqual(incomingHash, row.password_hash);
         if (!ok) return resolve(null);
 
-        resolve({ id: row.id, username: row.username, role: row.role });
+        resolve({
+          id: row.id,
+          username: row.username,
+          role: row.role,
+          permissions: row.permissions,
+        });
       }
     );
   });

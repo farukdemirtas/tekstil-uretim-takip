@@ -7,6 +7,7 @@ import {
   getTopWorkersAnalytics,
   setAuthToken,
 } from "@/lib/api";
+import { hasPermission, isAdminRole } from "@/lib/permissions";
 import { rankTercileStyles } from "@/lib/rankTercile";
 import type { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics } from "@/lib/types";
 
@@ -285,7 +286,7 @@ function Ekran2TeamPanel({
 
 export default function Ekran2Page() {
   const [hasToken, setHasToken] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [canUseEkran2, setCanUseEkran2] = useState(false);
   const [phase, setPhase] = useState<Phase>("setup");
   const [startDate, setStartDate] = useState(todayStr());
   const [endDate, setEndDate] = useState(todayStr());
@@ -300,9 +301,8 @@ export default function Ekran2Page() {
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
-    const role = window.localStorage.getItem("auth_role");
     setHasToken(!!token);
-    setIsAdmin(role === "admin");
+    setCanUseEkran2(isAdminRole() || hasPermission("ekran2") || hasPermission("analysis"));
     if (token) setAuthToken(token);
 
     try {
@@ -313,7 +313,7 @@ export default function Ekran2Page() {
     }
 
     const stored = readStored();
-    if (stored && token && role === "admin") {
+    if (stored && token && (isAdminRole() || hasPermission("ekran2") || hasPermission("analysis"))) {
       setStartDate(stored.startDate);
       setEndDate(stored.endDate);
       setHourFilter(stored.hour);
@@ -354,15 +354,15 @@ export default function Ekran2Page() {
   );
 
   useEffect(() => {
-    if (phase !== "display" || !hasToken || !isAdmin) return;
+    if (phase !== "display" || !hasToken || !canUseEkran2) return;
     void fetchAll(false);
-  }, [phase, hasToken, isAdmin, fetchAll]);
+  }, [phase, hasToken, canUseEkran2, fetchAll]);
 
   useEffect(() => {
-    if (phase !== "display" || !hasToken || !isAdmin) return;
+    if (phase !== "display" || !hasToken || !canUseEkran2) return;
     const id = setInterval(() => void fetchAll(true), AUTO_REFRESH_MS);
     return () => clearInterval(id);
-  }, [phase, hasToken, isAdmin, fetchAll]);
+  }, [phase, hasToken, canUseEkran2, fetchAll]);
 
   const blockByKey = useMemo(() => {
     const m = new Map<Team, TeamBlockData>();
@@ -423,7 +423,7 @@ export default function Ekran2Page() {
         <p className="text-2xl font-semibold tracking-wide md:text-3xl">EKRAN2</p>
         <p className={`max-w-xl text-lg md:text-xl ${dark ? "text-slate-300" : "text-slate-600"}`}>
           Aşama bazlı analiz panosu için önce ana uygulamada giriş yapın. Veriler, Analiz ekranı ile aynı kaynaktan gelir
-          (yönetici hesabı gerekir).
+          (EKRAN2 veya analiz yetkisi gerekir).
         </p>
         <div className="flex flex-wrap justify-center gap-4">
           <Link
@@ -447,7 +447,7 @@ export default function Ekran2Page() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canUseEkran2) {
     return (
       <div
         className={`fixed inset-0 flex flex-col items-center justify-center gap-6 px-8 text-center ${
@@ -457,7 +457,7 @@ export default function Ekran2Page() {
         <div className="absolute right-4 top-4">{modeToggle}</div>
         <p className="text-2xl font-semibold md:text-3xl">EKRAN2</p>
         <p className={`max-w-xl text-lg md:text-xl ${dark ? "text-slate-300" : "text-slate-600"}`}>
-          Bu ekran analiz API kullanır. Lütfen yönetici hesabıyla giriş yapın.
+          Bu ekran için hesabınıza Analiz veya EKRAN2 yetkisi (veya yönetici) tanımlanmalıdır.
         </p>
         <Link
           href="/"

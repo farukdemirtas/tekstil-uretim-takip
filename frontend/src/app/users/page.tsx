@@ -1,9 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
-import { addUser, deleteUser, getUsers, resetUserPassword, setAuthToken } from "@/lib/api";
-import { User } from "@/lib/types";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { addUser, deleteUser, getUsers, resetUserPassword, setAuthToken, updateUserPermissions } from "@/lib/api";
+import { PERMISSION_ROWS } from "@/lib/permissions";
+import type { AppPermissions, User } from "@/lib/types";
+
+function emptyDraft(): AppPermissions {
+  return {
+    analysis: false,
+    karsilastirma: false,
+    ayarlar: false,
+    hedefTakip: false,
+    ekran1: false,
+    ekran2: false,
+  };
+}
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -14,19 +26,29 @@ export default function UsersPage() {
   const [newPassword, setNewPassword] = useState("");
 
   const [resetValue, setResetValue] = useState<Record<number, string>>({});
+  /** Satır bazlı taslak yetkiler (yalnızca data_entry) */
+  const [permDraft, setPermDraft] = useState<Record<number, AppPermissions>>({});
+  const [permSaving, setPermSaving] = useState<number | null>(null);
 
-  async function loadUsers() {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const result = await getUsers();
       setUsers(result);
+      const draft: Record<number, AppPermissions> = {};
+      for (const u of result) {
+        if (u.role === "data_entry" && u.permissions) {
+          draft[u.id] = { ...u.permissions };
+        }
+      }
+      setPermDraft(draft);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kullanıcılar yüklenemedi");
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -41,8 +63,7 @@ export default function UsersPage() {
     }
     setAuthToken(token);
     void loadUsers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadUsers]);
 
   async function handleAddUser(e: FormEvent) {
     e.preventDefault();
@@ -98,18 +119,54 @@ export default function UsersPage() {
     }
   }
 
+  function setPermKey(userId: number, key: keyof AppPermissions, value: boolean) {
+    setPermDraft((prev) => ({
+      ...prev,
+      [userId]: { ...(prev[userId] ?? emptyDraft()), [key]: value },
+    }));
+  }
+
+  async function handleSavePermissions(userId: number) {
+    const payload = permDraft[userId];
+    if (!payload) return;
+    setPermSaving(userId);
+    setError(null);
+    try {
+      await updateUserPermissions(userId, payload);
+      await loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Yetkiler kaydedilemedi");
+    } finally {
+      setPermSaving(null);
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-5 p-4 md:p-8">
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">Kullanıcılar</h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Kullanıcı ekleme, silme ve parola sıfırlama.</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              Kullanıcı ekleme, silme, parola sıfırlama ve <strong>veri girişi</strong> hesapları için ayrı ekran yetkileri.
+            </p>
           </div>
-          <Link href="/" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
+          <Link
+            href="/"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700"
+          >
             Üretim Ekranı
           </Link>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+        <h2 className="mb-2 text-base font-semibold">Yetkilendirme</h2>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          <strong>Yönetici</strong> hesapları tüm menülere ve API’lere erişir. <strong>Veri girişi</strong> kullanıcılarında aşağıdaki
+          kutularla ekran bazında izin verin. Değişikliklerin etkisi, ilgili kullanıcının <strong>bir sonraki girişinde</strong>{" "}
+          (yeni oturum / token) tam olarak uygulanır.
+        </p>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
@@ -117,11 +174,20 @@ export default function UsersPage() {
         <form onSubmit={handleAddUser} className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium">Kullanıcı adı</label>
-            <input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100" />
+            <input
+              value={newUsername}
+              onChange={(e) => setNewUsername(e.target.value)}
+              className="rounded-md border border-slate-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+            />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium">Şifre</label>
-            <input value={newPassword} type="password" onChange={(e) => setNewPassword(e.target.value)} className="rounded-md border border-slate-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100" />
+            <input
+              value={newPassword}
+              type="password"
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="rounded-md border border-slate-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+            />
           </div>
           <div className="flex items-end">
             <button className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700" type="submit">
@@ -129,9 +195,16 @@ export default function UsersPage() {
             </button>
           </div>
         </form>
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          Yeni kullanıcılar “veri girişi” rolüyle oluşur; varsayılan yetkiler sunucuda tanımlıdır, listeden düzenleyebilirsiniz.
+        </p>
       </section>
 
-      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">{error}</div>}
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
+          {error}
+        </div>
+      )}
 
       <section className="overflow-auto rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
         <h2 className="mb-3 text-base font-semibold">Kullanıcı Listesi</h2>
@@ -140,59 +213,106 @@ export default function UsersPage() {
         ) : users.length === 0 ? (
           <div className="text-sm text-slate-600 dark:text-slate-300">Kullanıcı bulunamadı.</div>
         ) : (
-          <table className="w-full min-w-[720px] border-collapse text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="px-2 py-2 text-left">ID</th>
-                <th className="px-2 py-2 text-left">Kullanıcı adı</th>
-                <th className="px-2 py-2 text-left">Oluşturulma</th>
-                <th className="px-2 py-2 text-left">İşlemler</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => {
-                const isAdmin = u.username === "admin";
-                return (
-                  <tr key={u.id} className="border-b border-slate-200 dark:border-slate-700">
-                    <td className="px-2 py-2">{u.id}</td>
-                    <td className="px-2 py-2">{u.username}</td>
-                    <td className="px-2 py-2 text-slate-600 dark:text-slate-300">{u.created_at ?? "-"}</td>
-                    <td className="px-2 py-2">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-6">
+            {users.map((u) => {
+              const isBootstrapAdmin = u.username === "admin";
+              const isRoleAdmin = u.role === "admin";
+              const draft = permDraft[u.id] ?? emptyDraft();
+
+              return (
+                <div
+                  key={u.id}
+                  className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-600 dark:bg-slate-900/40"
+                >
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs text-slate-500">#{u.id}</span>
+                        <span className="font-semibold">{u.username}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            isRoleAdmin
+                              ? "bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-200"
+                              : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                          }`}
+                        >
+                          {isRoleAdmin ? "Yönetici" : "Veri girişi"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Oluşturulma: {u.created_at ?? "—"}</p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <button
+                        className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+                        disabled={isBootstrapAdmin}
+                        onClick={() => void handleDeleteUser(u.id)}
+                        type="button"
+                      >
+                        Sil
+                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="password"
+                          value={resetValue[u.id] ?? ""}
+                          onChange={(e) => setResetValue((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                          placeholder="Yeni şifre"
+                          className="w-36 rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                        />
                         <button
-                          className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
-                          disabled={isAdmin}
-                          onClick={() => void handleDeleteUser(u.id)}
+                          className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700"
+                          onClick={() => void handleResetPassword(u.id)}
                           type="button"
                         >
-                          Sil
+                          Sıfırla
                         </button>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="password"
-                            value={resetValue[u.id] ?? ""}
-                            onChange={(e) => setResetValue((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                            placeholder="Yeni şifre"
-                            className="w-40 rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-                          />
-                          <button
-                            className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700"
-                            onClick={() => void handleResetPassword(u.id)}
-                            type="button"
-                          >
-                            Sıfırla
-                          </button>
-                        </div>
                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  </div>
+
+                  {isRoleAdmin ? (
+                    <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+                      Yöneticiler tüm yetkilere sahiptir; ayrıca kısıtlama uygulanmaz.
+                    </p>
+                  ) : (
+                    <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-600">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Ekran yetkileri
+                      </p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {PERMISSION_ROWS.map(({ key, label, description }) => (
+                          <label
+                            key={key}
+                            className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-white p-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={draft[key]}
+                              onChange={(e) => setPermKey(u.id, key, e.target.checked)}
+                            />
+                            <span>
+                              <span className="font-medium">{label}</span>
+                              <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{description}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={permSaving === u.id}
+                        onClick={() => void handleSavePermissions(u.id)}
+                        className="mt-3 rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50"
+                      >
+                        {permSaving === u.id ? "Kaydediliyor…" : "Yetkileri kaydet"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </section>
     </main>
   );
 }
-

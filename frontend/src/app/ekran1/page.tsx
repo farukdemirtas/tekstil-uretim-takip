@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getHedefTakipStageTotals, setAuthToken } from "@/lib/api";
+import { hasPermission } from "@/lib/permissions";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
 const EKRAN1_MODE_KEY = "ekran1_display_mode";
@@ -76,8 +77,12 @@ export default function Ekran1Page() {
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
-    setHasToken(!!token);
-    if (token) setAuthToken(token);
+    if (!token || !hasPermission("ekran1")) {
+      window.location.href = "/";
+      return;
+    }
+    setHasToken(true);
+    setAuthToken(token);
 
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
