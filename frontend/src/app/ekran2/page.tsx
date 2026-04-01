@@ -7,6 +7,7 @@ import {
   getTopWorkersAnalytics,
   setAuthToken,
 } from "@/lib/api";
+import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import { rankTercileStyles } from "@/lib/rankTercile";
 import type { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics } from "@/lib/types";
@@ -37,10 +38,6 @@ const TEAM_BLOCKS: { key: Team; label: string }[] = [
   { key: "BITIM", label: "Bitim" },
 ];
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function formatDateTr(dateStr: string) {
   if (!dateStr) return "";
   const [y, m, d] = dateStr.split("-");
@@ -63,8 +60,8 @@ function readStored(): StoredSettings | null {
     if (!p.startDate || !p.endDate) return null;
     const hour = p.hour === "t1000" || p.hour === "t1300" || p.hour === "t1600" || p.hour === "t1830" ? p.hour : "";
     return {
-      startDate: p.startDate,
-      endDate: p.endDate,
+      startDate: clampToWeekdayIso(p.startDate),
+      endDate: clampToWeekdayIso(p.endDate),
       hour,
       applied: Boolean(p.applied),
     };
@@ -288,8 +285,8 @@ export default function Ekran2Page() {
   const [hasToken, setHasToken] = useState(false);
   const [canUseEkran2, setCanUseEkran2] = useState(false);
   const [phase, setPhase] = useState<Phase>("setup");
-  const [startDate, setStartDate] = useState(todayStr());
-  const [endDate, setEndDate] = useState(todayStr());
+  const [startDate, setStartDate] = useState(todayWeekdayIso());
+  const [endDate, setEndDate] = useState(todayWeekdayIso());
   const [hourFilter, setHourFilter] = useState<HourFilter>("");
   const [displayMode, setDisplayMode] = useState<Ekran2Mode>("light");
   const [blocks, setBlocks] = useState<TeamBlockData[] | null>(null);
@@ -501,7 +498,7 @@ export default function Ekran2Page() {
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => setStartDate(coerceWeekdayPickerValue(e.target.value))}
                   className={`rounded-xl border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 ${
                     dark
                       ? "border-slate-600 bg-slate-800 text-white"
@@ -514,7 +511,7 @@ export default function Ekran2Page() {
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  onChange={(e) => setEndDate(coerceWeekdayPickerValue(e.target.value))}
                   className={`rounded-xl border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 ${
                     dark
                       ? "border-slate-600 bg-slate-800 text-white"

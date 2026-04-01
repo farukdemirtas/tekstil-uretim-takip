@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getHedefTakipStageTotals, setAuthToken } from "@/lib/api";
+import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
@@ -21,10 +22,6 @@ function calcPercent(count: number, target: number) {
   return clampPercent((count / target) * 100);
 }
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function formatDateTr(dateStr: string) {
   if (!dateStr) return "";
   const [y, m, d] = dateStr.split("-");
@@ -38,8 +35,8 @@ export default function Ekran1Page() {
   const [yaka, setYaka] = useState(0);
   const [arka, setArka] = useState(0);
   const [bitim, setBitim] = useState(0);
-  const [startDate, setStartDate] = useState(todayStr());
-  const [endDate, setEndDate] = useState(todayStr());
+  const [startDate, setStartDate] = useState(todayWeekdayIso());
+  const [endDate, setEndDate] = useState(todayWeekdayIso());
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
@@ -93,8 +90,8 @@ export default function Ekran1Page() {
           endDate?: string;
         };
         if (Number.isFinite(Number(saved.target))) setTarget(Number(saved.target));
-        if (saved.startDate) setStartDate(saved.startDate);
-        if (saved.endDate) setEndDate(saved.endDate);
+        if (saved.startDate) setStartDate(clampToWeekdayIso(saved.startDate));
+        if (saved.endDate) setEndDate(clampToWeekdayIso(saved.endDate));
       }
     } catch {
       /* ignore */

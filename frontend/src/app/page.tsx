@@ -20,12 +20,9 @@ import {
   setAuthToken,
   updateWorker,
 } from "@/lib/api";
+import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole, persistPermissions, clearStoredPermissions } from "@/lib/permissions";
 import { ProductionRow, Team } from "@/lib/types";
-
-function getToday() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function teamLabel(team: Team) {
   if (team === "SAG_ON") return "SAĞ ÖN";
@@ -40,7 +37,7 @@ export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<string>("");
   const [role, setRole] = useState<string>("data_entry");
-  const [selectedDate, setSelectedDate] = useState<string>(getToday());
+  const [selectedDate, setSelectedDate] = useState<string>(todayWeekdayIso());
   const [rows, setRows] = useState<ProductionRow[]>([]);
   const [hedefStageTotals, setHedefStageTotals] = useState<HedefStageTotals>({
     SAG_ON: 0,
@@ -290,12 +287,16 @@ export default function HomePage() {
         {/* Tarih + genel tamamlanan (Hedef Takip formülü) */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <label htmlFor="date" className="text-sm font-medium">Tarih</label>
+            <label htmlFor="date" className="text-sm font-medium">
+              Tarih
+              <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">(hafta içi)</span>
+            </label>
             <input
               id="date"
               type="date"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              title="Cumartesi ve pazar seçilemez; hafta içine alınır."
+              onChange={(e) => setSelectedDate(coerceWeekdayPickerValue(e.target.value))}
               className="input-modern"
             />
           </div>

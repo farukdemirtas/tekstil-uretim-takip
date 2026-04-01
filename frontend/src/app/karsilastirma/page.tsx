@@ -3,13 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getWorkers, getWorkerComparison, setAuthToken } from "@/lib/api";
+import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
 import type { WorkerComparisonData, WorkerCompStat } from "@/lib/api";
 import type { Worker } from "@/lib/types";
-
-function getToday() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 const TEAM_LABELS: Record<string, string> = {
   SAG_ON:        "Sağ Ön",
@@ -190,8 +187,8 @@ export default function KarsilastirmaPage() {
   const [workers, setWorkers]   = useState<Worker[]>([]);
   const [w1Id, setW1Id]         = useState<number | null>(null);
   const [w2Id, setW2Id]         = useState<number | null>(null);
-  const [startDate, setStartDate] = useState(getToday());
-  const [endDate, setEndDate]     = useState(getToday());
+  const [startDate, setStartDate] = useState(todayWeekdayIso());
+  const [endDate, setEndDate]     = useState(todayWeekdayIso());
   const [compData, setCompData]   = useState<WorkerComparisonData | null>(null);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -584,7 +581,7 @@ export default function KarsilastirmaPage() {
               <input
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => setStartDate(coerceWeekdayPickerValue(e.target.value))}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
               />
             </div>
@@ -597,7 +594,7 @@ export default function KarsilastirmaPage() {
               <input
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => setEndDate(coerceWeekdayPickerValue(e.target.value))}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
               />
             </div>

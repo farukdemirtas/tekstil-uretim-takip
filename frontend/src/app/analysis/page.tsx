@@ -8,15 +8,12 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getDailyTrendAnalytics, getTopWorkersAnalytics, getWorkerDailyAnalytics, getWorkerHourlyBreakdown, setAuthToken } from "@/lib/api";
 import { hasPermission } from "@/lib/permissions";
+import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { rankTercileStyles } from "@/lib/rankTercile";
 import type { WorkerHourlyBreakdown } from "@/lib/api";
 import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
 
 const AUTO_REFRESH_MS = 30_000;
-
-function getToday() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 const TEAM_LABELS: Record<string, string> = {
   SAG_ON:         "Sağ Ön",
@@ -31,8 +28,8 @@ const TEAM_LABELS: Record<string, string> = {
 function teamLabel(t: string) { return TEAM_LABELS[t] ?? t; }
 
 export default function AnalysisPage() {
-  const [startDate, setStartDate] = useState(getToday());
-  const [endDate, setEndDate] = useState(getToday());
+  const [startDate, setStartDate] = useState(todayWeekdayIso());
+  const [endDate, setEndDate] = useState(todayWeekdayIso());
   const [teamFilter, setTeamFilter] = useState<Team | "">("");
   const [hourFilter, setHourFilter] = useState<HourFilter>("");
   const [rows, setRows] = useState<TopWorkerAnalytics[]>([]);
@@ -252,7 +249,7 @@ export default function AnalysisPage() {
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => setStartDate(coerceWeekdayPickerValue(e.target.value))}
               className="rounded-md border border-slate-300 px-3 py-2"
             />
           </div>
@@ -261,7 +258,7 @@ export default function AnalysisPage() {
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => setEndDate(coerceWeekdayPickerValue(e.target.value))}
               className="rounded-md border border-slate-300 px-3 py-2"
             />
           </div>

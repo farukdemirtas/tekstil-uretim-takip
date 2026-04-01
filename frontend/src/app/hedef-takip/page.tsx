@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getHedefTakipStageTotals, setAuthToken } from "@/lib/api";
+import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
@@ -15,9 +16,6 @@ function clampPercent(value: number) {
 function calcPercent(count: number, target: number) {
   if (!Number.isFinite(target) || target <= 0) return 0;
   return clampPercent((count / target) * 100);
-}
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
 }
 function formatDate(dateStr: string) {
   if (!dateStr) return "";
@@ -39,8 +37,8 @@ export default function HedefTakip() {
   const [yaka, setYaka]           = useState<number>(0);
   const [arka, setArka]           = useState<number>(0);
   const [bitim, setBitim]         = useState<number>(0);
-  const [startDate, setStartDate] = useState<string>(todayStr());
-  const [endDate, setEndDate]     = useState<string>(todayStr());
+  const [startDate, setStartDate] = useState<string>(todayWeekdayIso());
+  const [endDate, setEndDate]     = useState<string>(todayWeekdayIso());
   const [rangeLoading, setRangeLoading] = useState<boolean>(false);
   const [rangeError, setRangeError]     = useState<string>("");
   const [rangeMode, setRangeMode]       = useState<boolean>(false);
@@ -70,13 +68,14 @@ export default function HedefTakip() {
       };
 
       const t  = Number(saved.target) || 5000;
-      const sd = saved.startDate || todayStr();
-      const ed = saved.endDate   || todayStr();
+      const sd = clampToWeekdayIso(saved.startDate || todayWeekdayIso());
+      const ed = clampToWeekdayIso(saved.endDate || todayWeekdayIso());
       const rm = Boolean(saved.rangeMode);
 
       setTarget(t);
       setStartDate(sd);
       setEndDate(ed);
+      persistSettings(t, sd, ed, rm);
 
       /* Tarih aralığı modu kayıtlıysa hemen veri çek */
       if (rm) {
@@ -141,13 +140,15 @@ export default function HedefTakip() {
   }
 
   function handleStartDateChange(value: string) {
-    setStartDate(value);
-    persistSettings(target, value, endDate, rangeMode);
+    const v = coerceWeekdayPickerValue(value);
+    setStartDate(v);
+    persistSettings(target, v, endDate, rangeMode);
   }
 
   function handleEndDateChange(value: string) {
-    setEndDate(value);
-    persistSettings(target, startDate, value, rangeMode);
+    const v = coerceWeekdayPickerValue(value);
+    setEndDate(v);
+    persistSettings(target, startDate, v, rangeMode);
   }
 
   /* ─── Hesaplamalar ─── */
