@@ -5,7 +5,8 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "reset-admin": "node scripts/reset-admin-password.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -45,8 +45,8 @@ export default function AdminPanel({ workerCount, stageTotals }: AdminPanelProps
   ];
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 md:p-4">
-      <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-200 md:text-base">
+    <div className="surface-card">
+      <h2 className="mb-1 text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">
         Günlük Özet
       </h2>
       <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
@@ -57,7 +57,7 @@ export default function AdminPanel({ workerCount, stageTotals }: AdminPanelProps
           <div
             key={label}
             title={title}
-            className="flex flex-col rounded-lg bg-slate-50 p-2.5 dark:bg-slate-700/60 md:p-3"
+            className="flex flex-col rounded-xl border border-slate-100 bg-slate-50/80 p-2.5 dark:border-slate-600/50 dark:bg-slate-800/60 md:p-3"
           >
             <span className="truncate text-xs text-slate-500 dark:text-slate-400">{label}</span>
             <span className={`mt-0.5 text-lg font-bold leading-tight ${accent}`}>{value}</span>

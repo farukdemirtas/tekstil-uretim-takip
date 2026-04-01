@@ -183,6 +183,14 @@ export default function HedefTakip() {
               EKRAN1
             </Link>
             <Link
+              href="/ekran2"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-teal-600/50 bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500"
+            >
+              EKRAN2
+            </Link>
+            <Link
               href="/"
               className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
             >
@@ -285,16 +293,13 @@ export default function HedefTakip() {
         <ProgressCard label="Sol Ön"        value={solOn} percent={solOnPercent} color="from-sky-500 to-sky-600"         target={target} remaining={solOnKalan} />
         <ProgressCard label="Yaka Hazırlık" value={yaka}  percent={yakaPercent}  color="from-violet-500 to-violet-600"  target={target} remaining={yakaKalan}  />
         <ProgressCard label="Arka Hazırlık" value={arka}  percent={arkaPercent}  color="from-amber-500 to-amber-600"    target={target} remaining={arkaKalan}  />
-        <ProgressCard label="Bitim (DÜĞME)" value={bitim} percent={bitimPercent} color="from-rose-500 to-rose-600"      target={target} remaining={bitimKalan} />
+        <ProgressCard label="Bitim" value={bitim} percent={bitimPercent} color="from-rose-500 to-rose-600"      target={target} remaining={bitimKalan} />
 
         {/* Genel İlerleme */}
         <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold">Genel İlerleme</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                Genel ilerleme = min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim). Bitim aşaması BITIM + DÜĞME prosesine göre hesaplanır.
-              </p>
             </div>
             <div className="text-right">
               <div className="text-xs text-slate-500 dark:text-slate-400">Yüzde</div>

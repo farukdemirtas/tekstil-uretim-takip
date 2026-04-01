@@ -58,12 +58,12 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-4 dark:border-slate-700 dark:bg-slate-800"
+      className="surface-card grid grid-cols-1 gap-3 md:grid-cols-4"
     >
       <select
         value={name}
         onChange={(e) => setName(e.target.value)}
-        className="rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-300"
+        className="input-modern"
       >
         {names.length === 0
           ? <option value="">— İsim yükleniyor... —</option>
@@ -74,7 +74,7 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
       <select
         value={team}
         onChange={(e) => setTeam(e.target.value as Team)}
-        className="rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-300"
+        className="input-modern"
       >
         {TEAM_OPTIONS.map((t) => (
           <option key={t.value} value={t.value}>{t.label}</option>
@@ -84,7 +84,7 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
       <select
         value={process}
         onChange={(e) => setProcess(e.target.value)}
-        className="rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-300"
+        className="input-modern"
       >
         {PROCESS_OPTIONS.map((p) => (
           <option key={p} value={p}>{p}</option>
@@ -93,7 +93,7 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
 
       <button
         disabled={loading || names.length === 0}
-        className="rounded-md bg-blue-600 px-3 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-60 dark:bg-blue-500 dark:hover:bg-blue-600"
+        className="rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-surface-sm transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98]"
         type="submit"
       >
         {loading ? "Ekleniyor..." : "Çalışan Ekle"}

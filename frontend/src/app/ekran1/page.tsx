@@ -138,7 +138,7 @@ export default function Ekran1Page() {
         { label: "Sol Ön", value: solOn, pct: calcPercent(solOn, target), bar: "bg-sky-400" },
         { label: "Yaka", value: yaka, pct: calcPercent(yaka, target), bar: "bg-violet-400" },
         { label: "Arka", value: arka, pct: calcPercent(arka, target), bar: "bg-amber-400" },
-        { label: "Bitim (DÜĞME)", value: bitim, pct: calcPercent(bitim, target), bar: "bg-rose-400" }
+        { label: "Bitim", value: bitim, pct: calcPercent(bitim, target), bar: "bg-rose-400" }
       ] as const,
     [sagOn, solOn, yaka, arka, bitim, target]
   );

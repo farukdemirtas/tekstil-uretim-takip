@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3000",
+    "dev": "node scripts/start-dev.cjs",
+    "dev:fast": "next dev --port 3000",
+    "dev:clean": "npm run dev",
     "build": "next build",
+    "build:clean": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch(e){}\" && next build",
     "start": "next start --port 3000",
     "lint": "next lint"
   },

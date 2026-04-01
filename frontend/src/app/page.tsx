@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
@@ -242,27 +241,35 @@ export default function HomePage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-5 p-4 md:p-8">
-      <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:p-4">
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 p-4 pb-10 md:gap-7 md:p-8">
+      <section className="surface-card dark:text-slate-100">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Image
-              src="/logo.jpg"
+            <img
+              src="/logo.png"
               alt="Yeşil İmaj Tekstil Logo"
-              width={48}
-              height={48}
-              className="shrink-0 rounded-md border border-slate-200 object-contain"
+              width={52}
+              height={52}
+              className="h-[52px] w-[52px] shrink-0 rounded-lg border border-slate-200 object-contain shadow-sm dark:border-slate-600"
+              onError={(e) => {
+                const el = e.currentTarget;
+                if (el.dataset.fallback === "1") return;
+                el.dataset.fallback = "1";
+                el.src = "/logo.svg";
+              }}
             />
             <div>
-              <h1 className="text-base font-semibold leading-tight sm:text-xl">Yeşil İmaj Tekstil</h1>
-              <p className="text-xs text-slate-600 sm:text-sm">Üretim Takip Programı</p>
+              <h1 className="text-base font-bold tracking-tight text-slate-900 sm:text-xl dark:text-white">
+                Yeşil İmaj Tekstil
+              </h1>
+              <p className="text-xs text-slate-600 sm:text-sm dark:text-slate-400">Üretim takip</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-sm text-slate-600 sm:inline">Kullanıcı: {currentUser}</span>
             <button
               onClick={handleLogout}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
+              className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-slate-600 dark:text-slate-300 dark:hover:border-red-900/50 dark:hover:bg-red-950/30 dark:hover:text-red-300"
             >
               Çıkış Yap
             </button>
@@ -270,7 +277,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:p-4">
+      <section className="surface-card dark:text-slate-100">
         {/* Tarih + genel tamamlanan (Hedef Takip formülü) */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
@@ -280,11 +287,11 @@ export default function HomePage() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700"
+              className="input-modern"
             />
           </div>
           <div
-            className="rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
+            className="rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-2 text-sm font-semibold text-emerald-800 shadow-surface-sm dark:border-emerald-900/40 dark:from-emerald-950/50 dark:to-teal-950/40 dark:text-emerald-200"
             title="Hedef Takip formülü: min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim)"
           >
             Genel tamamlanan: {genelTamamlanan}
@@ -295,21 +302,21 @@ export default function HomePage() {
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {isAdmin && (
             <>
-              <Link href="/analysis" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
+              <Link href="/analysis" className="btn-nav">
                 Analiz
               </Link>
-              <Link href="/karsilastirma" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
+              <Link href="/karsilastirma" className="btn-nav">
                 Karşılaştırma
               </Link>
-              <Link href="/users" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
+              <Link href="/users" className="btn-nav">
                 Kullanıcılar
               </Link>
-              <Link href="/ayarlar" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700">
+              <Link href="/ayarlar" className="btn-nav">
                 Ayarlar
               </Link>
               <button
                 onClick={() => void pushToHedefTakip()}
-                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700"
+                className="btn-nav"
                 type="button"
               >
                 Hedef Takip
@@ -318,7 +325,7 @@ export default function HomePage() {
           )}
           <button
             onClick={handleExportExcel}
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700"
+            className="btn-nav"
           >
             Excel Export
           </button>
@@ -326,7 +333,7 @@ export default function HomePage() {
       </section>
 
       {/* Ürün adı / model — Çalışan ekleme ve tablonun üstü */}
-      <section className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 md:p-4">
+      <section className="surface-card dark:text-slate-100">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
             Çalışılacak ürün (seçili tarih)
@@ -355,7 +362,7 @@ export default function HomePage() {
               onChange={(e) => setProductName(e.target.value)}
               onBlur={() => void persistProductMeta()}
               placeholder="Örn. Polo tişört"
-              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
+              className="input-modern w-full"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -369,7 +376,7 @@ export default function HomePage() {
               onChange={(e) => setProductModel(e.target.value)}
               onBlur={() => void persistProductMeta()}
               placeholder="Örn. YM-2026-04"
-              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
+              className="input-modern w-full"
             />
           </div>
         </div>
@@ -378,14 +385,14 @@ export default function HomePage() {
       <WorkerForm onSubmit={handleAddWorker} />
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
+        <div className="rounded-2xl border border-red-200/90 bg-red-50/90 p-4 text-sm text-red-800 shadow-surface-sm dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
           Hata: {error}
         </div>
       )}
 
       {loading ? (
-        <div className="rounded-md border border-slate-200 bg-white p-6 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-          Yükleniyor...
+        <div className="surface-card flex items-center justify-center py-12 text-sm font-medium text-slate-500 dark:text-slate-400">
+          Yükleniyor…
         </div>
       ) : (
         <ProductionTable

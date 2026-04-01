@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ProductionRow, Team } from "@/lib/types";
 
 type ProductionTableProps = {
@@ -120,7 +120,7 @@ export default function ProductionTable({
   }).filter(Boolean) as { team: Team; teamRows: ProductionRow[]; startNo: number }[];
 
   return (
-    <div className="rounded-lg border border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+    <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100 dark:shadow-none">
 
       {/* ══════════ MASAÜSTÜ TABLO (md ve üzeri) ══════════ */}
       <div className="hidden overflow-auto md:block">
@@ -140,8 +140,8 @@ export default function ProductionTable({
           </thead>
           <tbody>
             {sections.map(({ team, teamRows, startNo }) => (
-              <>
-                <tr key={`header-${team}`} className="bg-slate-200 dark:bg-slate-700">
+              <Fragment key={team}>
+                <tr className="bg-slate-200 dark:bg-slate-700">
                   <td colSpan={9} className="px-3 py-2 text-left text-sm font-semibold">
                     {teamLabel(team)}
                   </td>
@@ -151,7 +151,7 @@ export default function ProductionTable({
                   const isEditing = editingId === row.workerId;
                   return (
                     <tr
-                      key={row.workerId}
+                      key={`${team}-${row.workerId}-${index}`}
                       className="border-b border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-600"
                     >
                       <td className="px-3 py-2 text-center">{startNo + index}</td>
@@ -220,7 +220,7 @@ export default function ProductionTable({
                     </tr>
                   );
                 })}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -241,7 +241,7 @@ export default function ProductionTable({
 
               return (
                 <div
-                  key={row.workerId}
+                  key={`${team}-${row.workerId}-${index}`}
                   className="p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60"
                 >
                   {/* İşçi bilgisi satırı */}

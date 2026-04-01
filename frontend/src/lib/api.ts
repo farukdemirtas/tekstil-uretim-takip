@@ -1,11 +1,22 @@
 import { DailyTrendPoint, HourFilter, ProductionRow, Team, TopWorkerAnalytics, User, Worker, WorkerDailyAnalytics } from "./types";
 
-/** Üretimde Nginx aynı hostta /api → backend ise env gerekmez; tarayıcı /api kullanır. */
+/**
+ * Geliştirme: tarayıcıda her zaman `/api` — `next.config` rewrite ile backend (varsayılan 127.0.0.1:4000).
+ * Böylece `.env.local` içindeki `NEXT_PUBLIC_API_BASE_URL` localhost çakışmasına takılmaz.
+ * Canlıda API ayrı origin’deyse `NEXT_PUBLIC_API_BASE_URL` production build’de kullanılır.
+ */
 function apiBase(): string {
   const fromEnv = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
+
+  if (typeof window !== "undefined") {
+    if (process.env.NODE_ENV === "development") {
+      return "/api";
+    }
+    return fromEnv || "/api";
+  }
+
   if (fromEnv) return fromEnv;
-  if (typeof window !== "undefined") return "/api";
-  return "http://localhost:4000/api";
+  return "http://127.0.0.1:4000/api";
 }
 let authToken = "";
 

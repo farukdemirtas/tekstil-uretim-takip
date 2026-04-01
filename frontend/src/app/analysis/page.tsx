@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getDailyTrendAnalytics, getTopWorkersAnalytics, getWorkerDailyAnalytics, getWorkerHourlyBreakdown, setAuthToken } from "@/lib/api";
+import { rankTercileStyles } from "@/lib/rankTercile";
 import type { WorkerHourlyBreakdown } from "@/lib/api";
 import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
 
@@ -228,9 +229,19 @@ export default function AnalysisPage() {
               </p>
             )}
           </div>
-          <Link href="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-700">
-            Üretim Ekranı
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/ekran2"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-teal-600/50 bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500"
+            >
+              EKRAN2
+            </Link>
+            <Link href="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-700">
+              Üretim Ekranı
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -353,9 +364,9 @@ export default function AnalysisPage() {
           </h2>
           {rows.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-emerald-500" /> En iyi 10</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-blue-500" /> Orta</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-red-500" /> En kötü 10</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-emerald-500" /> Üst üçte bir</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-blue-500" /> Orta üçte bir</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-red-500" /> Alt üçte bir</span>
               <span className="hidden italic opacity-70 sm:inline">Satıra tıkla → detay</span>
             </div>
           )}
@@ -369,18 +380,11 @@ export default function AnalysisPage() {
             {rows.map((row, index) => {
               const width    = maxValue > 0 ? Math.max(4, Math.round((row.totalProduction / maxValue) * 100)) : 0;
               const total    = rows.length;
-              const isTop    = index < 10;
-              const isBottom = index >= total - 10 && total > 10;
-              const barColor = isTop ? "bg-emerald-500" : isBottom ? "bg-red-500" : "bg-blue-500";
-              const rankColor = isTop
-                ? "text-emerald-600 dark:text-emerald-400 font-bold"
-                : isBottom
-                  ? "text-red-500 dark:text-red-400 font-bold"
-                  : "text-slate-500";
+              const { bar: barColor, rank: rankColor } = rankTercileStyles(index, total);
               const isActive = hoveredId === row.workerId;
               return (
                 <div
-                  key={row.workerId}
+                  key={`${row.workerId}-${index}`}
                   className={`grid cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm transition-colors
                     grid-cols-[24px_minmax(0,1fr)_2fr_56px]
                     sm:grid-cols-[28px_minmax(0,200px)_1fr_72px]
@@ -526,12 +530,12 @@ export default function AnalysisPage() {
               {trendRows.map((row, index) => {
                 const x = trendRows.length === 1 ? 0 : Math.round((index / (trendRows.length - 1)) * 800);
                 const y = maxTrend === 0 ? 220 : Math.round(220 - (row.totalProduction / maxTrend) * 220);
-                return <circle key={row.productionDate} cx={x} cy={y} r="3.5" fill="#16a34a" />;
+                return <circle key={`trend-${row.productionDate}-${index}`} cx={x} cy={y} r="3.5" fill="#16a34a" />;
               })}
             </svg>
             <div className="grid grid-cols-1 gap-1 text-xs text-slate-600 md:grid-cols-3">
-              {trendRows.map((row) => (
-                <div key={`legend-${row.productionDate}`}>
+              {trendRows.map((row, index) => (
+                <div key={`legend-${row.productionDate}-${index}`}>
                   {row.productionDate}: <span className="font-semibold">{row.totalProduction}</span>
                 </div>
               ))}

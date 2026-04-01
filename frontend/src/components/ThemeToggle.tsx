@@ -19,7 +19,7 @@ export default function ThemeToggle() {
 
   const label = useMemo(() => (theme === "dark" ? "Açık Mod" : "Koyu Mod"), [theme]);
 
-  if (pathname === "/ekran1") return null;
+  if (pathname === "/ekran1" || pathname === "/ekran2") return null;
 
   function toggleTheme() {
     const next: Theme = theme === "dark" ? "light" : "dark";
@@ -32,7 +32,7 @@ export default function ThemeToggle() {
     <button
       onClick={toggleTheme}
       aria-label={label}
-      className="fixed right-4 top-4 z-50 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+      className="fixed right-4 top-4 z-50 rounded-full border border-slate-200/90 bg-white/90 px-4 py-2 text-xs font-medium text-slate-700 shadow-surface-sm backdrop-blur-md transition hover:border-teal-300/60 hover:bg-teal-50/90 hover:text-teal-900 active:scale-95 dark:border-slate-600 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:border-teal-700 dark:hover:bg-teal-950/50 dark:hover:text-teal-100"
       type="button"
     >
       {label}

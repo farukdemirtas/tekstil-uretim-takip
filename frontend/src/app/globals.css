@@ -2,25 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-slate-100 text-slate-900 antialiased;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply min-h-screen antialiased text-slate-900;
+    background-color: #f8fafc;
+    background-image:
+      radial-gradient(ellipse 100% 60% at 50% -25%, rgba(13, 148, 136, 0.09), transparent),
+      radial-gradient(ellipse 70% 45% at 100% 0%, rgba(5, 150, 105, 0.06), transparent);
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  .dark body {
+    background-color: #0c1222 !important;
+    background-image:
+      radial-gradient(ellipse 90% 55% at 50% -30%, rgba(20, 184, 166, 0.14), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(16, 185, 129, 0.08), transparent) !important;
+    color: #e2e8f0 !important;
+  }
+
+  ::selection {
+    @apply bg-teal-200/80 text-teal-950;
+  }
+
+  .dark ::selection {
+    @apply bg-teal-800/80 text-teal-50;
+  }
 }
 
-html.dark {
-  color-scheme: dark;
-}
-
-/* Dark mode temel görünüm (seçili elemanların text/bg sınıflarıyla çakışmayı azaltmak için) */
-.dark body {
-  background-color: #0f172a !important; /* slate-900 */
-  color: #e5e7eb !important; /* gray-200 */
-}
-
-/* Yaygın metin renklerini dark modda görünür yapmak için */
+/* Dark mode: yaygın slate metin sınıfları */
 .dark .text-slate-900 {
-  color: #e5e7eb !important;
+  color: #e2e8f0 !important;
 }
 
 .dark .text-slate-600 {
-  color: #cbd5e1 !important; /* slate-400 */
+  color: #94a3b8 !important;
+}
+
+@layer components {
+  /* Form kontrolleri — marka rengi odak */
+  .input-modern {
+    @apply rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition
+      placeholder:text-slate-400
+      focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15
+      dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-100 dark:placeholder:text-slate-500
+      dark:focus:border-teal-400 dark:focus:ring-teal-400/20;
+  }
+
+  /* Kart / panel */
+  .surface-card {
+    @apply rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-surface backdrop-blur-[2px]
+      dark:border-slate-700/70 dark:bg-slate-900/85 dark:shadow-none md:p-5;
+  }
+
+  /* Üst bar navigasyon düğmeleri */
+  .btn-nav {
+    @apply inline-flex items-center justify-center rounded-xl border border-slate-200/90 bg-white px-3.5 py-2 text-sm font-medium
+      text-slate-700 shadow-surface-sm transition
+      hover:border-teal-300/70 hover:bg-teal-50/90 hover:text-teal-900
+      active:scale-[0.98]
+      dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-200
+      dark:hover:border-teal-600/50 dark:hover:bg-teal-950/35 dark:hover:text-teal-100;
+  }
 }
