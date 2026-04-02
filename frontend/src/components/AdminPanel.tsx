@@ -29,35 +29,38 @@ export default function AdminPanel({ workerCount, stageTotals }: AdminPanelProps
     [stageTotals]
   );
 
-  const tiles: Array<{ label: string; value: number; accent: string; title?: string }> = [
-    { label: "Çalışan", value: workerCount, accent: "text-slate-700 dark:text-slate-200" },
-    {
-      label: "Genel tamamlanan",
-      value: genelTamamlanan,
-      accent: "text-emerald-700 dark:text-emerald-300",
-      title: "Hedef Takip ile aynı: min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim)",
-    },
-    { label: "Sağ Ön (SAĞ KOL ÇIMA)", value: stageTotals.SAG_ON, accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Sol Ön (SOL KOL ÇIMA)", value: stageTotals.SOL_ON, accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Yaka (YAKA İÇ ÇIMA)", value: stageTotals.YAKA_HAZIRLIK, accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Arka (ARKA KOL ÇIMA ÷2)", value: stageTotals.ARKA_HAZIRLIK, accent: "text-slate-600 dark:text-slate-300" },
-    { label: "Bitim (DÜĞME)", value: stageTotals.BITIM, accent: "text-slate-600 dark:text-slate-300" },
+  const boxNeutral =
+    "border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800/90 dark:shadow-none";
+  const boxHighlight =
+    "border-emerald-200 bg-emerald-50/90 shadow-md ring-1 ring-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/35 dark:ring-emerald-900/40";
+  const numNeutral = "text-slate-800 dark:text-slate-100";
+  const numHighlight = "text-emerald-700 dark:text-emerald-300";
+
+  const tiles: Array<{ label: string; value: number; valueClass: string; boxClass: string }> = [
+    { label: "Çalışan", value: workerCount, valueClass: numNeutral, boxClass: boxNeutral },
+    { label: "Genel tamamlanan", value: genelTamamlanan, valueClass: numHighlight, boxClass: boxHighlight },
+    { label: "Sağ Ön", value: stageTotals.SAG_ON, valueClass: numNeutral, boxClass: boxNeutral },
+    { label: "Sol Ön", value: stageTotals.SOL_ON, valueClass: numNeutral, boxClass: boxNeutral },
+    { label: "Yaka", value: stageTotals.YAKA_HAZIRLIK, valueClass: numNeutral, boxClass: boxNeutral },
+    { label: "Arka", value: stageTotals.ARKA_HAZIRLIK, valueClass: numNeutral, boxClass: boxNeutral },
+    { label: "Bitim", value: stageTotals.BITIM, valueClass: numNeutral, boxClass: boxNeutral },
   ];
 
   return (
     <div className="surface-card">
-      <h2 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">
+      <h2 className="mb-4 text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">
         Günlük Özet
       </h2>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:gap-3">
-        {tiles.map(({ label, value, accent, title }) => (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {tiles.map(({ label, value, valueClass, boxClass }) => (
           <div
             key={label}
-            title={title}
-            className="flex flex-col rounded-xl border border-slate-100 bg-slate-50/80 p-2.5 dark:border-slate-600/50 dark:bg-slate-800/60 md:p-3"
+            className={`flex min-h-[5.5rem] flex-col items-center justify-center rounded-2xl border-2 px-2 py-3 text-center sm:min-h-[6rem] ${boxClass}`}
           >
-            <span className="truncate text-xs text-slate-500 dark:text-slate-400">{label}</span>
-            <span className={`mt-0.5 text-lg font-bold leading-tight ${accent}`}>{value}</span>
+            <span className="line-clamp-2 text-[10px] font-semibold uppercase leading-tight tracking-wide text-slate-500 dark:text-slate-400 sm:text-xs">
+              {label}
+            </span>
+            <span className={`mt-1.5 text-xl font-bold tabular-nums sm:text-2xl ${valueClass}`}>{value}</span>
           </div>
         ))}
       </div>
