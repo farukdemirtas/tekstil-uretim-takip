@@ -7,6 +7,34 @@ Ben (Cursor) sizin sunucunuza bağlanamam; DNS ve panel işleri sizde. Aşağıd
 **A kaydı:** `takip` → VPS sunucunuzun **IPv4** adresi  
 (Yayılma birkaç dakika sürebilir.)
 
+## Sıfırdan temiz kurulum (sunucudaki proje karıştıysa)
+
+**Kapsam:** Yalnızca `/var/www/tekstil-uretim-takip` ve PM2’deki `tekstil-api` / `tekstil-web` silinir; depo veya başka siteler dokunulmaz.
+
+1. **Hâlâ erişebiliyorsanız** (repo dizininde betik varsa):
+
+```bash
+export TEKSTIL_RESET_CONFIRM=yes
+export TEKSTIL_REPO_URL='https://github.com/KULLANICI/tekstil-uretim-takip.git'
+sudo -E bash /var/www/tekstil-uretim-takip/deploy/sunucu-proje-sifirla.sh
+```
+
+`TEKSTIL_REPO_URL` vermezseniz sadece yedek + silme yapılır; sonra elle `git clone` edersiniz. Yedekler `/root/tekstil-reset-backup-...` altına alınır (`backend/.env`, `frontend/.env.production`, vb.).
+
+2. **Dizin zaten silindiyse / betik yoksa:** `/root` altındaki son `tekstil-reset-backup-*` klasörüne bakın; ardından aşağıdaki “1) Projeyi sunucuya alın” ile devam edin ve `.env` dosyalarını yedekten kopyalayın.
+
+3. **Nginx:** Bozuk site dosyalarını repodaki hazır dosyalarla değiştirin (yapıştırma yerine `cp` kullanın):
+
+```bash
+sudo cp /var/www/tekstil-uretim-takip/deploy/nginx-yesilimajtekstil.conf /etc/nginx/sites-available/yesilimajtekstil
+sudo cp /var/www/tekstil-uretim-takip/deploy/nginx-tekstil.conf /etc/nginx/sites-available/tekstil
+sudo ln -sf /etc/nginx/sites-available/yesilimajtekstil /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/tekstil /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+SSL için domain’lere göre `certbot --nginx` ile yenileyin.
+
 ## 1) Projeyi sunucuya alın
 
 ```bash
