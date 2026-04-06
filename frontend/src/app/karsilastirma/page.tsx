@@ -2,20 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { getWorkers, getWorkerComparison, setAuthToken } from "@/lib/api";
+import { getTeams, getWorkers, getWorkerComparison, setAuthToken } from "@/lib/api";
 import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
 import type { WorkerComparisonData, WorkerCompStat } from "@/lib/api";
 import type { Worker } from "@/lib/types";
-
-const TEAM_LABELS: Record<string, string> = {
-  SAG_ON:        "Sağ Ön",
-  SOL_ON:        "Sol Ön",
-  YAKA_HAZIRLIK: "Yaka Hazırlık",
-  ARKA_HAZIRLIK: "Arka Hazırlık",
-  BITIM:         "Bitim",
-  ADET:          "Adet",
-};
 
 const SLOTS = [
   { key: "t1000" as const, label: "10:00" },
@@ -111,11 +102,13 @@ function WorkerCard({
   color,
   label,
   isWinner,
+  teamLabels,
 }: {
   stat: WorkerCompStat;
   color: "blue" | "orange";
   label: string;
   isWinner: boolean;
+  teamLabels: Record<string, string>;
 }) {
   const blue = color === "blue";
   return (
@@ -135,7 +128,7 @@ function WorkerCard({
           </span>
           <p className="mt-0.5 truncate text-base font-bold">{stat.name}</p>
           <p className="truncate text-xs text-slate-500">
-            {TEAM_LABELS[stat.team] ?? stat.team}
+            {teamLabels[stat.team] ?? stat.team}
             {stat.process ? ` · ${stat.process}` : ""}
           </p>
         </div>
@@ -193,6 +186,7 @@ export default function KarsilastirmaPage() {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [pdfBusy, setPdfBusy]     = useState(false);
+  const [teamLabels, setTeamLabels] = useState<Record<string, string>>({});
 
   /* Auth guard + load worker list */
   useEffect(() => {
@@ -206,6 +200,11 @@ export default function KarsilastirmaPage() {
     getWorkers()
       .then((list) =>
         setWorkers([...list].sort((a, b) => a.name.localeCompare(b.name, "tr", { sensitivity: "base" })))
+      )
+      .catch(() => {});
+    getTeams()
+      .then((rows) =>
+        setTeamLabels(Object.fromEntries(rows.map((t) => [t.code, t.label])))
       )
       .catch(() => {});
   }, []);
@@ -293,7 +292,7 @@ export default function KarsilastirmaPage() {
         doc.text(p(stat.name), bx+4, y+18, { maxWidth: BW-8 });
 
         t(100,116,139); doc.setFontSize(7); doc.setFont("helvetica","normal");
-        doc.text(`${p(TEAM_LABELS[stat.team]??stat.team)} · ${p(stat.process)}`, bx+4, y+24, { maxWidth: BW-8 });
+        doc.text(`${p(teamLabels[stat.team] ?? stat.team)} · ${p(stat.process)}`, bx+4, y+24, { maxWidth: BW-8 });
 
         const stats = [stat.total, stat.activeDays, stat.activeDays>0 ? Math.round(stat.total/stat.activeDays) : 0];
         const stlbls = ["Toplam","Gun","Ort/Gun"];
@@ -630,8 +629,8 @@ export default function KarsilastirmaPage() {
           <>
             {/* ── Worker cards ── */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <WorkerCard stat={w1} color="blue"   label="PERSONEL 1" isWinner={w1.total >= w2.total} />
-              <WorkerCard stat={w2} color="orange" label="PERSONEL 2" isWinner={w2.total > w1.total} />
+              <WorkerCard stat={w1} color="blue"   label="PERSONEL 1" isWinner={w1.total >= w2.total} teamLabels={teamLabels} />
+              <WorkerCard stat={w2} color="orange" label="PERSONEL 2" isWinner={w2.total > w1.total} teamLabels={teamLabels} />
             </div>
 
             {/* ── Overall comparison bar ── */}

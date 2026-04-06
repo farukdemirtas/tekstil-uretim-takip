@@ -13,6 +13,7 @@ import {
   getDayProductMeta,
   getHedefTakipStageTotals,
   getProduction,
+  getRangeStageTotals,
   getTeams,
   login,
   removeWorker,
@@ -47,7 +48,8 @@ export default function HomePage() {
   const router = useRouter();
 
   const [, setPermTick] = useState(0);
-  const [teamLabelMap, setTeamLabelMap] = useState<Record<string, string>>({});
+  const [teamMeta, setTeamMeta] = useState<Array<{ code: string; label: string }>>([]);
+  const [teamGunlukToplamlar, setTeamGunlukToplamlar] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -65,12 +67,12 @@ export default function HomePage() {
   useEffect(() => {
     if (!isAuthenticated) return;
     void getTeams()
-      .then((rows) => setTeamLabelMap(Object.fromEntries(rows.map((t) => [t.code, t.label]))))
+      .then((rows) => setTeamMeta(rows.map((t) => ({ code: t.code, label: t.label }))))
       .catch(() => {});
   }, [isAuthenticated]);
 
   function resolveTeamLabel(code: string) {
-    return teamLabelMap[code] ?? code;
+    return teamMeta.find((t) => t.code === code)?.label ?? code;
   }
 
   async function loadDateData(date: string) {
@@ -78,7 +80,7 @@ export default function HomePage() {
     setError(null);
     setProductMetaSaved(false);
     try {
-      const [data, meta, hedef] = await Promise.all([
+      const [data, meta, hedef, gunlukBolum] = await Promise.all([
         getProduction(date),
         getDayProductMeta(date).catch(() => ({ productName: "", productModel: "" })),
         getHedefTakipStageTotals(date, date).catch(() => ({
@@ -88,11 +90,13 @@ export default function HomePage() {
           ARKA_HAZIRLIK: 0,
           BITIM: 0,
         })),
+        getRangeStageTotals(date, date).catch(() => ({} as Record<string, number>)),
       ]);
       setRows(data);
       setProductName(meta.productName);
       setProductModel(meta.productModel);
       setHedefStageTotals(hedef);
+      setTeamGunlukToplamlar(gunlukBolum && typeof gunlukBolum === "object" ? gunlukBolum : {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu");
     } finally {
@@ -198,7 +202,13 @@ export default function HomePage() {
       const ht = await getHedefTakipStageTotals(selectedDate, selectedDate);
       setHedefStageTotals(ht);
     } catch {
-      /* özet güncellenemezse sessiz geç */
+      /* hedef özeti */
+    }
+    try {
+      const gun = await getRangeStageTotals(selectedDate, selectedDate);
+      setTeamGunlukToplamlar(gun);
+    } catch {
+      /* grup toplamları */
     }
   }
 
@@ -425,7 +435,12 @@ export default function HomePage() {
         />
       )}
 
-      <AdminPanel workerCount={rows.length} stageTotals={hedefStageTotals} />
+      <AdminPanel
+        workerCount={rows.length}
+        stageTotals={hedefStageTotals}
+        teamMeta={teamMeta}
+        teamGunlukToplamlar={teamGunlukToplamlar}
+      />
     </main>
   );
 }

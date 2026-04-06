@@ -6,7 +6,14 @@ import type { MouseEvent as RMouseEvent } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { getDailyTrendAnalytics, getTopWorkersAnalytics, getWorkerDailyAnalytics, getWorkerHourlyBreakdown, setAuthToken } from "@/lib/api";
+import {
+  getDailyTrendAnalytics,
+  getTeams,
+  getTopWorkersAnalytics,
+  getWorkerDailyAnalytics,
+  getWorkerHourlyBreakdown,
+  setAuthToken,
+} from "@/lib/api";
 import { hasPermission } from "@/lib/permissions";
 import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { rankTercileStyles } from "@/lib/rankTercile";
@@ -14,18 +21,6 @@ import type { WorkerHourlyBreakdown } from "@/lib/api";
 import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
 
 const AUTO_REFRESH_MS = 30_000;
-
-const TEAM_LABELS: Record<string, string> = {
-  SAG_ON:         "Sağ Ön",
-  SOL_ON:         "Sol Ön",
-  YAKA_HAZIRLIK:  "Yaka Hazırlık",
-  ARKA_HAZIRLIK:  "Arka Hazırlık",
-  BITIM:          "Bitim",
-  ADET:           "Adet",
-  DUSME:          "Düşme",
-  DUZME:          "Düzme",
-};
-function teamLabel(t: string) { return TEAM_LABELS[t] ?? t; }
 
 export default function AnalysisPage() {
   const [startDate, setStartDate] = useState(todayWeekdayIso());
@@ -46,6 +41,13 @@ export default function AnalysisPage() {
   const hourlyCache = useRef<Map<number, WorkerHourlyBreakdown>>(new Map());
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [teamRows, setTeamRows] = useState<Array<{ code: string; label: string }>>([]);
+
+  function resolveTeamLabel(team: Team | "") {
+    if (team === "") return "TÜM GRUPLAR";
+    return teamRows.find((t) => t.code === team)?.label ?? team;
+  }
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -75,6 +77,9 @@ export default function AnalysisPage() {
       return;
     }
     setAuthToken(token);
+    void getTeams()
+      .then((rows) => setTeamRows(rows.map((t) => ({ code: t.code, label: t.label }))))
+      .catch(() => {});
     void loadData();
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,16 +139,6 @@ export default function AnalysisPage() {
     return workerDailyRows.filter((row) => row.name.toLocaleLowerCase("tr").includes(query));
   }, [workerDailyRows, workerSearch]);
 
-  function teamLabel(team: Team | "") {
-    if (team === "") return "TÜM GRUPLAR";
-    if (team === "SAG_ON") return "SAĞ ÖN";
-    if (team === "SOL_ON") return "SOL ÖN";
-    if (team === "YAKA_HAZIRLIK") return "YAKA HAZIRLIK";
-    if (team === "ARKA_HAZIRLIK") return "ARKA HAZIRLIK";
-    if (team === "BITIM") return "BİTİM";
-    return "ADET";
-  }
-
   function hourLabel(hour: HourFilter) {
     if (hour === "t1000") return "10:00";
     if (hour === "t1300") return "13:00";
@@ -156,7 +151,7 @@ export default function AnalysisPage() {
     const topSheet = rows.map((row, index) => ({
       Sıra: index + 1,
       "Ad Soyad": row.name,
-      Grup: teamLabel(row.team),
+      Grup: resolveTeamLabel(row.team),
       Proses: row.process,
       "Çalışılan Gün": row.activeDays,
       "Toplam Üretim": row.totalProduction
@@ -172,7 +167,7 @@ export default function AnalysisPage() {
     const workerDailySheet = workerDailyRows.map((row) => ({
       Tarih: row.productionDate,
       "Ad Soyad": row.name,
-      Grup: teamLabel(row.team),
+      Grup: resolveTeamLabel(row.team),
       Proses: row.process,
       Üretim: row.production
     }));
@@ -186,7 +181,7 @@ export default function AnalysisPage() {
     doc.text("Yeşil İmaj Tekstil - Analiz Raporu", 14, 14);
     doc.setFontSize(10);
     doc.text(`Tarih Aralığı: ${startDate} - ${endDate}`, 14, 20);
-    doc.text(`Grup Filtresi: ${teamLabel(teamFilter)}`, 14, 25);
+    doc.text(`Grup Filtresi: ${resolveTeamLabel(teamFilter)}`, 14, 25);
     doc.text(`Saat Filtresi: ${hourLabel(hourFilter)}`, 14, 30);
 
     autoTable(doc, {
@@ -195,7 +190,7 @@ export default function AnalysisPage() {
       body: rows.map((row, index) => [
         index + 1,
         row.name,
-        teamLabel(row.team),
+        resolveTeamLabel(row.team),
         row.process,
         row.activeDays,
         row.totalProduction
@@ -272,12 +267,11 @@ export default function AnalysisPage() {
             className="rounded-md border border-slate-300 px-3 py-2"
           >
             <option value="">TÜM GRUPLAR</option>
-            <option value="ADET">ADET</option>
-            <option value="ARKA_HAZIRLIK">ARKA HAZIRLIK</option>
-            <option value="BITIM">BİTİM</option>
-            <option value="SAG_ON">SAĞ ÖN</option>
-            <option value="SOL_ON">SOL ÖN</option>
-            <option value="YAKA_HAZIRLIK">YAKA HAZIRLIK</option>
+            {teamRows.map((t) => (
+              <option key={t.code} value={t.code}>
+                {t.label}
+              </option>
+            ))}
           </select>
         </div>
         <div className="flex flex-col gap-1">
@@ -449,7 +443,7 @@ export default function AnalysisPage() {
             <div className="mb-3 border-b border-slate-100 pb-2 dark:border-slate-700">
               <div className="font-semibold">{worker.name}</div>
               <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500 dark:text-slate-400">
-                <span>{teamLabel(worker.team)}</span>
+                <span>{resolveTeamLabel(worker.team)}</span>
                 <span>·</span>
                 <span>{worker.process}</span>
                 <span>·</span>
@@ -560,7 +554,7 @@ export default function AnalysisPage() {
               <tr key={row.workerId} className="border-b border-slate-200">
                 <td className="px-2 py-2">{index + 1}</td>
                 <td className="px-2 py-2">{row.name}</td>
-                <td className="px-2 py-2">{teamLabel(row.team)}</td>
+                <td className="px-2 py-2">{resolveTeamLabel(row.team)}</td>
                 <td className="px-2 py-2">{row.process}</td>
                 <td className="px-2 py-2 text-right">{row.activeDays}</td>
                 <td className="px-2 py-2 text-right font-semibold">{row.totalProduction}</td>
@@ -598,7 +592,7 @@ export default function AnalysisPage() {
                 <tr key={`${row.productionDate}-${row.workerId}`} className="border-b border-slate-200 dark:border-slate-600">
                   <td className="px-2 py-2">{row.productionDate}</td>
                   <td className="px-2 py-2">{row.name}</td>
-                  <td className="px-2 py-2">{teamLabel(row.team)}</td>
+                  <td className="px-2 py-2">{resolveTeamLabel(row.team)}</td>
                   <td className="px-2 py-2">{row.process}</td>
                   <td className="px-2 py-2 text-right font-semibold">{row.production}</td>
                 </tr>

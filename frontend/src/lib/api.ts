@@ -269,13 +269,8 @@ export async function saveProductionBulk(payload: {
   if (!response.ok) throw new Error("Toplu kayıt başarısız");
 }
 
-export async function getRangeStageTotals(startDate: string, endDate: string): Promise<{
-  SAG_ON: number;
-  SOL_ON: number;
-  YAKA_HAZIRLIK: number;
-  ARKA_HAZIRLIK: number;
-  BITIM: number;
-}> {
+/** Tarih aralığında bölüm koduna göre üretim toplamları (tüm bölümler) */
+export async function getRangeStageTotals(startDate: string, endDate: string): Promise<Record<string, number>> {
   const query = new URLSearchParams({ startDate, endDate }).toString();
   const response = await apiFetch(`${apiBase()}/production/range-totals?${query}`, {
     cache: "no-store",

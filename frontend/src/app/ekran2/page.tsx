@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getDailyTrendAnalytics,
+  getTeams,
   getTopWorkersAnalytics,
   setAuthToken,
 } from "@/lib/api";
@@ -28,15 +29,13 @@ type StoredSettings = {
   endDate: string;
   hour: HourFilter;
   applied: boolean;
+  /** Tanımlı değil veya kayıtta yok: tüm bölümler */
+  teamCodes?: string[];
 };
 
-const TEAM_BLOCKS: { key: Team; label: string }[] = [
-  { key: "SAG_ON", label: "Sağ Ön" },
-  { key: "SOL_ON", label: "Sol Ön" },
-  { key: "YAKA_HAZIRLIK", label: "Yaka Hazırlık" },
-  { key: "ARKA_HAZIRLIK", label: "Arka Hazırlık" },
-  { key: "BITIM", label: "Bitim" },
-];
+/** Ana TV düzenindeki sabit sıra (ayarlarda eklenen diğer bölümler ayrı şeritte) */
+const HEDEF_ORDER = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM"] as const;
+const HEDEF_SET = new Set<string>(HEDEF_ORDER);
 
 function formatDateTr(dateStr: string) {
   if (!dateStr) return "";
@@ -59,11 +58,17 @@ function readStored(): StoredSettings | null {
     const p = JSON.parse(raw) as Partial<StoredSettings>;
     if (!p.startDate || !p.endDate) return null;
     const hour = p.hour === "t1000" || p.hour === "t1300" || p.hour === "t1600" || p.hour === "t1830" ? p.hour : "";
+    const rawCodes = p.teamCodes;
+    const teamCodes =
+      Array.isArray(rawCodes) && rawCodes.length > 0
+        ? rawCodes.filter((c): c is string => typeof c === "string" && c.length > 0)
+        : undefined;
     return {
       startDate: clampToWeekdayIso(p.startDate),
       endDate: clampToWeekdayIso(p.endDate),
       hour,
       applied: Boolean(p.applied),
+      ...(teamCodes && teamCodes.length > 0 ? { teamCodes } : {}),
     };
   } catch {
     return null;
@@ -71,7 +76,14 @@ function readStored(): StoredSettings | null {
 }
 
 function writeStored(s: StoredSettings) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  const out: Record<string, unknown> = {
+    startDate: s.startDate,
+    endDate: s.endDate,
+    hour: s.hour,
+    applied: s.applied,
+  };
+  if (s.teamCodes && s.teamCodes.length > 0) out.teamCodes = s.teamCodes;
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(out));
 }
 
 type TeamBlockData = {
@@ -120,10 +132,6 @@ function MiniTrendChart({ points, dark, compact }: { points: DailyTrendPoint[]; 
       />
     </svg>
   );
-}
-
-function ekran2TeamMeta(key: Team) {
-  return TEAM_BLOCKS.find((t) => t.key === key)!;
 }
 
 function PersonnelRows({
@@ -179,6 +187,7 @@ function Ekran2TeamPanel({
   className = "",
   compactChart = false,
   personnelTwoCols = false,
+  variant = "default",
 }: {
   meta: { key: Team; label: string };
   dataMap: Map<Team, TeamBlockData>;
@@ -188,6 +197,8 @@ function Ekran2TeamPanel({
   compactChart?: boolean;
   /** Bitim: personel listesi iki sütunda */
   personnelTwoCols?: boolean;
+  /** Ayarlardan eklenen bölümler — günlük özet / analiz ile aynı vurgu */
+  variant?: "default" | "extra";
 }) {
   const data = dataMap.get(meta.key);
   const top = data?.top ?? [];
@@ -201,11 +212,18 @@ function Ekran2TeamPanel({
   const barH = "h-2 sm:h-2.5 lg:h-3";
   const mid = Math.ceil(top.length / 2);
 
+  const extraRing =
+    variant === "extra"
+      ? dark
+        ? "ring-1 ring-violet-400/35 border-violet-500/25"
+        : "ring-1 ring-violet-400/50 border-violet-200"
+      : "";
+
   return (
     <div
       className={`flex min-h-0 flex-col overflow-hidden rounded-xl border p-2 sm:p-2.5 lg:p-3 ${
         dark ? "border-white/10 bg-slate-900/55" : "border-slate-200 bg-white shadow-sm"
-      } ${className}`.trim()}
+      } ${extraRing} ${className}`.trim()}
     >
       <h2
         className={`text-center text-sm font-bold leading-tight sm:text-base lg:text-lg xl:text-xl ${dark ? "text-white" : "text-slate-900"}`}
@@ -293,14 +311,52 @@ export default function Ekran2Page() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
+  const [teamMetas, setTeamMetas] = useState<Array<{ code: string; label: string }>>([]);
+  /** null = tüm bölümler; dizi = yalnızca bu kodlar */
+  const [selectedTeamCodes, setSelectedTeamCodes] = useState<string[] | null>(null);
+  const [setupError, setSetupError] = useState("");
 
   const dark = displayMode === "dark";
+
+  const fullTeamOrder = useMemo(() => {
+    const codes = new Set(teamMetas.map((t) => t.code));
+    const primary = HEDEF_ORDER.filter((k) => codes.has(k));
+    const extra = teamMetas.filter((t) => !HEDEF_SET.has(t.code)).map((t) => t.code);
+    return [...primary, ...extra] as Team[];
+  }, [teamMetas]);
+
+  const orderedKeys = useMemo(() => {
+    if (teamMetas.length === 0) return [] as Team[];
+    if (selectedTeamCodes === null) return fullTeamOrder;
+    const sel = new Set(selectedTeamCodes);
+    return fullTeamOrder.filter((k) => sel.has(k));
+  }, [teamMetas, fullTeamOrder, selectedTeamCodes]);
+
+  const orderedKeySet = useMemo(() => new Set(orderedKeys), [orderedKeys]);
+
+  const extraMetas = useMemo(
+    () => teamMetas.filter((t) => !HEDEF_SET.has(t.code) && orderedKeySet.has(t.code)),
+    [teamMetas, orderedKeySet]
+  );
+
+  const metaFor = useCallback(
+    (code: string) => {
+      const t = teamMetas.find((x) => x.code === code);
+      return t ? { key: t.code as Team, label: t.label } : null;
+    },
+    [teamMetas]
+  );
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
     setHasToken(!!token);
     setCanUseEkran2(isAdminRole() || hasPermission("ekran2") || hasPermission("analysis"));
-    if (token) setAuthToken(token);
+    if (token) {
+      setAuthToken(token);
+      void getTeams()
+        .then((rows) => setTeamMetas(rows.map((r) => ({ code: r.code, label: r.label }))))
+        .catch(() => {});
+    }
 
     try {
       const m = window.localStorage.getItem(EKRAN2_MODE_KEY);
@@ -314,17 +370,31 @@ export default function Ekran2Page() {
       setStartDate(stored.startDate);
       setEndDate(stored.endDate);
       setHourFilter(stored.hour);
+      setSelectedTeamCodes(stored.teamCodes && stored.teamCodes.length > 0 ? stored.teamCodes : null);
       if (stored.applied) setPhase("display");
     }
   }, []);
 
+  useEffect(() => {
+    if (teamMetas.length === 0 || selectedTeamCodes === null) return;
+    const valid = new Set(teamMetas.map((t) => t.code));
+    const next = selectedTeamCodes.filter((c) => valid.has(c));
+    if (next.length !== selectedTeamCodes.length) {
+      setSelectedTeamCodes(next.length > 0 ? next : null);
+    }
+  }, [teamMetas, selectedTeamCodes]);
+
   const fetchAll = useCallback(
     async (silent: boolean) => {
+      if (orderedKeys.length === 0) {
+        if (!silent) setLoading(false);
+        return;
+      }
       if (!silent) setLoading(true);
       setError("");
       try {
         const results = await Promise.all(
-          TEAM_BLOCKS.map(async ({ key }) => {
+          orderedKeys.map(async (key) => {
             const [top, trend] = await Promise.all([
               getTopWorkersAnalytics({
                 startDate,
@@ -347,7 +417,7 @@ export default function Ekran2Page() {
         if (!silent) setLoading(false);
       }
     },
-    [startDate, endDate, hourFilter]
+    [startDate, endDate, hourFilter, orderedKeys]
   );
 
   useEffect(() => {
@@ -376,14 +446,55 @@ export default function Ekran2Page() {
     }
   }
 
+  function persistSettings(applied: boolean) {
+    writeStored({
+      startDate,
+      endDate,
+      hour: hourFilter,
+      applied,
+      ...(selectedTeamCodes !== null && selectedTeamCodes.length > 0 ? { teamCodes: selectedTeamCodes } : {}),
+    });
+  }
+
   function handleOpenDisplay() {
-    writeStored({ startDate, endDate, hour: hourFilter, applied: true });
+    if (selectedTeamCodes !== null && selectedTeamCodes.length === 0) {
+      setSetupError("En az bir bölüm seçin.");
+      return;
+    }
+    setSetupError("");
+    persistSettings(true);
     setPhase("display");
   }
 
   function handleEditFilters() {
-    writeStored({ startDate, endDate, hour: hourFilter, applied: false });
+    persistSettings(false);
     setPhase("setup");
+  }
+
+  function toggleTeamSelection(code: string) {
+    setSetupError("");
+    if (teamMetas.length === 0) return;
+    if (selectedTeamCodes === null) {
+      const all = teamMetas.map((t) => t.code);
+      setSelectedTeamCodes(all.filter((c) => c !== code));
+      return;
+    }
+    if (selectedTeamCodes.includes(code)) {
+      setSelectedTeamCodes(selectedTeamCodes.filter((c) => c !== code));
+    } else {
+      setSelectedTeamCodes([...selectedTeamCodes, code]);
+    }
+  }
+
+  function selectAllTeams() {
+    setSetupError("");
+    setSelectedTeamCodes(null);
+  }
+
+  function selectPrimaryFiveOnly() {
+    setSetupError("");
+    const codes = HEDEF_ORDER.filter((k) => teamMetas.some((t) => t.code === k));
+    setSelectedTeamCodes(codes.length > 0 ? [...codes] : []);
   }
 
   const modeToggle = (
@@ -472,7 +583,7 @@ export default function Ekran2Page() {
         className={`fixed inset-0 overflow-auto ${dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"}`}
         style={{ minHeight: "100dvh" }}
       >
-        <div className="mx-auto flex min-h-full max-w-2xl flex-col gap-8 px-6 py-10 md:py-16">
+        <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-8 px-6 py-10 md:py-16">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className={`text-sm font-medium uppercase tracking-[0.35em] ${dark ? "text-teal-400/90" : "text-teal-700"}`}>
@@ -480,8 +591,8 @@ export default function Ekran2Page() {
               </p>
               <h1 className="mt-2 text-2xl font-bold md:text-3xl">Filtreleri seçin</h1>
               <p className={`mt-2 text-sm md:text-base ${dark ? "text-slate-400" : "text-slate-600"}`}>
-                Tarih aralığı ve saat filtresi panoya uygulanır. Onayladıktan sonra beş aşamanın analiz özeti açılır; veriler
-                her 30 saniyede yenilenir.
+                Tarih, saat ve gösterilecek bölümler panoya uygulanır. İstatistik
+                yalnızca işaretlediğiniz bölümler için yüklenir; veriler her 30 saniyede yenilenir.
               </p>
             </div>
             {modeToggle}
@@ -556,6 +667,79 @@ export default function Ekran2Page() {
               </div>
             </div>
 
+            <div className="mt-6">
+              <label className="text-sm font-medium">Gösterilecek bölümler</label>
+              <p className={`mb-3 mt-1 text-xs ${dark ? "text-slate-500" : "text-slate-500"}`}>
+                TV panosunda hangi bölümlerin özeti ve personel sıralaması yer alacağını seçin. “Tümü” tüm tanımlı bölümleri
+                açar; daraltmak için tek tek kapatın veya yalnızca ana beşliyi kullanın.
+              </p>
+              <div className="mb-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={selectAllTeams}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold sm:text-sm ${
+                    dark ? "border-slate-600 hover:bg-white/5" : "border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  Tümünü seç
+                </button>
+                <button
+                  type="button"
+                  onClick={selectPrimaryFiveOnly}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold sm:text-sm ${
+                    dark ? "border-slate-600 hover:bg-white/5" : "border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  Yalnızca ana bölümler (Sağ/Sol ön, Yaka, Arka, Bitim)
+                </button>
+              </div>
+              {teamMetas.length === 0 ? (
+                <p className={`text-sm ${dark ? "text-slate-500" : "text-slate-500"}`}>Bölüm listesi yükleniyor…</p>
+              ) : (
+                <ul
+                  className={`grid max-h-[min(40vh,22rem)] grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-3 sm:grid-cols-2 [scrollbar-width:thin] ${
+                    dark ? "border-slate-600 bg-slate-800/40" : "border-slate-200 bg-slate-50/80"
+                  }`}
+                >
+                  {teamMetas.map((t) => {
+                    const checked = selectedTeamCodes === null || selectedTeamCodes.includes(t.code);
+                    return (
+                      <li key={t.code}>
+                        <label
+                          className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm ${
+                            dark ? "hover:bg-white/5" : "hover:bg-white"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleTeamSelection(t.code)}
+                            className="h-4 w-4 shrink-0 rounded border-slate-400 text-teal-600 focus:ring-teal-500"
+                          />
+                          <span className="min-w-0 font-medium leading-snug">{t.label}</span>
+                          <span className={`shrink-0 font-mono text-[10px] ${dark ? "text-slate-500" : "text-slate-400"}`}>
+                            {t.code}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {selectedTeamCodes !== null ? (
+                <p className={`mt-2 text-xs ${dark ? "text-slate-500" : "text-slate-600"}`}>
+                  Seçili: {selectedTeamCodes.length} bölüm
+                  {selectedTeamCodes.length === 0 ? " — ekranı açmak için en az birini işaretleyin." : ""}
+                </p>
+              ) : (
+                <p className={`mt-2 text-xs ${dark ? "text-slate-500" : "text-slate-600"}`}>Tüm tanımlı bölümler açık.</p>
+              )}
+            </div>
+
+            {setupError ? (
+              <p className="mt-4 text-sm font-medium text-red-500 dark:text-red-400">{setupError}</p>
+            ) : null}
+
             <div className="mt-8 flex flex-wrap gap-3">
               <button
                 type="button"
@@ -579,6 +763,12 @@ export default function Ekran2Page() {
     );
   }
 
+  const mSag = metaFor("SAG_ON");
+  const mSol = metaFor("SOL_ON");
+  const mYaka = metaFor("YAKA_HAZIRLIK");
+  const mArka = metaFor("ARKA_HAZIRLIK");
+  const mBitim = metaFor("BITIM");
+
   return (
     <div
       className={`fixed inset-0 flex h-dvh max-h-dvh flex-col overflow-hidden ${dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"}`}
@@ -596,6 +786,9 @@ export default function Ekran2Page() {
               </p>
               <p className={`text-sm sm:text-base lg:text-lg ${dark ? "text-slate-300" : "text-slate-700"}`}>
                 {formatDateTr(startDate)} — {formatDateTr(endDate)} · {hourLabel(hourFilter)}
+                {orderedKeys.length > 0 ? (
+                  <span className={`ml-1.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>· {orderedKeys.length} bölüm</span>
+                ) : null}
                 {lastUpdated ? (
                   <span className={`ml-2 ${dark ? "text-slate-400" : "text-slate-500"}`}>· Güncelleme {lastUpdated}</span>
                 ) : null}
@@ -645,47 +838,73 @@ export default function Ekran2Page() {
           <p className={`shrink-0 text-center text-sm font-semibold sm:text-base ${dark ? "text-red-400" : "text-red-600"}`}>{error}</p>
         ) : null}
 
-        {loading && !blocks ? (
+        {loading && !blocks && orderedKeys.length > 0 ? (
           <p className={`shrink-0 text-center text-sm ${dark ? "text-slate-400" : "text-slate-500"}`}>Yükleniyor…</p>
         ) : null}
+        {orderedKeys.length === 0 && !error && teamMetas.length === 0 ? (
+          <p className={`shrink-0 text-center text-sm ${dark ? "text-slate-400" : "text-slate-500"}`}>
+            Bölüm listesi yükleniyor…
+          </p>
+        ) : null}
+        {orderedKeys.length === 0 && !error && teamMetas.length > 0 ? (
+          <p className={`shrink-0 text-center text-sm font-medium ${dark ? "text-amber-400" : "text-amber-700"}`}>
+            Gösterilecek bölüm yok. Filtre ile bölüm seçin.
+          </p>
+        ) : null}
 
-        <section className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden sm:grid-cols-2 sm:gap-3 lg:grid-cols-5 lg:gap-3">
-          <Ekran2TeamPanel
-            meta={ekran2TeamMeta("SAG_ON")}
-            dataMap={blockByKey}
-            dark={dark}
-            className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0"
-          />
-          <Ekran2TeamPanel
-            meta={ekran2TeamMeta("SOL_ON")}
-            dataMap={blockByKey}
-            dark={dark}
-            className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0"
-          />
-          <div className="flex min-h-0 flex-col gap-2 sm:col-span-2 sm:min-h-[40vh] lg:col-span-1 lg:h-full lg:min-h-0">
-            <Ekran2TeamPanel
-              meta={ekran2TeamMeta("YAKA_HAZIRLIK")}
-              dataMap={blockByKey}
-              dark={dark}
-              compactChart
-              className="min-h-0 flex-1 basis-0"
-            />
-            <Ekran2TeamPanel
-              meta={ekran2TeamMeta("ARKA_HAZIRLIK")}
-              dataMap={blockByKey}
-              dark={dark}
-              compactChart
-              className="min-h-0 flex-1 basis-0"
-            />
-          </div>
-          <Ekran2TeamPanel
-            meta={ekran2TeamMeta("BITIM")}
-            dataMap={blockByKey}
-            dark={dark}
-            personnelTwoCols
-            className="min-h-0 h-full max-h-full sm:col-span-2 lg:col-span-2"
-          />
-        </section>
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
+          <section className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden sm:grid-cols-2 sm:gap-3 lg:grid-cols-5 lg:gap-3">
+            {mSag && orderedKeySet.has("SAG_ON") ? (
+              <Ekran2TeamPanel meta={mSag} dataMap={blockByKey} dark={dark} className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0" />
+            ) : null}
+            {mSol && orderedKeySet.has("SOL_ON") ? (
+              <Ekran2TeamPanel meta={mSol} dataMap={blockByKey} dark={dark} className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0" />
+            ) : null}
+            {(mYaka && orderedKeySet.has("YAKA_HAZIRLIK")) || (mArka && orderedKeySet.has("ARKA_HAZIRLIK")) ? (
+              <div className="flex min-h-0 flex-col gap-2 sm:col-span-2 sm:min-h-[40vh] lg:col-span-1 lg:h-full lg:min-h-0">
+                {mYaka && orderedKeySet.has("YAKA_HAZIRLIK") ? (
+                  <Ekran2TeamPanel meta={mYaka} dataMap={blockByKey} dark={dark} compactChart className="min-h-0 flex-1 basis-0" />
+                ) : null}
+                {mArka && orderedKeySet.has("ARKA_HAZIRLIK") ? (
+                  <Ekran2TeamPanel meta={mArka} dataMap={blockByKey} dark={dark} compactChart className="min-h-0 flex-1 basis-0" />
+                ) : null}
+              </div>
+            ) : null}
+            {mBitim && orderedKeySet.has("BITIM") ? (
+              <Ekran2TeamPanel
+                meta={mBitim}
+                dataMap={blockByKey}
+                dark={dark}
+                personnelTwoCols
+                className="min-h-0 h-full max-h-full sm:col-span-2 lg:col-span-2"
+              />
+            ) : null}
+          </section>
+
+          {extraMetas.length > 0 ? (
+            <div className="mt-2 sm:mt-3">
+              <p
+                className={`mb-1.5 text-center text-[10px] font-semibold uppercase tracking-wide sm:text-xs ${
+                  dark ? "text-violet-300/90" : "text-violet-700"
+                }`}
+              >
+                Diğer bölümler
+              </p>
+              <section className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4">
+                {extraMetas.map((m) => (
+                  <Ekran2TeamPanel
+                    key={m.code}
+                    meta={{ key: m.code as Team, label: m.label }}
+                    dataMap={blockByKey}
+                    dark={dark}
+                    variant="extra"
+                    className="min-h-[28vh] sm:min-h-[32vh]"
+                  />
+                ))}
+              </section>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
