@@ -364,51 +364,60 @@ export function getWorkerDailyAnalytics({ startDate, endDate, team = "", hourCol
 
 export function getRangeStageTotals(startDate, endDate) {
   return new Promise((resolve, reject) => {
-    db.all(
-      `
-      SELECT
-        w.team,
-        SUM(
-          COALESCE(p.t1000, 0) +
-          COALESCE(p.t1300, 0) +
-          COALESCE(p.t1600, 0) +
-          COALESCE(p.t1830, 0)
-        ) AS total
-      FROM production_entries p
-      JOIN workers w ON w.id = p.worker_id
-      WHERE p.production_date BETWEEN ? AND ?
-        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
-        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
-      GROUP BY w.team
-      `,
-      [startDate, endDate],
-      (err, rows) => {
-        if (err) return reject(err);
-        const totals = { SAG_ON: 0, SOL_ON: 0, YAKA_HAZIRLIK: 0, ARKA_HAZIRLIK: 0, BITIM: 0 };
-        for (const row of rows) {
-          if (row.team in totals) totals[row.team] = Number(row.total) || 0;
+    db.all("SELECT code, label FROM teams", [], (e1, teamRows) => {
+      if (e1) return reject(e1);
+      const sorted = (teamRows || []).slice().sort((a, b) =>
+        String(a.label).localeCompare(String(b.label), "tr", { sensitivity: "base" })
+      );
+      const codes = sorted.length ? sorted.map((r) => r.code) : ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
+      const totals = Object.fromEntries(codes.map((c) => [c, 0]));
+      db.all(
+        `
+        SELECT
+          w.team,
+          SUM(
+            COALESCE(p.t1000, 0) +
+            COALESCE(p.t1300, 0) +
+            COALESCE(p.t1600, 0) +
+            COALESCE(p.t1830, 0)
+          ) AS total
+        FROM production_entries p
+        JOIN workers w ON w.id = p.worker_id
+        WHERE p.production_date BETWEEN ? AND ?
+          AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+          AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+        GROUP BY w.team
+        `,
+        [startDate, endDate],
+        (err, rows) => {
+          if (err) return reject(err);
+          for (const row of rows) {
+            if (row.team in totals) totals[row.team] = Number(row.total) || 0;
+          }
+          resolve(totals);
         }
-        resolve(totals);
-      }
-    );
+      );
+    });
   });
 }
 
-/** Hedef Takip ekranı: takım + belirli proseslere göre aşama adetleri (Bitim = BITIM + DÜĞME) */
+/** Hedef Takip: processes.hedef_* ile eşleşen satırlar (arka için hedef_arka_half=0.5 çarpanı) */
 export function getHedefTakipStageTotals(startDate, endDate) {
   const line =
     "COALESCE(p.t1000, 0) + COALESCE(p.t1300, 0) + COALESCE(p.t1600, 0) + COALESCE(p.t1830, 0)";
+  const mult = "(CASE WHEN COALESCE(pr.hedef_arka_half, 0) = 1 THEN 0.5 ELSE 1.0 END)";
   return new Promise((resolve, reject) => {
     db.get(
       `
       SELECT
-        COALESCE(SUM(CASE WHEN w.team = 'SAG_ON' AND w.process = 'SAĞ KOL ÇIMA' THEN ${line} ELSE 0 END), 0) AS sag_on,
-        COALESCE(SUM(CASE WHEN w.team = 'SOL_ON' AND w.process = 'SOL KOL ÇIMA' THEN ${line} ELSE 0 END), 0) AS sol_on,
-        COALESCE(SUM(CASE WHEN w.team = 'YAKA_HAZIRLIK' AND w.process = 'YAKA İÇ ÇIMA' THEN ${line} ELSE 0 END), 0) AS yaka,
-        COALESCE(SUM(CASE WHEN w.team = 'ARKA_HAZIRLIK' AND w.process = 'ARKA KOL ÇIMA' THEN ${line} ELSE 0 END), 0) AS arka_raw,
-        COALESCE(SUM(CASE WHEN w.team = 'BITIM' AND w.process = 'DÜĞME' THEN ${line} ELSE 0 END), 0) AS bitim
+        COALESCE(SUM(CASE WHEN pr.hedef_metric = 'SAG_ON' AND w.team = pr.hedef_team THEN ${mult} * (${line}) ELSE 0 END), 0) AS sag_on,
+        COALESCE(SUM(CASE WHEN pr.hedef_metric = 'SOL_ON' AND w.team = pr.hedef_team THEN ${mult} * (${line}) ELSE 0 END), 0) AS sol_on,
+        COALESCE(SUM(CASE WHEN pr.hedef_metric = 'YAKA_HAZIRLIK' AND w.team = pr.hedef_team THEN ${mult} * (${line}) ELSE 0 END), 0) AS yaka,
+        COALESCE(SUM(CASE WHEN pr.hedef_metric = 'ARKA_HAZIRLIK' AND w.team = pr.hedef_team THEN ${mult} * (${line}) ELSE 0 END), 0) AS arka,
+        COALESCE(SUM(CASE WHEN pr.hedef_metric = 'BITIM' AND w.team = pr.hedef_team THEN ${mult} * (${line}) ELSE 0 END), 0) AS bitim
       FROM production_entries p
       JOIN workers w ON w.id = p.worker_id
+      LEFT JOIN processes pr ON pr.name = w.process
       WHERE p.production_date BETWEEN ? AND ?
         AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
@@ -416,12 +425,11 @@ export function getHedefTakipStageTotals(startDate, endDate) {
       [startDate, endDate],
       (err, row) => {
         if (err) return reject(err);
-        const arkaRaw = Number(row.arka_raw) || 0;
         resolve({
           SAG_ON: Number(row.sag_on) || 0,
           SOL_ON: Number(row.sol_on) || 0,
           YAKA_HAZIRLIK: Number(row.yaka) || 0,
-          ARKA_HAZIRLIK: arkaRaw / 2,
+          ARKA_HAZIRLIK: Number(row.arka) || 0,
           BITIM: Number(row.bitim) || 0,
         });
       }
@@ -651,5 +659,227 @@ export function verifyUserPassword({ username, password }) {
         });
       }
     );
+  });
+}
+
+export function getTeams() {
+  return new Promise((resolve, reject) => {
+    db.all("SELECT id, code, label, sort_order FROM teams", [], (err, rows) => {
+      if (err) return reject(err);
+      const sorted = (rows || []).slice().sort((a, b) =>
+        String(a.label).localeCompare(String(b.label), "tr", { sensitivity: "base" })
+      );
+      resolve(sorted);
+    });
+  });
+}
+
+export function listTeamCodes() {
+  return new Promise((resolve, reject) => {
+    db.all("SELECT code FROM teams", [], (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows.map((r) => r.code));
+    });
+  });
+}
+
+/** Bölüm adından teknik kod üretir (Türkçe harfler dönüştürülür). */
+function slugifyTeamCodeFromLabel(label) {
+  let s = String(label || "").normalize("NFC");
+  const map = [
+    ["ğ", "G"],
+    ["Ğ", "G"],
+    ["ü", "U"],
+    ["Ü", "U"],
+    ["ş", "S"],
+    ["Ş", "S"],
+    ["ı", "I"],
+    ["İ", "I"],
+    ["i", "I"],
+    ["ö", "O"],
+    ["Ö", "O"],
+    ["ç", "C"],
+    ["Ç", "C"],
+  ];
+  for (const [a, b] of map) s = s.split(a).join(b);
+  s = s.toUpperCase();
+  s = s.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!s) s = "BOLUM";
+  if (/^[0-9]/.test(s)) s = `B_${s}`;
+  return s.slice(0, 48);
+}
+
+function normalizeTeamLabel(label) {
+  return String(label || "")
+    .trim()
+    .toLocaleUpperCase("tr-TR");
+}
+
+export function addTeam({ label } = {}) {
+  const lab = normalizeTeamLabel(label);
+  if (!lab) return Promise.reject(new Error("Bölüm adı zorunlu"));
+  return new Promise((resolve, reject) => {
+    db.get("SELECT COALESCE(MAX(sort_order), 0) AS m FROM teams", [], (e0, row0) => {
+      if (e0) return reject(e0);
+      const so = (Number(row0?.m) || 0) + 10;
+      const base = slugifyTeamCodeFromLabel(lab);
+      let n = 0;
+      const attempt = () => {
+        const suffix = n === 0 ? "" : `_${n + 1}`;
+        let code = `${base}${suffix}`.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+        if (code.length > 64) code = code.slice(0, 64).replace(/_+$/g, "");
+        if (!/^[A-Z]/.test(code)) code = `B_${code}`.slice(0, 64);
+        db.run(
+          "INSERT INTO teams (code, label, sort_order) VALUES (?, ?, ?)",
+          [code, lab, so],
+          function onRun(err) {
+            if (err && String(err.message).includes("UNIQUE")) {
+              n += 1;
+              if (n > 200) return reject(new Error("Benzersiz kod üretilemedi"));
+              return attempt();
+            }
+            if (err) return reject(err);
+            resolve({ id: this.lastID, code, label: lab, sort_order: so });
+          }
+        );
+      };
+      attempt();
+    });
+  });
+}
+
+export function updateTeam(id, { label, sort_order }) {
+  let lab = label !== undefined ? String(label).trim() : null;
+  if (lab === "") return Promise.reject(new Error("Bölüm adı boş olamaz"));
+  if (lab != null) lab = lab.toLocaleUpperCase("tr-TR");
+  const so = sort_order !== undefined ? Number(sort_order) : null;
+  if (sort_order !== undefined && !Number.isFinite(so)) {
+    return Promise.reject(new Error("Geçersiz sıra numarası"));
+  }
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE teams SET label = COALESCE(?, label), sort_order = COALESCE(?, sort_order) WHERE id = ?",
+      [lab, so, id],
+      function onRun(err) {
+        if (err) return reject(err);
+        resolve({ updated: this.changes > 0 });
+      }
+    );
+  });
+}
+
+export function deleteTeam(id) {
+  return new Promise((resolve, reject) => {
+    db.get("SELECT code FROM teams WHERE id = ?", [id], (err, row) => {
+      if (err) return reject(err);
+      if (!row) return resolve({ deleted: false });
+      const code = row.code;
+      db.get(
+        "SELECT 1 FROM workers WHERE team = ? LIMIT 1",
+        [code],
+        (err2, w) => {
+          if (err2) return reject(err2);
+          if (w) return reject(new Error("Bu bölümde kayıtlı çalışan varken silinemez"));
+          db.run("DELETE FROM teams WHERE id = ?", [id], function onDel(err3) {
+            if (err3) return reject(err3);
+            resolve({ deleted: this.changes > 0 });
+          });
+        }
+      );
+    });
+  });
+}
+
+export function getProcesses() {
+  return new Promise((resolve, reject) => {
+    db.all("SELECT id, name, sort_order FROM processes", [], (err, rows) => {
+      if (err) return reject(err);
+      const sorted = (rows || []).slice().sort((a, b) =>
+        String(a.name).localeCompare(String(b.name), "tr", { sensitivity: "base" })
+      );
+      resolve(sorted);
+    });
+  });
+}
+
+export function listProcessNames() {
+  return new Promise((resolve, reject) => {
+    db.all("SELECT name FROM processes", [], (err, rows) => {
+      if (err) return reject(err);
+      const names = (rows || []).map((r) => r.name);
+      names.sort((a, b) => String(a).localeCompare(String(b), "tr", { sensitivity: "base" }));
+      resolve(names);
+    });
+  });
+}
+
+export function addProcess({ name } = {}) {
+  const n = String(name || "").trim().toUpperCase();
+  if (!n) return Promise.reject(new Error("Proses adı zorunlu"));
+  return new Promise((resolve, reject) => {
+    db.get("SELECT COALESCE(MAX(sort_order), 0) AS m FROM processes", [], (e0, row0) => {
+      if (e0) return reject(e0);
+      const so = (Number(row0?.m) || 0) + 10;
+      db.run(
+        "INSERT INTO processes (name, sort_order) VALUES (?, ?)",
+        [n, so],
+        function onRun(err) {
+          if (err) {
+            if (String(err.message).includes("UNIQUE")) return reject(new Error("Bu proses zaten kayıtlı"));
+            return reject(err);
+          }
+          resolve({ id: this.lastID, name: n, sort_order: so });
+        }
+      );
+    });
+  });
+}
+
+export function updateProcess(id, { name, sort_order }) {
+  const newName = name !== undefined ? String(name).trim().toUpperCase() : null;
+  if (newName === "") return Promise.reject(new Error("Proses adı boş olamaz"));
+  const so = sort_order !== undefined ? Number(sort_order) : null;
+  if (sort_order !== undefined && !Number.isFinite(so)) {
+    return Promise.reject(new Error("Geçersiz sıra numarası"));
+  }
+  return new Promise((resolve, reject) => {
+    db.get("SELECT name FROM processes WHERE id = ?", [id], (err, oldRow) => {
+      if (err) return reject(err);
+      if (!oldRow) return resolve({ updated: false });
+      const oldName = oldRow.name;
+      const finalName = newName && newName.length > 0 ? newName : oldName;
+      db.run(
+        "UPDATE processes SET name = ?, sort_order = COALESCE(?, sort_order) WHERE id = ?",
+        [finalName, so, id],
+        function onRun(err2) {
+          if (err2) {
+            if (String(err2.message).includes("UNIQUE")) return reject(new Error("Bu proses adı zaten kullanılıyor"));
+            return reject(err2);
+          }
+          if (finalName !== oldName) {
+            db.run("UPDATE workers SET process = ? WHERE process = ?", [finalName, oldName], () => {});
+          }
+          resolve({ updated: this.changes > 0 });
+        }
+      );
+    });
+  });
+}
+
+export function deleteProcess(id) {
+  return new Promise((resolve, reject) => {
+    db.get("SELECT name FROM processes WHERE id = ?", [id], (err, row) => {
+      if (err) return reject(err);
+      if (!row) return resolve({ deleted: false });
+      const n = row.name;
+      db.get("SELECT 1 FROM workers WHERE process = ? LIMIT 1", [n], (err2, w) => {
+        if (err2) return reject(err2);
+        if (w) return reject(new Error("Bu prosesi kullanan çalışan varken silinemez"));
+        db.run("DELETE FROM processes WHERE id = ?", [id], function onDel(err3) {
+          if (err3) return reject(err3);
+          resolve({ deleted: this.changes > 0 });
+        });
+      });
+    });
   });
 }

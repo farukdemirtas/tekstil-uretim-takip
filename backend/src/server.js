@@ -30,7 +30,17 @@ import {
   getTopWorkersAnalytics,
   getWorkers,
   upsertEntriesBulk,
-  upsertEntry
+  upsertEntry,
+  getTeams,
+  getProcesses,
+  addTeam,
+  updateTeam,
+  deleteTeam,
+  addProcess,
+  updateProcess,
+  deleteProcess,
+  listTeamCodes,
+  listProcessNames,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 
@@ -42,7 +52,6 @@ const AUTH_PASS = process.env.APP_PASSWORD || "admin55";
 // Burada signing secret olarak kullanıyoruz.
 const AUTH_TOKEN = process.env.APP_TOKEN || "yeva-local-token";
 const TOKEN_SECRET = process.env.APP_TOKEN_SECRET || AUTH_TOKEN;
-const VALID_TEAMS = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
 const VALID_HOURS = ["", "t1000", "t1300", "t1600", "t1830"];
 
 initDb();
@@ -257,21 +266,109 @@ app.delete("/api/worker-names/:id", requirePermission("ayarlar"), async (req, re
   } catch (e) { res.status(500).json({ message: String(e) }); }
 });
 
+app.get("/api/teams", requireAuth, async (_req, res) => {
+  try {
+    res.json(await getTeams());
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
+app.get("/api/processes", requireAuth, async (_req, res) => {
+  try {
+    res.json(await getProcesses());
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
+app.post("/api/teams", requirePermission("ayarlar"), async (req, res) => {
+  try {
+    const row = await addTeam(req.body || {});
+    res.status(201).json(row);
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+app.put("/api/teams/:id", requirePermission("ayarlar"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const r = await updateTeam(id, req.body || {});
+    if (!r.updated) return res.status(404).json({ message: "Bulunamadı" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+app.delete("/api/teams/:id", requirePermission("ayarlar"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const r = await deleteTeam(id);
+    if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+app.post("/api/processes", requirePermission("ayarlar"), async (req, res) => {
+  try {
+    const row = await addProcess(req.body || {});
+    res.status(201).json(row);
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+app.put("/api/processes/:id", requirePermission("ayarlar"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const r = await updateProcess(id, req.body || {});
+    if (!r.updated) return res.status(404).json({ message: "Bulunamadı" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+app.delete("/api/processes/:id", requirePermission("ayarlar"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const r = await deleteProcess(id);
+    if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
 app.post("/api/workers", requireAuth, async (req, res) => {
   const { name, team, process, addedDate } = req.body;
   if (!name || !team || !process) {
     return res.status(400).json({ message: "name, team ve process zorunlu" });
   }
 
-  if (!VALID_TEAMS.includes(team)) {
-    return res.status(400).json({ message: "Geçersiz grup" });
+  const codes = await listTeamCodes();
+  if (!codes.includes(String(team))) {
+    return res.status(400).json({ message: "Geçersiz bölüm" });
+  }
+  const procNorm = String(process).trim().toUpperCase();
+  const pnames = await listProcessNames();
+  if (!pnames.includes(procNorm)) {
+    return res.status(400).json({ message: "Geçersiz proses (ayarlardan tanımlı olmalı)" });
   }
 
   /* addedDate gönderilmezse bugünün tarihi kullanılır */
   const created_at = addedDate || new Date().toISOString().slice(0, 10);
 
   try {
-    const worker = await createWorker({ name, team, process, created_at });
+    const worker = await createWorker({ name, team, process: procNorm, created_at });
     res.status(201).json(worker);
   } catch (error) {
     res.status(500).json({ message: "Çalışan eklenemedi", error: String(error) });
@@ -284,9 +381,14 @@ app.put("/api/workers/:id", requireAuth, async (req, res) => {
 
   const { process } = req.body;
   if (!process) return res.status(400).json({ message: "process zorunlu" });
+  const procNorm = String(process).trim().toUpperCase();
+  const pnames = await listProcessNames();
+  if (!pnames.includes(procNorm)) {
+    return res.status(400).json({ message: "Geçersiz proses" });
+  }
 
   try {
-    const result = await updateWorker(workerId, { process });
+    const result = await updateWorker(workerId, { process: procNorm });
     if (!result.updated) return res.status(404).json({ message: "Çalışan bulunamadı" });
     res.json({ ok: true });
   } catch (error) {
@@ -426,7 +528,8 @@ app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2"
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
   }
 
-  if (team && !VALID_TEAMS.includes(String(team))) {
+  const codes = await listTeamCodes();
+  if (team && !codes.includes(String(team))) {
     return res.status(400).json({ message: "Geçersiz grup filtresi" });
   }
   if (!VALID_HOURS.includes(String(hour))) {
@@ -452,7 +555,8 @@ app.get("/api/analytics/daily-trend", requireAnyPermission(["analysis", "ekran2"
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
   }
-  if (team && !VALID_TEAMS.includes(String(team))) {
+  const codes2 = await listTeamCodes();
+  if (team && !codes2.includes(String(team))) {
     return res.status(400).json({ message: "Geçersiz grup filtresi" });
   }
   if (!VALID_HOURS.includes(String(hour))) {
@@ -477,7 +581,8 @@ app.get("/api/analytics/worker-daily", requireAnyPermission(["analysis", "ekran2
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
   }
-  if (team && !VALID_TEAMS.includes(String(team))) {
+  const codes3 = await listTeamCodes();
+  if (team && !codes3.includes(String(team))) {
     return res.status(400).json({ message: "Geçersiz grup filtresi" });
   }
   if (!VALID_HOURS.includes(String(hour))) {

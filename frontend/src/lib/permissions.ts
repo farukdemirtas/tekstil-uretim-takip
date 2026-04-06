@@ -5,7 +5,7 @@ const STORAGE_PERMS = "auth_permissions";
 export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; description: string }[] = [
   { key: "analysis", label: "Analiz", description: "Analiz grafikleri ve rapor API’leri" },
   { key: "karsilastirma", label: "Karşılaştırma", description: "İki işçi karşılaştırma ekranı" },
-  { key: "ayarlar", label: "Ayarlar", description: "İsim havuzu (ekle / düzenle / sil)" },
+  { key: "ayarlar", label: "Ayarlar", description: "Personel isimleri, bölüm ve proses tanımları" },
   { key: "hedefTakip", label: "Hedef takip", description: "Hedef takip ekranı" },
   { key: "ekran1", label: "EKRAN1", description: "Hedef takip TV / tam ekran görünümü" },
   { key: "ekran2", label: "EKRAN2", description: "Aşama analiz panosu (TV)" },

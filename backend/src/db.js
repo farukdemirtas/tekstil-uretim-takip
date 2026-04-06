@@ -165,6 +165,40 @@ export function initDb() {
       )
     `);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS processes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        hedef_metric TEXT,
+        hedef_team TEXT,
+        hedef_arka_half INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    db.all("PRAGMA table_info(processes)", [], (pragmaErr, cols) => {
+      if (pragmaErr || !Array.isArray(cols)) return;
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has("hedef_metric")) {
+        db.run("ALTER TABLE processes ADD COLUMN hedef_metric TEXT", () => {});
+      }
+      if (!names.has("hedef_team")) {
+        db.run("ALTER TABLE processes ADD COLUMN hedef_team TEXT", () => {});
+      }
+      if (!names.has("hedef_arka_half")) {
+        db.run("ALTER TABLE processes ADD COLUMN hedef_arka_half INTEGER NOT NULL DEFAULT 0", () => {});
+      }
+    });
+
     /* İsim havuzunu mevcut workers tablosundan doldur (ilk kurulumda) */
     db.get("SELECT COUNT(*) AS cnt FROM worker_names", [], (err, row) => {
       if (err || (row && row.cnt > 0)) return;
@@ -249,6 +283,129 @@ export function initDb() {
         () => {}
       );
     });
+
+    seedTeamsAndProcessesIfEmpty();
+    migrateWorkersRemoveTeamCheckIfNeeded();
+  });
+}
+
+const DEFAULT_PROCESS_NAMES = [
+  "ARKA KOL ÇIMA",
+  "ARKA KOL TAKMA",
+  "CEP AĞZI",
+  "CEP TAKMA",
+  "DÜĞME",
+  "ETEK UCU",
+  "ETEK YAPMA",
+  "ETİKET TAKMA",
+  "İLİK AÇMA",
+  "KESİM ADET",
+  "KOL GAZİ",
+  "KOLİTE KONTROL ADET",
+  "OMUZ ÇATIM",
+  "OMUZ ÇIMA",
+  "ÖN PAT",
+  "SAĞ KOL ÇIMA",
+  "SAĞ KOL TAKMA",
+  "SOL KOL ÇIMA",
+  "SOL KOL TAKMA",
+  "TALİMAT HAZIRLIK",
+  "ÜTÜ ADET",
+  "YAKA İÇ ÇIMA",
+  "YAKA KAPAMA",
+  "YAKA REGOLA",
+  "YAKA TAKMA",
+  "YAKA UCU",
+  "YAKA ÜST TULUM",
+  "YAKA YAN VURMA",
+  "YAN ÇATMA",
+  "YIKAMA TALİMATI",
+].sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
+
+function seedTeamsAndProcessesIfEmpty() {
+  db.get("SELECT COUNT(*) AS c FROM teams", [], (err, row) => {
+    if (err || !row || row.c > 0) return;
+    const teams = [
+      ["SAG_ON", "SAĞ ÖN", 10],
+      ["SOL_ON", "SOL ÖN", 20],
+      ["YAKA_HAZIRLIK", "YAKA HAZIRLIK", 30],
+      ["ARKA_HAZIRLIK", "ARKA HAZIRLIK", 40],
+      ["BITIM", "BİTİM", 50],
+      ["ADET", "ADET", 60],
+    ];
+    const tstmt = db.prepare("INSERT INTO teams (code, label, sort_order) VALUES (?, ?, ?)");
+    for (const [code, label, o] of teams) tstmt.run([code, label, o]);
+    tstmt.finalize();
+  });
+
+  db.get("SELECT COUNT(*) AS c FROM processes", [], (err, row) => {
+    if (err || !row || row.c > 0) return;
+    const pstmt = db.prepare(
+      "INSERT INTO processes (name, sort_order, hedef_metric, hedef_team, hedef_arka_half) VALUES (?, ?, ?, ?, ?)"
+    );
+    let order = 0;
+    for (const name of DEFAULT_PROCESS_NAMES) {
+      order += 10;
+      let hm = null;
+      let ht = null;
+      let ha = 0;
+      if (name === "SAĞ KOL ÇIMA") {
+        hm = "SAG_ON";
+        ht = "SAG_ON";
+      } else if (name === "SOL KOL ÇIMA") {
+        hm = "SOL_ON";
+        ht = "SOL_ON";
+      } else if (name === "YAKA İÇ ÇIMA") {
+        hm = "YAKA_HAZIRLIK";
+        ht = "YAKA_HAZIRLIK";
+      } else if (name === "ARKA KOL ÇIMA") {
+        hm = "ARKA_HAZIRLIK";
+        ht = "ARKA_HAZIRLIK";
+        ha = 1;
+      } else if (name === "DÜĞME") {
+        hm = "BITIM";
+        ht = "BITIM";
+      }
+      pstmt.run([name, order, hm, ht, ha]);
+    }
+    pstmt.finalize();
+  });
+}
+
+function migrateWorkersRemoveTeamCheckIfNeeded() {
+  db.get("SELECT sql FROM sqlite_master WHERE type='table' AND name='workers'", [], (err, row) => {
+    if (err) return;
+    const sql = String(row?.sql || "");
+    if (!sql.includes("CHECK(team")) return;
+    db.exec(
+      `
+      PRAGMA foreign_keys = OFF;
+      BEGIN TRANSACTION;
+      CREATE TABLE workers_dyn (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        team TEXT NOT NULL,
+        process TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (date('now')),
+        deleted_at TEXT
+      );
+      INSERT INTO workers_dyn (id, name, team, process, created_at, deleted_at)
+        SELECT id, name, team, process,
+          COALESCE(created_at, date('now')),
+          deleted_at
+        FROM workers;
+      DROP TABLE workers;
+      ALTER TABLE workers_dyn RENAME TO workers;
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+      `,
+      (execErr) => {
+        if (execErr) {
+          // eslint-disable-next-line no-console
+          console.error("workers team CHECK migration error:", String(execErr));
+        }
+      }
+    );
   });
 }
 

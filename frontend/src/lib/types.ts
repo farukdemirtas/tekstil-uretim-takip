@@ -1,4 +1,5 @@
-export type Team = "SAG_ON" | "SOL_ON" | "YAKA_HAZIRLIK" | "ARKA_HAZIRLIK" | "BITIM" | "ADET";
+/** Bölüm kodu (SAG_ON vb.); ayarlardan yönetilir */
+export type Team = string;
 
 export type Worker = {
   id: number;
@@ -23,7 +24,7 @@ export type ProductionRow = {
 export type TopWorkerAnalytics = {
   workerId: number;
   name: string;
-  team: Team;
+  team: string;
   process: string;
   activeDays: number;
   totalProduction: number;
@@ -38,7 +39,7 @@ export type WorkerDailyAnalytics = {
   productionDate: string;
   workerId: number;
   name: string;
-  team: Team;
+  team: string;
   process: string;
   production: number;
 };

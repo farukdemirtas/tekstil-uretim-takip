@@ -1,55 +1,45 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { getWorkerNames } from "@/lib/api";
-import { Team } from "@/lib/types";
+import { getProcesses, getTeams, getWorkerNames } from "@/lib/api";
 
 type WorkerFormProps = {
-  onSubmit: (payload: { name: string; team: Team; process: string }) => Promise<void>;
+  onSubmit: (payload: { name: string; team: string; process: string }) => Promise<void>;
 };
 
-const PROCESS_OPTIONS = [
-  "ARKA KOL ÇIMA","ARKA KOL TAKMA","CEP AĞZI","CEP TAKMA","DÜĞME","ETEK UCU",
-  "ETEK YAPMA","ETİKET TAKMA","İLİK AÇMA","KESİM ADET","KOL GAZİ","KOLİTE KONTROL ADET",
-  "OMUZ ÇATIM","OMUZ ÇIMA","ÖN PAT","SAĞ KOL ÇIMA","SAĞ KOL TAKMA","SOL KOL ÇIMA",
-  "SOL KOL TAKMA","TALİMAT HAZIRLIK","ÜTÜ ADET","YAKA İÇ ÇIMA","YAKA KAPAMA",
-  "YAKA REGOLA","YAKA TAKMA","YAKA UCU","YAKA ÜST TULUM","YAKA YAN VURMA","YAN ÇATMA","YIKAMA TALİMATI",
-].sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
-
-const TEAM_CHOICES: Array<{ value: Team; label: string }> = [
-  { value: "ADET", label: "ADET" },
-  { value: "ARKA_HAZIRLIK", label: "ARKA HAZIRLIK" },
-  { value: "BITIM", label: "BİTİM" },
-  { value: "SAG_ON", label: "SAĞ ÖN" },
-  { value: "SOL_ON", label: "SOL ÖN" },
-  { value: "YAKA_HAZIRLIK", label: "YAKA HAZIRLIK" }
-];
-
-const TEAM_OPTIONS = TEAM_CHOICES.slice().sort((a, b) => a.label.localeCompare(b.label, "tr", { sensitivity: "base" }));
-
 export default function WorkerForm({ onSubmit }: WorkerFormProps) {
-  const [names, setNames]     = useState<string[]>([]);
-  const [name, setName]       = useState("");
-  const [team, setTeam]       = useState<Team>("SAG_ON");
-  const [process, setProcess] = useState(PROCESS_OPTIONS[0]);
+  const [names, setNames] = useState<string[]>([]);
+  const [teams, setTeams] = useState<{ code: string; label: string }[]>([]);
+  const [processes, setProcesses] = useState<string[]>([]);
+  const [name, setName] = useState("");
+  const [team, setTeam] = useState("");
+  const [process, setProcess] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    getWorkerNames()
-      .then((list) => {
-        const sorted = list.map((n) => n.name);
+    void Promise.all([getWorkerNames(), getTeams(), getProcesses()])
+      .then(([nameList, teamRows, procRows]) => {
+        const sorted = nameList.map((n) => n.name);
         setNames(sorted);
         if (sorted.length > 0) setName(sorted[0]);
+        const trows = teamRows
+          .slice()
+          .sort((a, b) => a.label.localeCompare(b.label, "tr", { sensitivity: "base" }));
+        setTeams(trows.map((t) => ({ code: t.code, label: t.label })));
+        if (trows.length > 0) setTeam((prev) => prev || trows[0].code);
+        const pnames = procRows.map((p) => p.name);
+        setProcesses(pnames);
+        if (pnames.length > 0) setProcess((prev) => prev || pnames[0]);
       })
-      .catch(() => {/* API henüz hazır değilse sessiz geç */});
+      .catch(() => {/* API hazır değilse sessiz */});
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!name.trim() || !process.trim()) return;
+    if (!name.trim() || !process.trim() || !team) return;
     setLoading(true);
     try {
-      await onSubmit({ name: name.trim(), team, process: process.trim() });
+      await onSubmit({ name: name.trim(), team, process: process.trim().toUpperCase() });
     } finally {
       setLoading(false);
     }
@@ -73,12 +63,14 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
 
       <select
         value={team}
-        onChange={(e) => setTeam(e.target.value as Team)}
+        onChange={(e) => setTeam(e.target.value)}
         className="input-modern"
       >
-        {TEAM_OPTIONS.map((t) => (
-          <option key={t.value} value={t.value}>{t.label}</option>
-        ))}
+        {teams.length === 0
+          ? <option value="">— Bölüm yükleniyor... —</option>
+          : teams.map((t) => (
+            <option key={t.code} value={t.code}>{t.label}</option>
+          ))}
       </select>
 
       <select
@@ -86,13 +78,15 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
         onChange={(e) => setProcess(e.target.value)}
         className="input-modern"
       >
-        {PROCESS_OPTIONS.map((p) => (
-          <option key={p} value={p}>{p}</option>
-        ))}
+        {processes.length === 0
+          ? <option value="">— Proses yükleniyor... —</option>
+          : processes.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
       </select>
 
       <button
-        disabled={loading || names.length === 0}
+        disabled={loading || names.length === 0 || !team || !process}
         className="rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-surface-sm transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98]"
         type="submit"
       >

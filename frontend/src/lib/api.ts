@@ -100,6 +100,83 @@ export async function getWorkers(): Promise<Worker[]> {
   return response.json();
 }
 
+export type TeamRow = { id: number; code: string; label: string; sort_order: number };
+export type ProcessRow = { id: number; name: string; sort_order: number };
+
+export async function getTeams(): Promise<TeamRow[]> {
+  const res = await apiFetch(`${apiBase()}/teams`, { cache: "no-store", headers: authHeaders() });
+  if (!res.ok) throw new Error("Bölümler alınamadı");
+  return res.json();
+}
+
+export async function getProcesses(): Promise<ProcessRow[]> {
+  const res = await apiFetch(`${apiBase()}/processes`, { cache: "no-store", headers: authHeaders() });
+  if (!res.ok) throw new Error("Prosesler alınamadı");
+  return res.json();
+}
+
+export async function addTeamApi(body: { label: string }): Promise<TeamRow> {
+  const res = await apiFetch(`${apiBase()}/teams`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((d as { message?: string }).message ?? "Bölüm eklenemedi");
+  return d as TeamRow;
+}
+
+export async function updateTeamApi(id: number, body: { label?: string; sort_order?: number }): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/teams/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error((d as { message?: string }).message ?? "Güncellenemedi");
+  }
+}
+
+export async function deleteTeamApi(id: number): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/teams/${id}`, { method: "DELETE", headers: authHeaders() });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error((d as { message?: string }).message ?? "Silinemedi");
+  }
+}
+
+export async function addProcessApi(body: { name: string }): Promise<ProcessRow> {
+  const res = await apiFetch(`${apiBase()}/processes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((d as { message?: string }).message ?? "Proses eklenemedi");
+  return d as ProcessRow;
+}
+
+export async function updateProcessApi(id: number, body: { name?: string; sort_order?: number }): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/processes/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error((d as { message?: string }).message ?? "Güncellenemedi");
+  }
+}
+
+export async function deleteProcessApi(id: number): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/processes/${id}`, { method: "DELETE", headers: authHeaders() });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error((d as { message?: string }).message ?? "Silinemedi");
+  }
+}
+
 export async function addWorker(payload: { name: string; team: Team; process: string; addedDate?: string }): Promise<Worker> {
   const response = await apiFetch(`${apiBase()}/workers`, {
     method: "POST",

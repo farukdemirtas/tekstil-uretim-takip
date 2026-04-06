@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useState } from "react";
-import { ProductionRow, Team } from "@/lib/types";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { getProcesses, getTeams } from "@/lib/api";
+import { ProductionRow } from "@/lib/types";
 
 type ProductionTableProps = {
   rows: ProductionRow[];
@@ -11,40 +12,16 @@ type ProductionTableProps = {
   canDeleteWorkers?: boolean;
 };
 
-const TEAM_ORDER: Team[] = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
+const FALLBACK_TEAM_ORDER = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
 
-const PROCESS_OPTIONS = [
-  "ARKA KOL ÇIMA",
-  "ARKA KOL TAKMA",
-  "CEP AĞZI",
-  "CEP TAKMA",
-  "DÜĞME",
-  "ETEK UCU",
-  "ETEK YAPMA",
-  "ETİKET TAKMA",
-  "İLİK AÇMA",
-  "KESİM ADET",
-  "KOL GAZİ",
-  "KOLİTE KONTROL ADET",
-  "OMUZ ÇATIM",
-  "OMUZ ÇIMA",
-  "ÖN PAT",
-  "SAĞ KOL ÇIMA",
-  "SAĞ KOL TAKMA",
-  "SOL KOL ÇIMA",
-  "SOL KOL TAKMA",
-  "TALİMAT HAZIRLIK",
-  "ÜTÜ ADET",
-  "YAKA İÇ ÇIMA",
-  "YAKA KAPAMA",
-  "YAKA REGOLA",
-  "YAKA TAKMA",
-  "YAKA UCU",
-  "YAKA ÜST TULUM",
-  "YAKA YAN VURMA",
-  "YAN ÇATMA",
-  "YIKAMA TALİMATI",
-].sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
+const FALLBACK_LABELS: Record<string, string> = {
+  SAG_ON: "SAĞ ÖN",
+  SOL_ON: "SOL ÖN",
+  YAKA_HAZIRLIK: "YAKA HAZIRLIK",
+  ARKA_HAZIRLIK: "ARKA HAZIRLIK",
+  BITIM: "BİTİM",
+  ADET: "ADET",
+};
 
 const TIME_FIELDS = [
   { key: "t1000" as const, label: "10:00" },
@@ -53,7 +30,6 @@ const TIME_FIELDS = [
   { key: "t1830" as const, label: "18:30" },
 ];
 
-/** Veri 0 iken kutucukta boş göster; girişi kolaylaştırır (DB/API yine 0). */
 function cellInputValue(n: number): string {
   return n === 0 ? "" : String(n);
 }
@@ -65,15 +41,6 @@ function parseTimeCell(raw: string): number {
   return n;
 }
 
-function teamLabel(team: Team) {
-  if (team === "SAG_ON")        return "SAĞ ÖN";
-  if (team === "SOL_ON")        return "SOL ÖN";
-  if (team === "YAKA_HAZIRLIK") return "YAKA HAZIRLIK";
-  if (team === "ARKA_HAZIRLIK") return "ARKA HAZIRLIK";
-  if (team === "BITIM")         return "BİTİM";
-  return "ADET";
-}
-
 export default function ProductionTable({
   rows,
   onCellChange,
@@ -81,9 +48,26 @@ export default function ProductionTable({
   onEditWorker,
   canDeleteWorkers,
 }: ProductionTableProps) {
-  const [editingId, setEditingId]         = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [editingProcess, setEditingProcess] = useState<string>("");
-  const [saving, setSaving]               = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [teamOrder, setTeamOrder] = useState<string[]>(FALLBACK_TEAM_ORDER);
+  const [teamLabels, setTeamLabels] = useState<Record<string, string>>(FALLBACK_LABELS);
+  const [processNames, setProcessNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    void Promise.all([getTeams(), getProcesses()])
+      .then(([teams, procs]) => {
+        setTeamOrder(teams.map((t) => t.code));
+        setTeamLabels(Object.fromEntries(teams.map((t) => [t.code, t.label])));
+        setProcessNames(procs.map((p) => p.name));
+      })
+      .catch(() => {
+        /* API yoksa varsayılan sıra */
+      });
+  }, []);
+
+  const teamLabel = (code: string) => teamLabels[code] ?? FALLBACK_LABELS[code] ?? code;
 
   const canDelete = Boolean(canDeleteWorkers);
 
@@ -101,7 +85,7 @@ export default function ProductionTable({
     if (!editingProcess.trim()) return;
     setSaving(true);
     try {
-      await onEditWorker(workerId, editingProcess);
+      await onEditWorker(workerId, editingProcess.trim().toUpperCase());
       setEditingId(null);
       setEditingProcess("");
     } finally {
@@ -109,20 +93,32 @@ export default function ProductionTable({
     }
   }
 
+  const sortedSectionTeams = useMemo(() => {
+    const inData = [...new Set(rows.map((r) => r.team))];
+    const order = teamOrder.length ? teamOrder : FALLBACK_TEAM_ORDER;
+    const head = order.filter((t) => inData.includes(t));
+    const tail = inData.filter((t) => !order.includes(t));
+    return [...head, ...tail];
+  }, [rows, teamOrder]);
+
   let rowNo = 1;
 
-  const sections = TEAM_ORDER.map((team) => {
+  const sections = sortedSectionTeams.map((team) => {
     const teamRows = rows.filter((r) => r.team === team);
     if (teamRows.length === 0) return null;
     const startNo = rowNo;
     rowNo += teamRows.length;
     return { team, teamRows, startNo };
-  }).filter(Boolean) as { team: Team; teamRows: ProductionRow[]; startNo: number }[];
+  }).filter(Boolean) as { team: string; teamRows: ProductionRow[]; startNo: number }[];
+
+  const processOptions =
+    processNames.length > 0
+      ? processNames
+      : [...new Set(rows.map((r) => r.process))].sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100 dark:shadow-none">
 
-      {/* ══════════ MASAÜSTÜ TABLO (md ve üzeri) ══════════ */}
       <div className="hidden overflow-auto md:block">
         <table className="w-full min-w-[960px] border-collapse text-sm">
           <thead className="bg-slate-800 text-white">
@@ -164,7 +160,7 @@ export default function ProductionTable({
                             className="rounded border border-blue-400 bg-white px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                             autoFocus
                           >
-                            {PROCESS_OPTIONS.map((p) => (
+                            {processOptions.map((p) => (
                               <option key={p} value={p}>{p}</option>
                             ))}
                           </select>
@@ -226,11 +222,9 @@ export default function ProductionTable({
         </table>
       </div>
 
-      {/* ══════════ MOBİL KART GÖRÜNÜMÜ (md altı) ══════════ */}
       <div className="divide-y divide-slate-200 dark:divide-slate-700 md:hidden">
         {sections.map(({ team, teamRows, startNo }) => (
           <div key={team}>
-            {/* Takım başlığı */}
             <div className="bg-slate-200 px-4 py-2 text-sm font-semibold dark:bg-slate-700">
               {teamLabel(team)}
             </div>
@@ -244,7 +238,6 @@ export default function ProductionTable({
                   key={`${team}-${row.workerId}-${index}`}
                   className="p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60"
                 >
-                  {/* İşçi bilgisi satırı */}
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <span className="mr-1.5 text-xs text-slate-400">{startNo + index}.</span>
@@ -255,7 +248,7 @@ export default function ProductionTable({
                           onChange={(e) => setEditingProcess(e.target.value)}
                           className="mt-1 block w-full rounded border border-blue-400 bg-white px-2 py-1.5 text-sm dark:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                         >
-                          {PROCESS_OPTIONS.map((p) => (
+                          {processOptions.map((p) => (
                             <option key={p} value={p}>{p}</option>
                           ))}
                         </select>
@@ -269,7 +262,6 @@ export default function ProductionTable({
                     </div>
                   </div>
 
-                  {/* Saat dilimleri 2×2 grid */}
                   <div className="mb-2 grid grid-cols-2 gap-2">
                     {TIME_FIELDS.map(({ key, label }) => (
                       <div key={key} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-600 dark:bg-slate-700">
@@ -286,7 +278,6 @@ export default function ProductionTable({
                     ))}
                   </div>
 
-                  {/* Aksiyon butonları */}
                   <div className="flex gap-2">
                     {isEditing ? (
                       <>

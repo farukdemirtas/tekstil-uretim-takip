@@ -13,6 +13,7 @@ import {
   getDayProductMeta,
   getHedefTakipStageTotals,
   getProduction,
+  getTeams,
   login,
   removeWorker,
   saveDayProductMeta,
@@ -22,16 +23,7 @@ import {
 } from "@/lib/api";
 import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole, persistPermissions, clearStoredPermissions } from "@/lib/permissions";
-import { ProductionRow, Team } from "@/lib/types";
-
-function teamLabel(team: Team) {
-  if (team === "SAG_ON") return "SAĞ ÖN";
-  if (team === "SOL_ON") return "SOL ÖN";
-  if (team === "YAKA_HAZIRLIK") return "YAKA HAZIRLIK";
-  if (team === "ARKA_HAZIRLIK") return "ARKA HAZIRLIK";
-  if (team === "BITIM") return "BİTİM";
-  return "ADET";
-}
+import { ProductionRow } from "@/lib/types";
 
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -55,6 +47,7 @@ export default function HomePage() {
   const router = useRouter();
 
   const [, setPermTick] = useState(0);
+  const [teamLabelMap, setTeamLabelMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -68,6 +61,17 @@ export default function HomePage() {
       setPermTick((n) => n + 1);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void getTeams()
+      .then((rows) => setTeamLabelMap(Object.fromEntries(rows.map((t) => [t.code, t.label]))))
+      .catch(() => {});
+  }, [isAuthenticated]);
+
+  function resolveTeamLabel(code: string) {
+    return teamLabelMap[code] ?? code;
+  }
 
   async function loadDateData(date: string) {
     setLoading(true);
@@ -169,7 +173,7 @@ export default function HomePage() {
     router.push("/hedef-takip");
   }
 
-  async function handleAddWorker(payload: { name: string; team: Team; process: string }) {
+  async function handleAddWorker(payload: { name: string; team: string; process: string }) {
     await addWorker({ ...payload, addedDate: selectedDate });
     await loadDateData(selectedDate);
   }
@@ -216,7 +220,7 @@ export default function HomePage() {
       No: index + 1,
       "Ad Soyad": row.name,
       Proses: row.process,
-      Grup: teamLabel(row.team),
+      Grup: resolveTeamLabel(row.team),
       "10:00": row.t1000,
       "13:00": row.t1300,
       "16:00": row.t1600,
@@ -320,12 +324,7 @@ export default function HomePage() {
               Karşılaştırma
             </Link>
           ) : null}
-          {isAdminRole() ? (
-            <Link href="/users" className="btn-nav">
-              Kullanıcılar
-            </Link>
-          ) : null}
-          {hasPermission("ayarlar") ? (
+          {hasPermission("ayarlar") || isAdminRole() ? (
             <Link href="/ayarlar" className="btn-nav">
               Ayarlar
             </Link>
