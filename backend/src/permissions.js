@@ -6,6 +6,7 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   hedefTakip: true,
   ekran1: true,
   ekran2: false,
+  ekran3: false,
 };
 
 export const PERMISSION_KEYS = Object.keys(DEFAULT_DATA_ENTRY_PERMISSIONS);

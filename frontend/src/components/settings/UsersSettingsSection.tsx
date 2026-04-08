@@ -13,6 +13,7 @@ function emptyDraft(): AppPermissions {
     hedefTakip: false,
     ekran1: false,
     ekran2: false,
+    ekran3: false,
   };
 }
 

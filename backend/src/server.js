@@ -465,7 +465,7 @@ app.get("/api/analytics/worker-comparison", requirePermission("karsilastirma"), 
   }
 });
 
-app.get("/api/analytics/worker-hourly", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
+app.get("/api/analytics/worker-hourly", requireAnyPermission(["analysis", "ekran2", "ekran3"]), async (req, res) => {
   const { workerId, startDate, endDate } = req.query;
   if (!workerId || !startDate || !endDate) {
     return res.status(400).json({ message: "workerId, startDate ve endDate zorunlu" });
@@ -522,7 +522,7 @@ app.get("/api/production", async (req, res) => {
   }
 });
 
-app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
+app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2", "ekran3"]), async (req, res) => {
   const { startDate, endDate, team = "", limit = "20", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });

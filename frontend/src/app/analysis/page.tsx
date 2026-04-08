@@ -231,6 +231,14 @@ export default function AnalysisPage() {
             >
               EKRAN2
             </Link>
+            <Link
+              href="/ekran3"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-emerald-600/50 bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-600 dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+            >
+              EKRAN3
+            </Link>
             <Link href="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-700">
               Üretim Ekranı
             </Link>

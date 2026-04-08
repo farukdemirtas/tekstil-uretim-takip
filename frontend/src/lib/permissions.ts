@@ -9,6 +9,7 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
   { key: "hedefTakip", label: "Hedef takip", description: "Hedef takip ekranı" },
   { key: "ekran1", label: "EKRAN1", description: "Hedef takip TV / tam ekran görünümü" },
   { key: "ekran2", label: "EKRAN2", description: "Aşama analiz panosu (TV)" },
+  { key: "ekran3", label: "EKRAN3", description: "4 bölüm personel döngü panosu (TV)" },
 ];
 
 export function isAdminRole(): boolean {

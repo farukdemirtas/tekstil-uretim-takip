@@ -54,6 +54,7 @@ export type AppPermissions = {
   hedefTakip: boolean;
   ekran1: boolean;
   ekran2: boolean;
+  ekran3: boolean;
 };
 
 export type User = {

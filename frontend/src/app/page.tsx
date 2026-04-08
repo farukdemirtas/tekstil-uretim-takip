@@ -348,6 +348,11 @@ export default function HomePage() {
               EKRAN2
             </Link>
           ) : null}
+          {hasPermission("ekran3") ? (
+            <Link href="/ekran3" className="btn-nav" target="_blank" rel="noopener noreferrer">
+              EKRAN3
+            </Link>
+          ) : null}
           <button
             onClick={handleExportExcel}
             className="btn-nav"
