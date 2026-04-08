@@ -71,3 +71,37 @@
       dark:hover:border-teal-600/50 dark:hover:bg-teal-950/35 dark:hover:text-teal-100;
   }
 }
+
+/* react-day-picker — marka renkleri, hafta içi takvim */
+.rdp-weekday-picker.rdp-root {
+  --rdp-accent-color: #0d9488;
+  --rdp-accent-background-color: rgb(204 251 241);
+  --rdp-day_button-border-radius: 0.65rem;
+}
+
+.dark .rdp-weekday-picker.rdp-root {
+  --rdp-accent-color: #2dd4bf;
+  --rdp-accent-background-color: rgba(45, 212, 191, 0.14);
+}
+
+.rdp-tone-dark.rdp-weekday-picker.rdp-root {
+  --rdp-accent-color: #5eead4;
+  --rdp-accent-background-color: rgba(94, 234, 212, 0.12);
+  color: #e2e8f0;
+}
+
+.rdp-tone-dark .rdp-weekday {
+  color: #94a3b8;
+}
+
+.rdp-tone-dark .rdp-caption_label {
+  color: #f1f5f9;
+}
+
+.rdp-tone-dark .rdp-nav_button {
+  color: #cbd5e1;
+}
+
+.rdp-tone-dark .rdp-outside {
+  opacity: 0.35;
+}

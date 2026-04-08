@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getTeams, getWorkers, getWorkerComparison, setAuthToken } from "@/lib/api";
-import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission } from "@/lib/permissions";
 import type { WorkerComparisonData, WorkerCompStat } from "@/lib/api";
 import type { Worker } from "@/lib/types";
@@ -572,31 +573,18 @@ export default function KarsilastirmaPage() {
               </select>
             </div>
 
-            {/* Start date */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                Başlangıç Tarihi
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(coerceWeekdayPickerValue(e.target.value))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-              />
-            </div>
-
-            {/* End date */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                Bitiş Tarihi
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(coerceWeekdayPickerValue(e.target.value))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-              />
-            </div>
+            <WeekdayDatePicker
+              label="Başlangıç Tarihi"
+              value={startDate}
+              onChange={setStartDate}
+              className="w-full"
+            />
+            <WeekdayDatePicker
+              label="Bitiş Tarihi"
+              value={endDate}
+              onChange={setEndDate}
+              className="w-full"
+            />
           </div>
         </section>
 

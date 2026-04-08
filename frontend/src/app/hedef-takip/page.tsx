@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getHedefTakipStageTotals, setAuthToken } from "@/lib/api";
 import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission } from "@/lib/permissions";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
@@ -252,24 +253,18 @@ export default function HedefTakip() {
           Belirli tarihler arasındaki toplam üretim verisini çekin. Tarihler ve hedef sayfa yenilenince korunur.
         </p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Başlangıç Tarihi</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => handleStartDateChange(e.target.value)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Bitiş Tarihi</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => handleEndDateChange(e.target.value)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
-            />
-          </div>
+          <WeekdayDatePicker
+            label="Başlangıç Tarihi"
+            value={startDate}
+            onChange={handleStartDateChange}
+            className="min-w-[13rem] flex-1"
+          />
+          <WeekdayDatePicker
+            label="Bitiş Tarihi"
+            value={endDate}
+            onChange={handleEndDateChange}
+            className="min-w-[13rem] flex-1"
+          />
           <button
             type="button"
             onClick={() => void handleFetchRange()}

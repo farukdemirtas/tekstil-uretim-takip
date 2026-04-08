@@ -22,7 +22,8 @@ import {
   setAuthToken,
   updateWorker,
 } from "@/lib/api";
-import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission, isAdminRole, persistPermissions, clearStoredPermissions } from "@/lib/permissions";
 import { ProductionRow } from "@/lib/types";
 
@@ -305,14 +306,7 @@ export default function HomePage() {
               Tarih
               <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">(hafta içi)</span>
             </label>
-            <input
-              id="date"
-              type="date"
-              value={selectedDate}
-              title="Cumartesi ve pazar seçilemez; hafta içine alınır."
-              onChange={(e) => setSelectedDate(coerceWeekdayPickerValue(e.target.value))}
-              className="input-modern"
-            />
+            <WeekdayDatePicker id="date" value={selectedDate} onChange={setSelectedDate} />
           </div>
           <div
             className="rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-2 text-sm font-semibold text-emerald-800 shadow-surface-sm dark:border-emerald-900/40 dark:from-emerald-950/50 dark:to-teal-950/40 dark:text-emerald-200"

@@ -8,7 +8,8 @@ import {
   getTopWorkersAnalytics,
   setAuthToken,
 } from "@/lib/api";
-import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
+import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import { rankTercileStyles } from "@/lib/rankTercile";
 import type { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics } from "@/lib/types";
@@ -604,32 +605,18 @@ export default function Ekran2Page() {
             }`}
           >
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium">Başlangıç</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(coerceWeekdayPickerValue(e.target.value))}
-                  className={`rounded-xl border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 ${
-                    dark
-                      ? "border-slate-600 bg-slate-800 text-white"
-                      : "border-slate-300 bg-white text-slate-900"
-                  }`}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium">Bitiş</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(coerceWeekdayPickerValue(e.target.value))}
-                  className={`rounded-xl border px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 ${
-                    dark
-                      ? "border-slate-600 bg-slate-800 text-white"
-                      : "border-slate-300 bg-white text-slate-900"
-                  }`}
-                />
-              </div>
+              <WeekdayDatePicker
+                label="Başlangıç"
+                value={startDate}
+                onChange={setStartDate}
+                tone={dark ? "dark" : "default"}
+              />
+              <WeekdayDatePicker
+                label="Bitiş"
+                value={endDate}
+                onChange={setEndDate}
+                tone={dark ? "dark" : "default"}
+              />
             </div>
 
             <div className="mt-6">

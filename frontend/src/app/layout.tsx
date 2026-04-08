@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "react-day-picker/style.css";
 import ThemeToggle from "@/components/ThemeToggle";
 
 export const metadata: Metadata = {

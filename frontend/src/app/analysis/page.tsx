@@ -15,7 +15,8 @@ import {
   setAuthToken,
 } from "@/lib/api";
 import { hasPermission } from "@/lib/permissions";
-import { coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { rankTercileStyles } from "@/lib/rankTercile";
 import type { WorkerHourlyBreakdown } from "@/lib/api";
 import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
@@ -239,24 +240,8 @@ export default function AnalysisPage() {
 
       <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">Başlangıç</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(coerceWeekdayPickerValue(e.target.value))}
-              className="rounded-md border border-slate-300 px-3 py-2"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">Bitiş</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(coerceWeekdayPickerValue(e.target.value))}
-              className="rounded-md border border-slate-300 px-3 py-2"
-            />
-          </div>
+          <WeekdayDatePicker label="Başlangıç" value={startDate} onChange={setStartDate} />
+          <WeekdayDatePicker label="Bitiş" value={endDate} onChange={setEndDate} />
         </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-end">
         <div className="flex flex-col gap-1">
