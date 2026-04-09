@@ -328,29 +328,14 @@ export default function HomePage() {
               Karşılaştırma
             </Link>
           ) : null}
-          {hasPermission("ayarlar") || isAdminRole() ? (
-            <Link href="/ayarlar" className="btn-nav">
-              Ayarlar
-            </Link>
-          ) : null}
           {hasPermission("hedefTakip") ? (
             <button onClick={() => void pushToHedefTakip()} className="btn-nav" type="button">
               Hedef Takip
             </button>
           ) : null}
-          {hasPermission("ekran1") ? (
+          {hasPermission("ekran1") || hasPermission("ekran2") || hasPermission("ekran3") ? (
             <Link href="/ekran1" className="btn-nav" target="_blank" rel="noopener noreferrer">
-              EKRAN1
-            </Link>
-          ) : null}
-          {hasPermission("ekran2") ? (
-            <Link href="/ekran2" className="btn-nav" target="_blank" rel="noopener noreferrer">
-              EKRAN2
-            </Link>
-          ) : null}
-          {hasPermission("ekran3") ? (
-            <Link href="/ekran3" className="btn-nav" target="_blank" rel="noopener noreferrer">
-              EKRAN3
+              TV Ekranları
             </Link>
           ) : null}
           <button
@@ -359,6 +344,11 @@ export default function HomePage() {
           >
             Excel Export
           </button>
+          {hasPermission("ayarlar") || isAdminRole() ? (
+            <Link href="/ayarlar" className="btn-nav">
+              Ayarlar
+            </Link>
+          ) : null}
         </div>
       </section>
 

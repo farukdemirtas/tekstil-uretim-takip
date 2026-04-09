@@ -41,6 +41,8 @@ import {
   deleteProcess,
   listTeamCodes,
   listProcessNames,
+  insertActivityLog,
+  listActivityLogs,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 
@@ -125,8 +127,51 @@ function requireAnyPermission(keys) {
   };
 }
 
+function logActivity(req, action, resource, details) {
+  const actor = req.user?.username || "?";
+  const det =
+    details === undefined || details === null
+      ? ""
+      : typeof details === "string"
+        ? details
+        : JSON.stringify(details);
+  insertActivityLog({
+    actor_username: actor,
+    action,
+    resource: resource ?? "",
+    details: det,
+  }).catch((e) => {
+    // eslint-disable-next-line no-console
+    console.error("activity_logs:", e?.message || e);
+  });
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get("/api/activity-logs", requirePermission("loglar"), async (req, res) => {
+  const limit = Number(req.query.limit) || 200;
+  const offset = Number(req.query.offset) || 0;
+  const pick = (k) => {
+    const v = req.query[k];
+    return typeof v === "string" && v.trim() ? v.trim() : undefined;
+  };
+  try {
+    const rows = await listActivityLogs({
+      limit,
+      offset,
+      action: pick("action"),
+      actor: pick("actor"),
+      resource: pick("resource"),
+      q: pick("q"),
+      dateFrom: pick("dateFrom"),
+      dateTo: pick("dateTo"),
+    });
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ message: "Loglar alınamadı", error: String(e) });
+  }
 });
 
 app.post("/api/auth/login", (req, res) => {
@@ -140,6 +185,12 @@ app.post("/api/auth/login", (req, res) => {
       const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
       const sig = createHmac("sha256", TOKEN_SECRET).update(payloadB64).digest("hex");
       const token = `v1.${payloadB64}.${sig}`;
+      insertActivityLog({
+        actor_username: user.username,
+        action: "giris",
+        resource: "oturum",
+        details: "",
+      }).catch(() => {});
       return res.json({ token, username: user.username, role: user.role, permissions });
     })
     .catch(() => res.status(500).json({ message: "Giriş doğrulanamadı" }));
@@ -166,6 +217,7 @@ app.post("/api/users", requireAdmin, async (req, res) => {
   const { username, password } = req.body || {};
   try {
     const user = await createUser({ username, password });
+    logActivity(req, "kullanici_olustur", "kullanici", { username: user.username, id: user.id });
     res.status(201).json(user);
   } catch (error) {
     res.status(400).json({ message: "Kullanıcı eklenemedi", error: String(error) });
@@ -179,6 +231,7 @@ app.delete("/api/users/:id", requireAdmin, async (req, res) => {
   try {
     const result = await deleteUser(userId);
     if (!result.deleted) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+    logActivity(req, "kullanici_sil", "kullanici", { id: userId });
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: "Kullanıcı silinemedi", error: String(error) });
@@ -193,6 +246,7 @@ app.post("/api/users/:id/reset-password", requireAdmin, async (req, res) => {
   try {
     const result = await resetUserPassword({ userId, password });
     if (!result.updated) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+    logActivity(req, "sifre_sifirla", "kullanici", { id: userId });
     res.json({ ok: true });
   } catch (error) {
     res.status(400).json({ message: "Şifre sıfırlanamadı", error: String(error) });
@@ -214,6 +268,7 @@ app.patch("/api/users/:id/permissions", requireAdmin, async (req, res) => {
     const json = permissionsJsonForDb(merged);
     const result = await updateUserPermissions({ userId, permissionsJson: json });
     if (!result.updated) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
+    logActivity(req, "yetki_guncelle", "kullanici", { id: userId, permissions: merged });
     res.json({ ok: true, permissions: merged });
   } catch (error) {
     res.status(500).json({ message: "Yetkiler güncellenemedi", error: String(error) });
@@ -238,7 +293,11 @@ app.get("/api/worker-names", requireAuth, async (req, res) => {
 app.post("/api/worker-names", requirePermission("ayarlar"), async (req, res) => {
   const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ message: "İsim boş olamaz" });
-  try { res.status(201).json(await addWorkerName(name)); }
+  try {
+    const row = await addWorkerName(name);
+    logActivity(req, "isim_havuzu_ekle", "worker_names", { id: row.id, name: row.name });
+    res.status(201).json(row);
+  }
   catch (e) {
     const msg = String(e);
     if (msg.includes("UNIQUE")) return res.status(409).json({ message: "Bu isim zaten kayıtlı" });
@@ -253,6 +312,7 @@ app.put("/api/worker-names/:id", requirePermission("ayarlar"), async (req, res) 
   try {
     const r = await updateWorkerName(id, name);
     if (!r.updated) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "isim_havuzu_guncelle", "worker_names", { id, name: name.trim().toUpperCase() });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: String(e) }); }
 });
@@ -262,6 +322,7 @@ app.delete("/api/worker-names/:id", requirePermission("ayarlar"), async (req, re
   try {
     const r = await deleteWorkerName(id);
     if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "isim_havuzu_sil", "worker_names", { id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: String(e) }); }
 });
@@ -285,6 +346,7 @@ app.get("/api/processes", requireAuth, async (_req, res) => {
 app.post("/api/teams", requirePermission("ayarlar"), async (req, res) => {
   try {
     const row = await addTeam(req.body || {});
+    logActivity(req, "bolum_ekle", "teams", { id: row.id, code: row.code, label: row.label });
     res.status(201).json(row);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
@@ -297,6 +359,7 @@ app.put("/api/teams/:id", requirePermission("ayarlar"), async (req, res) => {
   try {
     const r = await updateTeam(id, req.body || {});
     if (!r.updated) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "bolum_guncelle", "teams", { id, ...req.body });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ message: String(e.message || e) });
@@ -309,6 +372,7 @@ app.delete("/api/teams/:id", requirePermission("ayarlar"), async (req, res) => {
   try {
     const r = await deleteTeam(id);
     if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "bolum_sil", "teams", { id });
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
@@ -318,6 +382,7 @@ app.delete("/api/teams/:id", requirePermission("ayarlar"), async (req, res) => {
 app.post("/api/processes", requirePermission("ayarlar"), async (req, res) => {
   try {
     const row = await addProcess(req.body || {});
+    logActivity(req, "proses_ekle", "processes", { id: row.id, name: row.name });
     res.status(201).json(row);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
@@ -330,6 +395,7 @@ app.put("/api/processes/:id", requirePermission("ayarlar"), async (req, res) => 
   try {
     const r = await updateProcess(id, req.body || {});
     if (!r.updated) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "proses_guncelle", "processes", { id, ...req.body });
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
@@ -342,6 +408,7 @@ app.delete("/api/processes/:id", requirePermission("ayarlar"), async (req, res) 
   try {
     const r = await deleteProcess(id);
     if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "proses_sil", "processes", { id });
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
@@ -369,6 +436,12 @@ app.post("/api/workers", requireAuth, async (req, res) => {
 
   try {
     const worker = await createWorker({ name, team, process: procNorm, created_at });
+    logActivity(req, "calisan_ekle", "workers", {
+      id: worker.id,
+      name: worker.name,
+      team: worker.team,
+      process: worker.process,
+    });
     res.status(201).json(worker);
   } catch (error) {
     res.status(500).json({ message: "Çalışan eklenemedi", error: String(error) });
@@ -390,6 +463,7 @@ app.put("/api/workers/:id", requireAuth, async (req, res) => {
   try {
     const result = await updateWorker(workerId, { process: procNorm });
     if (!result.updated) return res.status(404).json({ message: "Çalışan bulunamadı" });
+    logActivity(req, "calisan_guncelle", "workers", { id: workerId, process: procNorm });
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: "Çalışan güncellenemedi", error: String(error) });
@@ -412,6 +486,7 @@ app.delete("/api/workers/:id", requireAuth, async (req, res) => {
     if (!result.deleted) {
       return res.status(404).json({ message: "Çalışan bulunamadı" });
     }
+    logActivity(req, "calisan_sil", "workers", { id: workerId, date: deletedAt || "tam" });
     return res.json({ ok: true });
   } catch (error) {
     return res.status(500).json({ message: "Çalışan silinemedi", error: String(error) });
@@ -501,6 +576,11 @@ app.put("/api/production/day-meta", async (req, res) => {
       date: String(date),
       productName: productName ?? "",
       productModel: productModel ?? "",
+    });
+    logActivity(req, "urun_meta_guncelle", "daily_product_meta", {
+      date,
+      productName: meta.productName,
+      productModel: meta.productModel,
     });
     res.json(meta);
   } catch (error) {
@@ -617,6 +697,7 @@ app.post("/api/production", async (req, res) => {
       t1600: Number(t1600) || 0,
       t1830: Number(t1830) || 0
     });
+    logActivity(req, "uretim_kayit", "production_entries", { workerId: Number(workerId), date: String(date) });
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: "Üretim verisi kaydedilemedi", error: String(error) });
@@ -644,6 +725,7 @@ app.post("/api/production/bulk", async (req, res) => {
 
   try {
     await upsertEntriesBulk(normalized);
+    logActivity(req, "uretim_toplu", "production_entries", { date: String(date), satir: normalized.length });
     return res.json({ ok: true, count: normalized.length });
   } catch (error) {
     return res.status(500).json({ message: "Toplu kayıt başarısız", error: String(error) });

@@ -883,3 +883,82 @@ export function deleteProcess(id) {
     });
   });
 }
+
+export function insertActivityLog({ actor_username, action, resource, details }) {
+  const actor = String(actor_username || "sistem").slice(0, 200);
+  const act = String(action || "olay").slice(0, 120);
+  const res = resource == null ? "" : String(resource).slice(0, 200);
+  const det = details == null ? "" : typeof details === "string" ? details : JSON.stringify(details);
+  const detSafe = det.length > 8000 ? `${det.slice(0, 7997)}...` : det;
+  return new Promise((resolve, reject) => {
+    db.run(
+      "INSERT INTO activity_logs (actor_username, action, resource, details) VALUES (?, ?, ?, ?)",
+      [actor, act, res, detSafe],
+      function onRun(err) {
+        if (err) return reject(err);
+        resolve({ id: this.lastID });
+      }
+    );
+  });
+}
+
+export function listActivityLogs(options = {}) {
+  const {
+    limit = 200,
+    offset = 0,
+    action: actionFilter,
+    actor,
+    resource,
+    q,
+    dateFrom,
+    dateTo,
+  } = options;
+
+  const lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const off = Math.max(Number(offset) || 0, 0);
+  const conds = [];
+  const params = [];
+
+  if (actionFilter && String(actionFilter).trim()) {
+    conds.push("action = ?");
+    params.push(String(actionFilter).trim());
+  }
+  if (actor && String(actor).trim()) {
+    conds.push("INSTR(LOWER(actor_username), LOWER(?)) > 0");
+    params.push(String(actor).trim());
+  }
+  if (resource && String(resource).trim()) {
+    conds.push("INSTR(LOWER(COALESCE(resource,'')), LOWER(?)) > 0");
+    params.push(String(resource).trim());
+  }
+  if (q && String(q).trim()) {
+    const s = String(q).trim();
+    conds.push(
+      "(INSTR(LOWER(COALESCE(details,'')), LOWER(?)) > 0 OR INSTR(LOWER(COALESCE(action,'')), LOWER(?)) > 0 OR INSTR(LOWER(COALESCE(resource,'')), LOWER(?)) > 0 OR INSTR(LOWER(COALESCE(actor_username,'')), LOWER(?)) > 0)"
+    );
+    params.push(s, s, s, s);
+  }
+  if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(String(dateFrom))) {
+    conds.push("created_at >= ?");
+    params.push(`${dateFrom} 00:00:00`);
+  }
+  if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(String(dateTo))) {
+    conds.push("created_at <= ?");
+    params.push(`${dateTo} 23:59:59`);
+  }
+
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  const sql = `SELECT id, created_at, actor_username, action, resource, details
+     FROM activity_logs
+     ${where}
+     ORDER BY id DESC
+     LIMIT ? OFFSET ?`;
+  params.push(lim, off);
+
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows || []);
+    });
+  });
+}

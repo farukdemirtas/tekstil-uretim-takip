@@ -284,6 +284,18 @@ export function initDb() {
       );
     });
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        actor_username TEXT NOT NULL,
+        action TEXT NOT NULL,
+        resource TEXT NOT NULL DEFAULT '',
+        details TEXT NOT NULL DEFAULT ''
+      )
+    `);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_activity_logs_id_desc ON activity_logs (id DESC)`);
+
     seedTeamsAndProcessesIfEmpty();
     migrateWorkersRemoveTeamCheckIfNeeded();
   });

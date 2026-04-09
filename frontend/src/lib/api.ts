@@ -467,3 +467,51 @@ export async function getWorkerComparison(params: {
   if (!res.ok) throw new Error("Karşılaştırma verisi alınamadı");
   return res.json();
 }
+
+export type ActivityLogRow = {
+  id: number;
+  created_at: string;
+  actor_username: string;
+  action: string;
+  resource: string;
+  details: string;
+};
+
+export type ActivityLogQuery = {
+  limit?: number;
+  offset?: number;
+  /** Tam eşleşme (sunucu action kodu) */
+  action?: string;
+  /** Kullanıcı adında geçen metin */
+  actor?: string;
+  /** Kaynak alanında geçen metin */
+  resource?: string;
+  /** Ayrıntı, işlem, kaynak veya kullanıcıda arama */
+  q?: string;
+  /** YYYY-MM-DD */
+  dateFrom?: string;
+  /** YYYY-MM-DD */
+  dateTo?: string;
+};
+
+export async function getActivityLogs(params?: ActivityLogQuery): Promise<ActivityLogRow[]> {
+  const q = new URLSearchParams();
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
+  if (params?.action?.trim()) q.set("action", params.action.trim());
+  if (params?.actor?.trim()) q.set("actor", params.actor.trim());
+  if (params?.resource?.trim()) q.set("resource", params.resource.trim());
+  if (params?.q?.trim()) q.set("q", params.q.trim());
+  if (params?.dateFrom?.trim()) q.set("dateFrom", params.dateFrom.trim());
+  if (params?.dateTo?.trim()) q.set("dateTo", params.dateTo.trim());
+  const qs = q.toString();
+  const res = await apiFetch(`${apiBase()}/activity-logs${qs ? `?${qs}` : ""}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Loglar alınamadı");
+  }
+  return res.json();
+}
