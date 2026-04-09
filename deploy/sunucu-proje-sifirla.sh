@@ -26,12 +26,16 @@ BK="$BACKUP_ROOT/tekstil-reset-backup-$TS"
 mkdir -p "$BK"
 
 if [[ -d "$APP_DIR" ]]; then
-  echo "==> Ortam dosyaları yedekleniyor → $BK"
+  echo "==> Ortam dosyaları + veritabanı yedekleniyor → $BK"
   for f in backend/.env frontend/.env.production frontend/.env.local ecosystem.config.cjs; do
     if [[ -f "$APP_DIR/$f" ]]; then
       install -D "$APP_DIR/$f" "$BK/$f"
     fi
   done
+  if [[ -f "$APP_DIR/backend/data/production.db" ]]; then
+    install -D "$APP_DIR/backend/data/production.db" "$BK/backend-data/production.db"
+    echo "    + backend/data/production.db"
+  fi
 else
   echo "Uyarı: '$APP_DIR' yok; yedek atlanıyor."
 fi
@@ -59,6 +63,11 @@ if [[ -n "${TEKSTIL_REPO_URL:-}" ]]; then
       echo "    geri: $f"
     fi
   done
+  if [[ -f "$BK/backend-data/production.db" ]]; then
+    mkdir -p "$APP_DIR/backend/data"
+    install -D "$BK/backend-data/production.db" "$APP_DIR/backend/data/production.db"
+    echo "    geri: backend/data/production.db (kullanıcılar + kayıtlar)"
+  fi
 else
   echo ""
   echo "Clone yapılmadı. Sonra:"

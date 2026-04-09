@@ -6,8 +6,22 @@ import { pbkdf2Sync, randomBytes } from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataDir = path.resolve(__dirname, "../data");
-const dbPath = path.join(dataDir, "production.db");
+
+/**
+ * Üretimde veritabanını repodan ayırın; güncelleme/clone sonrası kullanıcılar sıfırlanmasın.
+ * Örnek (PM2 env): SQLITE_DATABASE_PATH=/var/lib/tekstil-uretim/production.db
+ * veya: TEKSTIL_DATA_DIR=/var/lib/tekstil-uretim  → .../production.db
+ */
+function resolveDbPath() {
+  const explicit = process.env.SQLITE_DATABASE_PATH?.trim();
+  if (explicit) return path.resolve(explicit);
+  const extDir = process.env.TEKSTIL_DATA_DIR?.trim();
+  if (extDir) return path.join(path.resolve(extDir), "production.db");
+  return path.join(path.resolve(__dirname, "../data"), "production.db");
+}
+
+const dbPath = resolveDbPath();
+const dataDir = path.dirname(dbPath);
 
 try {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -149,6 +163,16 @@ export function initDb() {
         FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
       )
     `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS worker_roster_day_hide (
+        worker_id INTEGER NOT NULL,
+        hide_date TEXT NOT NULL,
+        PRIMARY KEY (worker_id, hide_date),
+        FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
+      )
+    `);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_worker_roster_day_hide_date ON worker_roster_day_hide (hide_date)`);
 
     db.run(`
       CREATE TABLE IF NOT EXISTS daily_product_meta (

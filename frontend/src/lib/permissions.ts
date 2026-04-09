@@ -7,6 +7,11 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
   { key: "karsilastirma", label: "Karşılaştırma", description: "İki işçi karşılaştırma ekranı" },
   { key: "ayarlar", label: "Ayarlar", description: "Personel isimleri, bölüm ve proses tanımları" },
   { key: "hedefTakip", label: "Hedef takip", description: "Hedef takip ekranı" },
+  {
+    key: "topluListeKaldir",
+    label: "Toplu listeden kaldır",
+    description: "Ana sayfada tüm personeli listeden kaldır (yalnızca bugün / bugün ve sonrası)",
+  },
   { key: "ekran1", label: "EKRAN1", description: "Hedef takip TV / tam ekran görünümü" },
   { key: "ekran2", label: "EKRAN2", description: "Aşama analiz panosu (TV)" },
   { key: "ekran3", label: "EKRAN3", description: "4 bölüm personel döngü panosu (TV)" },

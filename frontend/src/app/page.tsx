@@ -24,6 +24,13 @@ import {
   updateWorker,
 } from "@/lib/api";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
+import {
+  PRODUCTION_EXCEL_HEADERS,
+  PRODUCTION_EXCEL_META_MODEL,
+  PRODUCTION_EXCEL_META_PRODUCT,
+  PRODUCTION_EXCEL_SHEET_NAME,
+} from "@/lib/productionExcelFormat";
+import ExcelImportPanel from "@/components/ExcelImportPanel";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission, isAdminRole, persistPermissions, clearStoredPermissions } from "@/lib/permissions";
 import { ProductionRow } from "@/lib/types";
@@ -83,6 +90,7 @@ export default function HomePage() {
   const [teamMeta, setTeamMeta] = useState<Array<{ code: string; label: string }>>([]);
   const [teamGunlukToplamlar, setTeamGunlukToplamlar] = useState<Record<string, number>>({});
   const [clearingAllWorkers, setClearingAllWorkers] = useState(false);
+  const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -261,14 +269,14 @@ export default function HomePage() {
   function handleExportExcel() {
     const sorted = orderedExportRows(rows, teamMeta);
     /* Tablo: Sıra → Ad Soyad → Bölüm → Proses → saatler → Toplam */
-    const headers = ["Sıra", "Ad Soyad", "Bölüm", "Proses", "10:00", "13:00", "16:00", "18:30", "Toplam"] as const;
+    const headers = [...PRODUCTION_EXCEL_HEADERS];
     const lastColIdx = headers.length - 1;
     const aoa: (string | number)[][] = [];
 
     aoa.push(["Yeşil İmaj Tekstil — Günlük üretim özeti"]);
     aoa.push(["Tarih", formatExportDateLabel(selectedDate)]);
-    aoa.push(["Ürün adı", productName.trim() || "—"]);
-    aoa.push(["Model", productModel.trim() || "—"]);
+    aoa.push([PRODUCTION_EXCEL_META_PRODUCT, productName.trim() || "—"]);
+    aoa.push([PRODUCTION_EXCEL_META_MODEL, productModel.trim() || "—"]);
     aoa.push(["Genel tamamlanan (adet)", genelTamamlanan]);
     aoa.push(["Dışa aktarım", new Date().toLocaleString("tr-TR")]);
     aoa.push([]);
@@ -339,7 +347,7 @@ export default function HomePage() {
     worksheet["!rows"] = rowHeights;
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Üretim");
+    XLSX.utils.book_append_sheet(workbook, worksheet, PRODUCTION_EXCEL_SHEET_NAME);
     XLSX.writeFile(workbook, `üretim-${selectedDate}.xlsx`);
   }
 
@@ -355,23 +363,31 @@ export default function HomePage() {
     await loadDateData(selectedDate);
   }
 
-  async function handleRemoveAllWorkersForDay() {
+  async function runBulkRemoveFromList(scope: "only_day" | "from_day") {
     if (rows.length === 0) return;
-    const approved = window.confirm(
-      `Seçili tarih (${selectedDate}) için listedeki ${rows.length} personelin tamamını kaldırmak istiyor musunuz?\n\n` +
-        "Geçmiş günlere ait üretim kayıtları ve analizler silinmez; seçilen gün ve sonrasında listede görünmezler, önceki günler olduğu gibi kalır."
-    );
-    if (!approved) return;
+    setBulkRemoveOpen(false);
     setClearingAllWorkers(true);
     setError(null);
     try {
-      await removeAllWorkersForDay(selectedDate);
+      await removeAllWorkersForDay(selectedDate, scope);
       await loadDateData(selectedDate);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Personel kaldırılamadı");
     } finally {
       setClearingAllWorkers(false);
     }
+  }
+
+  function confirmThenBulkRemove(scope: "only_day" | "from_day") {
+    if (rows.length === 0) return;
+    const n = rows.length;
+    const tarih = selectedDate;
+    const mesaj =
+      scope === "only_day"
+        ? `Emin misiniz?\n\n${tarih} tarihinde listedeki ${n} personel yalnızca o gün için gizlenecek; sonraki iş günlerinde yeniden listelenir. Üretim kayıtları silinmez.`
+        : `Emin misiniz?\n\n${tarih} tarihi ve sonrasında listedeki ${n} personel pasif sayılacak (o gün ve ileri tarihler listede görünmez). Geçmiş günler ve analizler etkilenmez.`;
+    if (!window.confirm(mesaj)) return;
+    void runBulkRemoveFromList(scope);
   }
 
   if (!isAuthenticated) {
@@ -461,6 +477,18 @@ export default function HomePage() {
           >
             Excel Export
           </button>
+          {role === "admin" ? (
+            <ExcelImportPanel
+              teamMeta={teamMeta}
+              onImported={(targetDate) => {
+                if (targetDate === selectedDate) {
+                  void loadDateData(selectedDate);
+                } else {
+                  setSelectedDate(targetDate);
+                }
+              }}
+            />
+          ) : null}
           {hasPermission("ayarlar") || isAdminRole() ? (
             <Link href="/ayarlar" className="btn-nav">
               Ayarlar
@@ -521,20 +549,79 @@ export default function HomePage() {
 
       <WorkerForm onSubmit={handleAddWorker} />
 
-      {!loading && rows.length > 0 ? (
+      {!loading && rows.length > 0 && hasPermission("topluListeKaldir") ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             disabled={clearingAllWorkers}
-            onClick={() => void handleRemoveAllWorkersForDay()}
+            onClick={() => setBulkRemoveOpen(true)}
             className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/40"
           >
             {clearingAllWorkers
               ? "Kaldırılıyor…"
               : selectedDate === todayWeekdayIso()
-                ? "Tüm personeli listeden kaldır (bugün)"
-                : "Tüm personeli listeden kaldır (seçili gün)"}
+                ? "Tüm personeli listeden kaldır… (bugün)"
+                : "Tüm personeli listeden kaldır… (seçili gün)"}
           </button>
+        </div>
+      ) : null}
+
+      {bulkRemoveOpen && hasPermission("topluListeKaldir") ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+          role="presentation"
+          onClick={() => setBulkRemoveOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bulk-remove-title"
+            className="surface-card max-w-md space-y-4 p-5 shadow-xl dark:text-slate-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="bulk-remove-title" className="text-base font-semibold text-slate-900 dark:text-white">
+              Tüm personeli listeden kaldır
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              <span className="font-medium text-slate-800 dark:text-slate-200">{selectedDate}</span> için listede{" "}
+              <span className="font-semibold tabular-nums">{rows.length}</span> kişi var. Nasıl uygulansın?
+            </p>
+            <ul className="list-inside list-disc space-y-2 text-sm text-slate-600 dark:text-slate-400">
+              <li>
+                <strong className="text-slate-800 dark:text-slate-200">Yalnızca bugün:</strong> Sadece seçili tarihte
+                listede görünmezler; sonraki iş günlerinde tekrar listelenir. Üretim kayıtları silinmez.
+              </li>
+              <li>
+                <strong className="text-slate-800 dark:text-slate-200">Bugün ve sonrası:</strong> Seçili tarihten
+                itibaren listeden düşer (pasif); geçmiş günler ve analizler etkilenmez.
+              </li>
+            </ul>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                onClick={() => setBulkRemoveOpen(false)}
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                disabled={clearingAllWorkers}
+                className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/60"
+                onClick={() => confirmThenBulkRemove("only_day")}
+              >
+                Yalnızca bugün
+              </button>
+              <button
+                type="button"
+                disabled={clearingAllWorkers}
+                className="rounded-xl border border-red-300 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50 dark:border-red-800 dark:bg-red-800 dark:hover:bg-red-700"
+                onClick={() => confirmThenBulkRemove("from_day")}
+              >
+                Bugün ve sonrası
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

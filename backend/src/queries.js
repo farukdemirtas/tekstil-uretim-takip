@@ -1,4 +1,5 @@
 import db from "./db.js";
+import { turkeyCalendarDayStartUtcSql, turkeyCalendarDayEndUtcSql, utcNowSqlite } from "./datetimeIstanbul.js";
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from "crypto";
 import { DEFAULT_DATA_ENTRY_PERMISSIONS, permissionsJsonForDb } from "./permissions.js";
 
@@ -68,6 +69,30 @@ export function getWorkers() {
         resolve(rows);
       }
     );
+  });
+}
+
+/** Aktivite logu için (silinmiş / pasif çalışanlar dahil). */
+export function getWorkerNameById(workerId) {
+  return new Promise((resolve, reject) => {
+    db.get("SELECT name FROM workers WHERE id = ?", [workerId], (err, row) => {
+      if (err) return reject(err);
+      resolve(row?.name != null ? String(row.name) : "");
+    });
+  });
+}
+
+export function getWorkerNamesByIds(workerIds) {
+  const ids = [...new Set((workerIds || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+  if (ids.length === 0) return Promise.resolve({});
+  const placeholders = ids.map(() => "?").join(",");
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT id, name FROM workers WHERE id IN (${placeholders})`, ids, (err, rows) => {
+      if (err) return reject(err);
+      const map = {};
+      for (const r of rows || []) map[Number(r.id)] = String(r.name);
+      resolve(map);
+    });
   });
 }
 
@@ -147,6 +172,27 @@ export function deleteAllWorkersForVisibleDay(date) {
   });
 }
 
+/** Yalnızca o takvim günü ana listede gösterme; ertesi günlerde yine listelenir. */
+export function hideAllVisibleWorkersForSingleCalendarDay(date) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT OR IGNORE INTO worker_roster_day_hide (worker_id, hide_date)
+       SELECT w.id, ? FROM workers w
+       WHERE (w.created_at IS NULL OR w.created_at <= ?)
+         AND (w.deleted_at IS NULL OR w.deleted_at > ?)
+         AND NOT EXISTS (
+           SELECT 1 FROM worker_roster_day_hide h
+           WHERE h.worker_id = w.id AND h.hide_date = ?
+         )`,
+      [date, date, date, date],
+      function onRun(err) {
+        if (err) return reject(err);
+        resolve({ hidden: this.changes });
+      }
+    );
+  });
+}
+
 export function getDailyEntries(date) {
   return new Promise((resolve, reject) => {
     db.all(
@@ -166,9 +212,13 @@ export function getDailyEntries(date) {
         AND p.production_date = ?
       WHERE (w.created_at IS NULL OR w.created_at <= ?)
         AND (w.deleted_at IS NULL OR w.deleted_at > ?)
+        AND NOT EXISTS (
+          SELECT 1 FROM worker_roster_day_hide h
+          WHERE h.worker_id = w.id AND h.hide_date = ?
+        )
       ORDER BY w.team, w.process, w.name
       `,
-      [date, date, date],
+      [date, date, date, date],
       (err, rows) => {
         if (err) return reject(err);
         resolve(rows);
@@ -915,10 +965,11 @@ export function insertActivityLog({ actor_username, action, resource, details })
   const res = resource == null ? "" : String(resource).slice(0, 200);
   const det = details == null ? "" : typeof details === "string" ? details : JSON.stringify(details);
   const detSafe = det.length > 8000 ? `${det.slice(0, 7997)}...` : det;
+  const createdAt = utcNowSqlite();
   return new Promise((resolve, reject) => {
     db.run(
-      "INSERT INTO activity_logs (actor_username, action, resource, details) VALUES (?, ?, ?, ?)",
-      [actor, act, res, detSafe],
+      "INSERT INTO activity_logs (created_at, actor_username, action, resource, details) VALUES (?, ?, ?, ?, ?)",
+      [createdAt, actor, act, res, detSafe],
       function onRun(err) {
         if (err) return reject(err);
         resolve({ id: this.lastID });
@@ -965,11 +1016,11 @@ export function listActivityLogs(options = {}) {
   }
   if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(String(dateFrom))) {
     conds.push("created_at >= ?");
-    params.push(`${dateFrom} 00:00:00`);
+    params.push(turkeyCalendarDayStartUtcSql(String(dateFrom)));
   }
   if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(String(dateTo))) {
     conds.push("created_at <= ?");
-    params.push(`${dateTo} 23:59:59`);
+    params.push(turkeyCalendarDayEndUtcSql(String(dateTo)));
   }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";

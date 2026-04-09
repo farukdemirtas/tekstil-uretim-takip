@@ -20,6 +20,9 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 4000
+        // Kullanıcılar güncellemede silinmesin: DB’yi repodan ayırın (klasörü bir kez oluşturun).
+        // SQLITE_DATABASE_PATH: "/var/lib/tekstil-uretim/production.db"
+        // veya TEKSTIL_DATA_DIR: "/var/lib/tekstil-uretim"
         // APP_USERNAME: "admin",
         // APP_PASSWORD: "güçlü-bir-şifre",
         // APP_TOKEN_SECRET: "en-az-32-karakter-rastgele"

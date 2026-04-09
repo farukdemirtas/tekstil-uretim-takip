@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { createHmac } from "crypto";
@@ -12,6 +13,7 @@ import {
   deleteWorker,
   deleteWorkerForDate,
   deleteAllWorkersForVisibleDay,
+  hideAllVisibleWorkersForSingleCalendarDay,
   getDailyEntries,
   getDayProductMeta,
   upsertDayProductMeta,
@@ -30,6 +32,8 @@ import {
   verifyUserPassword,
   getTopWorkersAnalytics,
   getWorkers,
+  getWorkerNameById,
+  getWorkerNamesByIds,
   upsertEntriesBulk,
   upsertEntry,
   getTeams,
@@ -464,22 +468,42 @@ app.put("/api/workers/:id", requireAuth, async (req, res) => {
   try {
     const result = await updateWorker(workerId, { process: procNorm });
     if (!result.updated) return res.status(404).json({ message: "Çalışan bulunamadı" });
-    logActivity(req, "calisan_guncelle", "workers", { id: workerId, process: procNorm });
+    const workerName = await getWorkerNameById(workerId);
+    logActivity(req, "calisan_guncelle", "workers", {
+      id: workerId,
+      process: procNorm,
+      name: workerName || undefined,
+    });
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: "Çalışan güncellenemedi", error: String(error) });
   }
 });
 
-app.delete("/api/workers/for-day", requireAuth, async (req, res) => {
+app.delete("/api/workers/for-day", requirePermission("topluListeKaldir"), async (req, res) => {
   const { date } = req.query;
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return res.status(400).json({ message: "Geçersiz veya eksik date (YYYY-MM-DD)" });
   }
+  const scopeRaw = typeof req.query.scope === "string" ? req.query.scope.trim() : "from_day";
+  const scope = scopeRaw === "only_day" ? "only_day" : "from_day";
   try {
+    if (scope === "only_day") {
+      const result = await hideAllVisibleWorkersForSingleCalendarDay(date);
+      logActivity(req, "calisan_toplu_liste_kaldir", "workers", {
+        date,
+        count: result.hidden,
+        scope: "only_day",
+      });
+      return res.json({ ok: true, removed: result.hidden, scope: "only_day" });
+    }
     const result = await deleteAllWorkersForVisibleDay(date);
-    logActivity(req, "calisan_toplu_liste_kaldir", "workers", { date, count: result.removed });
-    res.json({ ok: true, removed: result.removed });
+    logActivity(req, "calisan_toplu_liste_kaldir", "workers", {
+      date,
+      count: result.removed,
+      scope: "from_day",
+    });
+    return res.json({ ok: true, removed: result.removed, scope: "from_day" });
   } catch (error) {
     res.status(500).json({ message: "Toplu kaldırma başarısız", error: String(error) });
   }
@@ -497,11 +521,16 @@ app.delete("/api/workers/:id", requireAuth, async (req, res) => {
     typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined;
 
   try {
+    const workerName = await getWorkerNameById(workerId);
     const result = deletedAt ? await deleteWorkerForDate(workerId, deletedAt) : await deleteWorker(workerId);
     if (!result.deleted) {
       return res.status(404).json({ message: "Çalışan bulunamadı" });
     }
-    logActivity(req, "calisan_sil", "workers", { id: workerId, date: deletedAt || "tam" });
+    logActivity(req, "calisan_sil", "workers", {
+      id: workerId,
+      date: deletedAt || "tam",
+      name: workerName || undefined,
+    });
     return res.json({ ok: true });
   } catch (error) {
     return res.status(500).json({ message: "Çalışan silinemedi", error: String(error) });
@@ -704,22 +733,28 @@ app.post("/api/production", async (req, res) => {
   }
 
   try {
+    const wid = Number(workerId);
     await upsertEntry({
-      workerId: Number(workerId),
+      workerId: wid,
       date: String(date),
       t1000: Number(t1000) || 0,
       t1300: Number(t1300) || 0,
       t1600: Number(t1600) || 0,
       t1830: Number(t1830) || 0
     });
-    logActivity(req, "uretim_kayit", "production_entries", { workerId: Number(workerId), date: String(date) });
+    const workerName = await getWorkerNameById(wid);
+    logActivity(req, "uretim_kayit", "production_entries", {
+      workerId: wid,
+      date: String(date),
+      workerName: workerName || undefined,
+    });
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: "Üretim verisi kaydedilemedi", error: String(error) });
   }
 });
 
-app.post("/api/production/bulk", async (req, res) => {
+app.post("/api/production/bulk", requireAdmin, async (req, res) => {
   const { date, entries } = req.body;
   if (!date || !Array.isArray(entries)) {
     return res.status(400).json({ message: "date ve entries (array) zorunlu" });
@@ -740,7 +775,23 @@ app.post("/api/production/bulk", async (req, res) => {
 
   try {
     await upsertEntriesBulk(normalized);
-    logActivity(req, "uretim_toplu", "production_entries", { date: String(date), satir: normalized.length });
+    const idList = normalized.map((e) => e.workerId);
+    const nameMap = await getWorkerNamesByIds(idList);
+    const seen = new Set();
+    const labels = [];
+    for (const id of idList) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const nm = nameMap[id];
+      labels.push(nm ? nm : `#${id}`);
+    }
+    let workerNames = labels.join(", ");
+    if (workerNames.length > 3500) workerNames = `${workerNames.slice(0, 3490)}…`;
+    logActivity(req, "uretim_toplu", "production_entries", {
+      date: String(date),
+      satir: normalized.length,
+      workerNames,
+    });
     return res.json({ ok: true, count: normalized.length });
   } catch (error) {
     return res.status(500).json({ message: "Toplu kayıt başarısız", error: String(error) });

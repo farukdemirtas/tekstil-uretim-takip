@@ -15,6 +15,7 @@ function emptyDraft(): AppPermissions {
     ekran2: false,
     ekran3: false,
     loglar: false,
+    topluListeKaldir: false,
   };
 }
 

@@ -8,6 +8,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   ekran2: false,
   ekran3: false,
   loglar: false,
+  /** Ana sayfada “tüm personeli listeden kaldır” (gün / gün ve sonrası) */
+  topluListeKaldir: false,
 };
 
 export const PERMISSION_KEYS = Object.keys(DEFAULT_DATA_ENTRY_PERMISSIONS);

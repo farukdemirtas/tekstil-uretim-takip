@@ -56,6 +56,7 @@ export type AppPermissions = {
   ekran2: boolean;
   ekran3: boolean;
   loglar: boolean;
+  topluListeKaldir: boolean;
 };
 
 export type User = {

@@ -204,9 +204,13 @@ export async function removeWorker(workerId: number, date: string): Promise<void
   if (!response.ok) throw new Error("Çalışan silinemedi");
 }
 
-/** Seçili günde tabloda görünen tüm personeli listeden kaldırır; üretim kayıtları silinmez, seçilen günden önceki günler etkilenmez. */
-export async function removeAllWorkersForDay(date: string): Promise<{ removed: number }> {
-  const response = await apiFetch(`${apiBase()}/workers/for-day?date=${encodeURIComponent(date)}`, {
+/** Toplu listeden kaldır: `only_day` = yalnızca o tarih; `from_day` = o tarih ve sonrası (soft delete). */
+export async function removeAllWorkersForDay(
+  date: string,
+  scope: "only_day" | "from_day" = "from_day"
+): Promise<{ removed: number; scope: string }> {
+  const q = new URLSearchParams({ date, scope });
+  const response = await apiFetch(`${apiBase()}/workers/for-day?${q}`, {
     method: "DELETE",
     headers: { ...authHeaders() },
   });
@@ -214,7 +218,10 @@ export async function removeAllWorkersForDay(date: string): Promise<{ removed: n
   if (!response.ok) {
     throw new Error((data as { message?: string }).message ?? "Personel kaldırılamadı");
   }
-  return { removed: Number((data as { removed?: number }).removed) || 0 };
+  return {
+    removed: Number((data as { removed?: number }).removed) || 0,
+    scope: String((data as { scope?: string }).scope || scope),
+  };
 }
 
 export async function getProduction(date: string): Promise<ProductionRow[]> {

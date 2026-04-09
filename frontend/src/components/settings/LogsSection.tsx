@@ -25,6 +25,7 @@ const ACTION_LABELS: Record<string, string> = {
   calisan_ekle: "Çalışan ekleme",
   calisan_guncelle: "Çalışan güncelleme",
   calisan_sil: "Çalışan silme",
+  calisan_toplu_liste_kaldir: "Tüm personel listeden kaldır (gün)",
   urun_meta_guncelle: "Gün ürün bilgisi",
   uretim_kayit: "Üretim kaydı (tek)",
   uretim_toplu: "Üretim kaydı (toplu)",
@@ -67,6 +68,33 @@ function val(d: Record<string, unknown> | null, key: string): string {
   const v = d[key];
   if (v == null) return "";
   return String(v);
+}
+
+/** Log detayında çalışan adı varsa göster, yoksa #id (eski kayıtlar). */
+function calisanEtiketi(d: Record<string, unknown> | null, idKey: "id" | "workerId"): string {
+  if (!d) return "";
+  const isim = val(d, "name").trim() || val(d, "workerName").trim();
+  if (isim) return `“${isim}”`;
+  const id = val(d, idKey);
+  return id ? `çalışan #${id}` : "çalışan";
+}
+
+/** Sunucuda UTC saklanan YYYY-MM-DD HH:MM:SS → Europe/Istanbul ile listeleme */
+function formatActivityLogUtcToIstanbul(raw: string): string {
+  const s = raw?.trim();
+  if (!s) return "—";
+  const normalized = s.includes("T") ? s : `${s.replace(" ", "T")}Z`;
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString("tr-TR", {
+    timeZone: "Europe/Istanbul",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function logIslemDetayi(row: ActivityLogRow): string {
@@ -129,17 +157,28 @@ function logIslemDetayi(row: ActivityLogRow): string {
       break;
     case "calisan_ekle":
       if (d)
-        return `Çalışan eklendi: “${val(d, "name")}”, bölüm ${val(d, "team")}, proses “${val(d, "process")}” (#${val(d, "id")}).`;
+        return `Çalışan eklendi: “${val(d, "name")}”, bölüm ${val(d, "team")}, proses “${val(d, "process")}”.`;
       break;
     case "calisan_guncelle":
-      if (d) return `Çalışan #${val(d, "id")} için proses “${val(d, "process")}” olarak güncellendi.`;
+      if (d)
+        return `${calisanEtiketi(d, "id")} için proses “${val(d, "process")}” olarak güncellendi.`;
       break;
     case "calisan_sil":
       if (d) {
         const gun = val(d, "date");
-        if (gun && gun !== "tam")
-          return `Çalışan #${val(d, "id")} yalnızca ${gun} gününden kaldırıldı.`;
-        return `Çalışan #${val(d, "id")} listeden çıkarıldı / pasifleştirildi.`;
+        const who = calisanEtiketi(d, "id");
+        if (gun && gun !== "tam") return `${who} yalnızca ${gun} gününden kaldırıldı.`;
+        return `${who} listeden çıkarıldı / pasifleştirildi.`;
+      }
+      break;
+    case "calisan_toplu_liste_kaldir":
+      if (d) {
+        const sc = val(d, "scope");
+        const c = val(d, "count");
+        const dt = val(d, "date");
+        if (sc === "only_day")
+          return `${dt} tarihinde yalnızca o gün için ${c} personel listeden gizlendi; sonraki günlerde yine görünür.`;
+        return `${dt} tarihi ve sonrasında listeden ${c} personel kaldırıldı (pasif).`;
       }
       break;
     case "urun_meta_guncelle":
@@ -150,10 +189,19 @@ function logIslemDetayi(row: ActivityLogRow): string {
       }
       break;
     case "uretim_kayit":
-      if (d) return `${val(d, "date")} tarihinde çalışan #${val(d, "workerId")} için saatlik üretim rakamları kaydedildi.`;
+      if (d) {
+        const who = calisanEtiketi(d, "workerId");
+        return `${val(d, "date")} tarihinde ${who} için saatlik üretim rakamları kaydedildi.`;
+      }
       break;
     case "uretim_toplu":
-      if (d) return `${val(d, "date")} günü toplu kayıt: ${val(d, "satir")} çalışan satırı güncellendi.`;
+      if (d) {
+        const wn = val(d, "workerNames").trim();
+        const satir = val(d, "satir");
+        if (wn)
+          return `${val(d, "date")} günü toplu kayıt (${satir} satır): ${wn}.`;
+        return `${val(d, "date")} günü toplu kayıt: ${satir} çalışan satırı güncellendi.`;
+      }
       break;
     default:
       break;
@@ -375,7 +423,7 @@ export default function LogsSection() {
                     className="border-b border-slate-100 odd:bg-white even:bg-slate-50/80 dark:border-slate-700 dark:odd:bg-slate-800 dark:even:bg-slate-800/70"
                   >
                     <td className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-slate-600 dark:text-slate-400">
-                      {r.created_at}
+                      {formatActivityLogUtcToIstanbul(r.created_at)}
                     </td>
                     <td className="px-3 py-2 align-top font-medium text-slate-800 dark:text-slate-200">{r.actor_username}</td>
                     <td className="px-3 py-2 align-top text-slate-800 dark:text-slate-200">

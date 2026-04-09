@@ -98,4 +98,24 @@ sudo certbot --nginx -d takip.yesilimajtekstil.com
 - `curl -s http://127.0.0.1:4000/api/health`
 - Tarayıcı: **https://takip.yesilimajtekstil.com**
 
-Veritabanı: `backend/data/production.db`
+## Veritabanı ve güncelleme (kullanıcıların silinmemesi)
+
+Varsayılan: `backend/data/production.db` (repoda yok, `git pull` tek başına silmez).
+
+**Önerilen üretim ayarı:** Dosyayı repodan tamamen ayırın; böylece yanlışlıkla dizin silme / yeniden clone / `git clean -fdx` riski kalmaz.
+
+```bash
+sudo mkdir -p /var/lib/tekstil-uretim
+sudo chown "$USER":"$USER" /var/lib/tekstil-uretim
+# Mevcut DB’yi taşıyorsanız:
+# cp -a /var/www/.../backend/data/production.db /var/lib/tekstil-uretim/production.db
+```
+
+`ecosystem.config.cjs` içinde `tekstil-api` için **veya** `backend/.env` (sunucuda `dotenv` ile yüklenir):
+
+- `SQLITE_DATABASE_PATH=/var/lib/tekstil-uretim/production.db`  
+  **veya** `TEKSTIL_DATA_DIR=/var/lib/tekstil-uretim` (dosya adı yine `production.db`)
+
+Sonra: `pm2 restart tekstil-api --update-env`.
+
+`deploy/sunucu-guncelle.sh` her çalıştığında repodaki `backend/data/production.db` için otomatik zaman damgalı yedek alır; dosya kaybolursa son yedeği geri yükler. Harici yol kullanıyorsanız o dosyayı düzenli yedeklemeyi unutmayın.

@@ -11,8 +11,22 @@ if [[ ! -f frontend/.env.production ]]; then
   exit 1
 fi
 
+TS="$(date +%Y%m%d-%H%M%S)"
+echo "==> Veritabanı yedeği (git pull öncesi — kullanıcı verisi korunur)"
+if [[ -f backend/data/production.db ]]; then
+  cp -a backend/data/production.db "backend/data/production.db.bak.${TS}"
+  echo "    → backend/data/production.db.bak.${TS}"
+fi
+
 echo "==> git pull"
 git pull
+
+if [[ ! -f backend/data/production.db ]] && compgen -G "backend/data/production.db.bak.*" >/dev/null; then
+  LATEST="$(ls -t backend/data/production.db.bak.* 2>/dev/null | head -1)"
+  echo "UYARI: production.db yoktu; son yedek geri yükleniyor: $LATEST"
+  mkdir -p backend/data
+  cp -a "$LATEST" backend/data/production.db
+fi
 
 echo "==> npm + frontend build (Next.js .next yenilenir)"
 npm run prod:prepare

@@ -41,6 +41,48 @@ function parseTimeCell(raw: string): number {
   return n;
 }
 
+function ProcessSelectEditor({
+  value,
+  onChange,
+  options,
+  autoFocus,
+  className = "",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  autoFocus?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={`relative w-full max-w-full ${className}`}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="select-modern-compact w-full max-w-[16rem]"
+        autoFocus={autoFocus}
+      >
+        {options.map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+      <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500 dark:text-slate-400">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden>
+          <path
+            d="M5 7.5L10 12.5L15 7.5"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+    </div>
+  );
+}
+
 export default function ProductionTable({
   rows,
   onCellChange,
@@ -151,21 +193,19 @@ export default function ProductionTable({
                       className="border-b border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-600"
                     >
                       <td className="px-3 py-2 text-center">{startNo + index}</td>
-                      <td className="px-3 py-2">{row.name}</td>
                       <td className="px-3 py-2">
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{row.name}</span>
+                      </td>
+                      <td className="min-w-[10rem] px-3 py-2">
                         {isEditing ? (
-                          <select
+                          <ProcessSelectEditor
                             value={editingProcess}
-                            onChange={(e) => setEditingProcess(e.target.value)}
-                            className="rounded border border-blue-400 bg-white px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                            onChange={setEditingProcess}
+                            options={processOptions}
                             autoFocus
-                          >
-                            {processOptions.map((p) => (
-                              <option key={p} value={p}>{p}</option>
-                            ))}
-                          </select>
+                          />
                         ) : (
-                          row.process
+                          <span className="text-slate-800 dark:text-slate-200">{row.process}</span>
                         )}
                       </td>
                       {TIME_FIELDS.map(({ key }) => (
@@ -199,8 +239,10 @@ export default function ProductionTable({
                             <>
                               <button
                                 onClick={() => startEdit(row)}
-                                className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/20"
-                              >Düzenle</button>
+                                className="rounded-lg border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-950/35"
+                              >
+                                Düzenle
+                              </button>
                               {canDelete ? (
                                 <button
                                   onClick={() => onDeleteWorker(row.workerId, row.name)}
@@ -243,17 +285,16 @@ export default function ProductionTable({
                       <span className="mr-1.5 text-xs text-slate-400">{startNo + index}.</span>
                       <span className="font-medium">{row.name}</span>
                       {isEditing ? (
-                        <select
-                          value={editingProcess}
-                          onChange={(e) => setEditingProcess(e.target.value)}
-                          className="mt-1 block w-full rounded border border-blue-400 bg-white px-2 py-1.5 text-sm dark:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
-                        >
-                          {processOptions.map((p) => (
-                            <option key={p} value={p}>{p}</option>
-                          ))}
-                        </select>
+                        <div className="mt-2">
+                          <ProcessSelectEditor
+                            value={editingProcess}
+                            onChange={setEditingProcess}
+                            options={processOptions}
+                            className="max-w-none"
+                          />
+                        </div>
                       ) : (
-                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{row.process}</p>
+                        <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{row.process}</p>
                       )}
                     </div>
                     <div className="shrink-0 text-right">
@@ -296,8 +337,10 @@ export default function ProductionTable({
                       <>
                         <button
                           onClick={() => startEdit(row)}
-                          className="flex-1 rounded-lg border border-blue-300 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-900/20"
-                        >Düzenle</button>
+                          className="flex-1 rounded-lg border border-blue-300 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-950/35"
+                        >
+                          Düzenle
+                        </button>
                         {canDelete && (
                           <button
                             onClick={() => onDeleteWorker(row.workerId, row.name)}
