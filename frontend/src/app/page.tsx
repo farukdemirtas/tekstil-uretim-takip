@@ -17,6 +17,7 @@ import {
   getTeams,
   login,
   removeWorker,
+  removeAllWorkersForDay,
   saveDayProductMeta,
   saveProduction,
   setAuthToken,
@@ -26,6 +27,36 @@ import { todayWeekdayIso } from "@/lib/businessCalendar";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission, isAdminRole, persistPermissions, clearStoredPermissions } from "@/lib/permissions";
 import { ProductionRow } from "@/lib/types";
+
+const EXPORT_TEAM_FALLBACK = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
+
+function formatExportDateLabel(iso: string): string {
+  try {
+    const d = new Date(`${iso}T12:00:00`);
+    return d.toLocaleDateString("tr-TR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/** Ana tablo ile aynı bölüm sırası (Ayarlardaki takım sırası veya varsayılan). */
+function orderedExportRows(rows: ProductionRow[], teamMeta: Array<{ code: string }>): ProductionRow[] {
+  const inData = [...new Set(rows.map((r) => r.team))];
+  const order = teamMeta.length ? teamMeta.map((t) => t.code) : [...EXPORT_TEAM_FALLBACK];
+  const head = order.filter((t) => inData.includes(t));
+  const tail = inData.filter((t) => !order.includes(t));
+  const teams = [...head, ...tail];
+  const out: ProductionRow[] = [];
+  for (const t of teams) {
+    out.push(...rows.filter((r) => r.team === t));
+  }
+  return out;
+}
 
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -51,6 +82,7 @@ export default function HomePage() {
   const [, setPermTick] = useState(0);
   const [teamMeta, setTeamMeta] = useState<Array<{ code: string; label: string }>>([]);
   const [teamGunlukToplamlar, setTeamGunlukToplamlar] = useState<Record<string, number>>({});
+  const [clearingAllWorkers, setClearingAllWorkers] = useState(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -227,19 +259,85 @@ export default function HomePage() {
   );
 
   function handleExportExcel() {
-    const data = rows.map((row, index) => ({
-      No: index + 1,
-      "Ad Soyad": row.name,
-      Proses: row.process,
-      Grup: resolveTeamLabel(row.team),
-      "10:00": row.t1000,
-      "13:00": row.t1300,
-      "16:00": row.t1600,
-      "18:30": row.t1830,
-      Toplam: row.t1000 + row.t1300 + row.t1600 + row.t1830
-    }));
+    const sorted = orderedExportRows(rows, teamMeta);
+    /* Tablo: Sıra → Ad Soyad → Bölüm → Proses → saatler → Toplam */
+    const headers = ["Sıra", "Ad Soyad", "Bölüm", "Proses", "10:00", "13:00", "16:00", "18:30", "Toplam"] as const;
+    const lastColIdx = headers.length - 1;
+    const aoa: (string | number)[][] = [];
 
-    const worksheet = XLSX.utils.json_to_sheet(data);
+    aoa.push(["Yeşil İmaj Tekstil — Günlük üretim özeti"]);
+    aoa.push(["Tarih", formatExportDateLabel(selectedDate)]);
+    aoa.push(["Ürün adı", productName.trim() || "—"]);
+    aoa.push(["Model", productModel.trim() || "—"]);
+    aoa.push(["Genel tamamlanan (adet)", genelTamamlanan]);
+    aoa.push(["Dışa aktarım", new Date().toLocaleString("tr-TR")]);
+    aoa.push([]);
+    aoa.push([...headers]);
+
+    const headerRowIndex = aoa.length - 1;
+
+    let sum10 = 0;
+    let sum13 = 0;
+    let sum16 = 0;
+    let sum1830 = 0;
+    let sumTot = 0;
+
+    sorted.forEach((row, index) => {
+      const t10 = row.t1000;
+      const t13 = row.t1300;
+      const t16 = row.t1600;
+      const t18 = row.t1830;
+      const tot = t10 + t13 + t16 + t18;
+      sum10 += t10;
+      sum13 += t13;
+      sum16 += t16;
+      sum1830 += t18;
+      sumTot += tot;
+      aoa.push([
+        index + 1,
+        row.name,
+        resolveTeamLabel(row.team),
+        row.process,
+        t10,
+        t13,
+        t16,
+        t18,
+        tot,
+      ]);
+    });
+
+    aoa.push([]);
+    aoa.push(["TOPLAM", "", "", "", sum10, sum13, sum16, sum1830, sumTot]);
+
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+    worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } }];
+
+    worksheet["!cols"] = [
+      { wch: 6 },
+      { wch: 30 },
+      { wch: 22 },
+      { wch: 20 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 12 },
+    ];
+
+    const lastTableRowIndex = headerRowIndex + Math.max(sorted.length, 0);
+    worksheet["!autofilter"] = {
+      ref: XLSX.utils.encode_range({
+        s: { r: headerRowIndex, c: 0 },
+        e: { r: lastTableRowIndex, c: lastColIdx },
+      }),
+    };
+
+    /* Başlık ve tablo başlık satırı yüksekliği (okunaklı tablo) */
+    const rowHeights: XLSX.RowInfo[] = [];
+    rowHeights[0] = { hpt: 24 };
+    rowHeights[headerRowIndex] = { hpt: 20 };
+    worksheet["!rows"] = rowHeights;
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Üretim");
     XLSX.writeFile(workbook, `üretim-${selectedDate}.xlsx`);
@@ -255,6 +353,25 @@ export default function HomePage() {
     if (!approved) return;
     await removeWorker(workerId, selectedDate);
     await loadDateData(selectedDate);
+  }
+
+  async function handleRemoveAllWorkersForDay() {
+    if (rows.length === 0) return;
+    const approved = window.confirm(
+      `Seçili tarih (${selectedDate}) için listedeki ${rows.length} personelin tamamını kaldırmak istiyor musunuz?\n\n` +
+        "Geçmiş günlere ait üretim kayıtları ve analizler silinmez; seçilen gün ve sonrasında listede görünmezler, önceki günler olduğu gibi kalır."
+    );
+    if (!approved) return;
+    setClearingAllWorkers(true);
+    setError(null);
+    try {
+      await removeAllWorkersForDay(selectedDate);
+      await loadDateData(selectedDate);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Personel kaldırılamadı");
+    } finally {
+      setClearingAllWorkers(false);
+    }
   }
 
   if (!isAuthenticated) {
@@ -403,6 +520,23 @@ export default function HomePage() {
       </section>
 
       <WorkerForm onSubmit={handleAddWorker} />
+
+      {!loading && rows.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={clearingAllWorkers}
+            onClick={() => void handleRemoveAllWorkersForDay()}
+            className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/40"
+          >
+            {clearingAllWorkers
+              ? "Kaldırılıyor…"
+              : selectedDate === todayWeekdayIso()
+                ? "Tüm personeli listeden kaldır (bugün)"
+                : "Tüm personeli listeden kaldır (seçili gün)"}
+          </button>
+        </div>
+      ) : null}
 
       {error && (
         <div className="rounded-2xl border border-red-200/90 bg-red-50/90 p-4 text-sm text-red-800 shadow-surface-sm dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">

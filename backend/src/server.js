@@ -11,6 +11,7 @@ import {
   updateWorker,
   deleteWorker,
   deleteWorkerForDate,
+  deleteAllWorkersForVisibleDay,
   getDailyEntries,
   getDayProductMeta,
   upsertDayProductMeta,
@@ -467,6 +468,20 @@ app.put("/api/workers/:id", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: "Çalışan güncellenemedi", error: String(error) });
+  }
+});
+
+app.delete("/api/workers/for-day", requireAuth, async (req, res) => {
+  const { date } = req.query;
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ message: "Geçersiz veya eksik date (YYYY-MM-DD)" });
+  }
+  try {
+    const result = await deleteAllWorkersForVisibleDay(date);
+    logActivity(req, "calisan_toplu_liste_kaldir", "workers", { date, count: result.removed });
+    res.json({ ok: true, removed: result.removed });
+  } catch (error) {
+    res.status(500).json({ message: "Toplu kaldırma başarısız", error: String(error) });
   }
 });
 

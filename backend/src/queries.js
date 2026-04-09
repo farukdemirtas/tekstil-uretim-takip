@@ -111,12 +111,37 @@ export function deleteWorker(workerId) {
 
 export function deleteWorkerForDate(workerId, date) {
   return new Promise((resolve, reject) => {
+    /* deleted_at = ilk listeden düşüldüğü gün. Daha sonraki bir tarihle sil denirse tarihi ileri alma —
+       yoksa o gün ve öncesi tekrar görünür; geçmiş günler etkilenmiş gibi olur. */
     db.run(
-      "UPDATE workers SET deleted_at = COALESCE(?, date('now')) WHERE id = ?",
-      [date, workerId],
+      `UPDATE workers SET deleted_at = CASE
+         WHEN deleted_at IS NULL OR deleted_at > ? THEN ?
+         ELSE deleted_at
+       END
+       WHERE id = ?`,
+      [date, date, workerId],
       function onUpdate(err) {
         if (err) return reject(err);
         resolve({ deleted: this.changes > 0 });
+      }
+    );
+  });
+}
+
+/** Ana ekranda seçili günde görünen tüm çalışanları listeden kaldırır (soft delete). Üretim satırları silinmez; seçilen günden önceki günler analizde ve listede kalır. */
+export function deleteAllWorkersForVisibleDay(date) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE workers SET deleted_at = CASE
+         WHEN deleted_at IS NULL OR deleted_at > ? THEN ?
+         ELSE deleted_at
+       END
+       WHERE (created_at IS NULL OR created_at <= ?)
+         AND (deleted_at IS NULL OR deleted_at > ?)`,
+      [date, date, date, date],
+      function onUpdate(err) {
+        if (err) return reject(err);
+        resolve({ removed: this.changes });
       }
     );
   });
