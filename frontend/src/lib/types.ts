@@ -7,6 +7,8 @@ export type Worker = {
   team: Team;
   process: string;
   created_at?: string;
+  /** Pasif (listeden düşmüş); analiz listesi gibi uçlarda dönebilir */
+  deleted_at?: string | null;
 };
 
 export type ProductionRow = {
@@ -46,8 +48,9 @@ export type WorkerDailyAnalytics = {
   production: number;
 };
 
-/** Kişi bazlı analiz: günlük satır + dört saat dilimi */
+/** Kişi bazlı analiz: günlük satır + dört saat dilimi (aynı isimde birden fazla worker kaydı olabilir) */
 export type WorkerProductionDayDetail = {
+  workerId?: number;
   productionDate: string;
   name: string;
   team: string;

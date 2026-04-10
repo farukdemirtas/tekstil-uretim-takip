@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import {
   getTeams,
   getWorkerProductionDailyDetail,
-  getWorkers,
+  getWorkersForAnalytics,
   setAuthToken,
 } from "@/lib/api";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
@@ -53,6 +53,9 @@ export default function PersonAnalysisPage() {
   const [pdfExporting, setPdfExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<string>("");
+  const [includeSameNameWorkers, setIncludeSameNameWorkers] = useState(true);
+  const [workersLoading, setWorkersLoading] = useState(true);
+  const [workersError, setWorkersError] = useState<string | null>(null);
 
   const teamLabel = useCallback(
     (code: string) => teamLabels[code] ?? code,
@@ -61,7 +64,8 @@ export default function PersonAnalysisPage() {
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
-    if (!token || !hasPermission("analysis")) {
+    const canAccess = hasPermission("analysis") || hasPermission("ekran2");
+    if (!token || !canAccess) {
       window.location.href = "/";
       return;
     }
@@ -69,12 +73,18 @@ export default function PersonAnalysisPage() {
     void getTeams()
       .then((t) => setTeamLabels(Object.fromEntries(t.map((x) => [x.code, x.label]))))
       .catch(() => {});
-    void getWorkers()
+    setWorkersLoading(true);
+    setWorkersError(null);
+    void getWorkersForAnalytics()
       .then((w) => {
         setWorkers(w);
         if (w.length && workerId === "") setWorkerId(w[0].id);
       })
-      .catch(() => {});
+      .catch((e) => {
+        setWorkersError(e instanceof Error ? e.message : "Personel listesi yüklenemedi");
+        setWorkers([]);
+      })
+      .finally(() => setWorkersLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -90,6 +100,7 @@ export default function PersonAnalysisPage() {
         workerId: Number(workerId),
         startDate,
         endDate,
+        includeSameNameWorkers,
       });
       setRows(data);
       setLoadedAt(new Date().toLocaleString("tr-TR"));
@@ -99,9 +110,52 @@ export default function PersonAnalysisPage() {
     } finally {
       setLoading(false);
     }
-  }, [workerId, startDate, endDate]);
+  }, [workerId, startDate, endDate, includeSameNameWorkers]);
 
   const meta = rows[0];
+
+  /** Takvim günü başına toplam (aynı gün birden fazla bölüm/proses satırı varsa toplanır) */
+  const dateTotals = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      const t = dayTotal(r);
+      m.set(r.productionDate, (m.get(r.productionDate) ?? 0) + t);
+    }
+    return m;
+  }, [rows]);
+
+  const sortedDates = useMemo(() => [...dateTotals.keys()].sort(), [dateTotals]);
+
+  /** Çalışan kayıt no + bölüm/proses bazında dönem özeti */
+  const processBreakdown = useMemo(() => {
+    const byWorker = new Map<
+      number,
+      { team: string; process: string; days: Set<string>; total: number }
+    >();
+    for (const r of rows) {
+      const id = r.workerId ?? 0;
+      if (!byWorker.has(id)) {
+        byWorker.set(id, { team: r.team, process: r.process, days: new Set(), total: 0 });
+      }
+      const e = byWorker.get(id)!;
+      e.days.add(r.productionDate);
+      e.total += dayTotal(r);
+    }
+    return [...byWorker.entries()]
+      .map(([workerId, v]) => ({
+        workerId,
+        team: v.team,
+        process: v.process,
+        dayCount: v.days.size,
+        total: v.total,
+      }))
+      .sort(
+        (a, b) =>
+          a.team.localeCompare(b.team, "tr", { sensitivity: "base" }) ||
+          a.process.localeCompare(b.process, "tr", { sensitivity: "base" }) ||
+          a.workerId - b.workerId
+      );
+  }, [rows]);
 
   const stats = useMemo(() => {
     if (rows.length === 0) {
@@ -118,11 +172,9 @@ export default function PersonAnalysisPage() {
         dominantSlotTotal: 0,
       };
     }
-    const n = rows.length;
+    const dayCount = sortedDates.length;
     let grandTotal = 0;
     const slotTotals = { t1000: 0, t1300: 0, t1600: 0, t1830: 0 };
-    let maxDay: { date: string; total: number } | null = null;
-    let minDay: { date: string; total: number } | null = null;
     for (const r of rows) {
       const t = dayTotal(r);
       grandTotal += t;
@@ -130,16 +182,22 @@ export default function PersonAnalysisPage() {
       slotTotals.t1300 += r.t1300;
       slotTotals.t1600 += r.t1600;
       slotTotals.t1830 += r.t1830;
-      if (!maxDay || t > maxDay.total) maxDay = { date: r.productionDate, total: t };
-      if (!minDay || t < minDay.total) minDay = { date: r.productionDate, total: t };
     }
-    const avgPerDay = Math.round(grandTotal / n);
-    const avgPerNominalShift = Math.round(grandTotal / SHIFT_NOMINAL_HOURS / n);
+    let maxDay: { date: string; total: number } | null = null;
+    let minDay: { date: string; total: number } | null = null;
+    for (const d of sortedDates) {
+      const dt = dateTotals.get(d) ?? 0;
+      if (!maxDay || dt > maxDay.total) maxDay = { date: d, total: dt };
+      if (!minDay || dt < minDay.total) minDay = { date: d, total: dt };
+    }
+    const denom = dayCount > 0 ? dayCount : 1;
+    const avgPerDay = Math.round(grandTotal / denom);
+    const avgPerNominalShift = Math.round(grandTotal / SHIFT_NOMINAL_HOURS / denom);
     const slotAvgPerDay = {
-      t1000: Math.round(slotTotals.t1000 / n),
-      t1300: Math.round(slotTotals.t1300 / n),
-      t1600: Math.round(slotTotals.t1600 / n),
-      t1830: Math.round(slotTotals.t1830 / n),
+      t1000: Math.round(slotTotals.t1000 / denom),
+      t1300: Math.round(slotTotals.t1300 / denom),
+      t1600: Math.round(slotTotals.t1600 / denom),
+      t1830: Math.round(slotTotals.t1830 / denom),
     };
     let dominantSlot = SLOTS[0].label;
     let dominantSlotTotal = slotTotals.t1000;
@@ -152,7 +210,7 @@ export default function PersonAnalysisPage() {
     }
     return {
       grandTotal,
-      activeDays: n,
+      activeDays: dayCount,
       avgPerDay,
       avgPerNominalShift,
       maxDay,
@@ -162,35 +220,36 @@ export default function PersonAnalysisPage() {
       dominantSlot,
       dominantSlotTotal,
     };
-  }, [rows]);
+  }, [rows, sortedDates, dateTotals]);
 
   const trendPoints = useMemo(() => {
-    if (rows.length === 0) return "";
-    const totals = rows.map(dayTotal);
+    if (sortedDates.length === 0) return "";
+    const totals = sortedDates.map((d) => dateTotals.get(d) ?? 0);
     const maxT = Math.max(...totals, 1);
     const w = 640;
     const h = 160;
-    if (rows.length === 1) {
+    if (sortedDates.length === 1) {
       const y = h - Math.round((totals[0] / maxT) * h);
       return `0,${y} ${w},${y}`;
     }
-    return rows
-      .map((r, i) => {
-        const x = Math.round((i / (rows.length - 1)) * w);
+    return sortedDates
+      .map((_, i) => {
+        const x = Math.round((i / (sortedDates.length - 1)) * w);
         const y = h - Math.round((totals[i] / maxT) * h);
         return `${x},${y}`;
       })
       .join(" ");
-  }, [rows]);
+  }, [sortedDates, dateTotals]);
 
   const exportExcel = () => {
     if (!meta || rows.length === 0) return;
     const ozet = [
       { Alan: "Personel", Değer: meta.name },
-      { Alan: "Bölüm", Değer: teamLabel(meta.team) },
-      { Alan: "Proses", Değer: meta.process },
+      { Alan: "Aynı isim birleştirme", Değer: includeSameNameWorkers ? "Açık (tüm kayıtlar)" : "Kapalı (yalnızca seçilen kayıt)" },
+      { Alan: "Bölüm (özet)", Değer: teamLabel(meta.team) },
+      { Alan: "Proses (özet)", Değer: meta.process },
       { Alan: "Tarih aralığı", Değer: `${startDate} — ${endDate}` },
-      { Alan: "Üretim günü", Değer: stats.activeDays },
+      { Alan: "Takvim günü (birleşik)", Değer: stats.activeDays },
       { Alan: "Toplam üretim", Değer: stats.grandTotal },
       { Alan: "Günlük ortalama (toplam)", Değer: stats.avgPerDay },
       { Alan: `Günlük ort. ÷ ${SHIFT_NOMINAL_HOURS} saat (yaklaşık)`, Değer: stats.avgPerNominalShift },
@@ -200,11 +259,21 @@ export default function PersonAnalysisPage() {
     ];
     const gunluk = rows.map((r) => ({
       Tarih: r.productionDate,
+      "Kayıt no": r.workerId ?? "",
+      Bölüm: teamLabel(r.team),
+      Proses: r.process,
       "10:00": r.t1000,
       "13:00": r.t1300,
       "16:00": r.t1600,
       "18:30": r.t1830,
       "Gün toplamı": dayTotal(r),
+    }));
+    const bolumOzet = processBreakdown.map((row) => ({
+      Bölüm: teamLabel(row.team),
+      Proses: row.process,
+      "Kayıt no": row.workerId,
+      "Üretim günü": row.dayCount,
+      Toplam: row.total,
     }));
     const saatlik = SLOTS.map((s) => ({
       "Saat dilimi": s.label,
@@ -217,6 +286,9 @@ export default function PersonAnalysisPage() {
     }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ozet), "Özet");
+    if (bolumOzet.length > 0) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bolumOzet), "Bölüm proses özeti");
+    }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gunluk), "Günlük saatlik");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(saatlik), "Saatlik özet");
     XLSX.writeFile(wb, `kisi-analiz-${meta.name.slice(0, 24)}-${startDate}-${endDate}.xlsx`);
@@ -317,31 +389,63 @@ export default function PersonAnalysisPage() {
               Personel ve hafta içi tarih aralığını seçin, ardından veriyi yükleyin.
             </p>
           </div>
+          {workersError ? (
+            <div
+              className="mb-4 rounded-xl border border-red-200/90 bg-red-50/95 px-4 py-3 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-950/35 dark:text-red-100"
+              role="alert"
+            >
+              Personel listesi alınamadı: {workersError}. Oturumunuzun açık olduğundan ve Analiz veya EKRAN2 yetkisinin
+              tanımlı olduğundan emin olun; sayfayı yenileyin.
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 lg:items-end">
             <div className="lg:col-span-2">
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Personel</label>
               <select
                 value={workerId === "" ? "" : String(workerId)}
                 onChange={(e) => setWorkerId(e.target.value === "" ? "" : Number(e.target.value))}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium shadow-inner shadow-slate-900/[0.03] outline-none ring-teal-500/25 transition focus:border-teal-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:shadow-none"
+                disabled={workersLoading || !!workersError}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium shadow-inner shadow-slate-900/[0.03] outline-none ring-teal-500/25 transition focus:border-teal-500 focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:shadow-none"
               >
-                <option value="">Seçin…</option>
+                <option value="">
+                  {workersLoading ? "Personel listesi yükleniyor…" : "Seçin…"}
+                </option>
                 {[...workers]
                   .sort((a, b) => a.name.localeCompare(b.name, "tr", { sensitivity: "base" }))
                   .map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name} — {teamLabel(w.team)} / {w.process}
+                      {w.deleted_at ? " (pasif)" : ""}
                     </option>
                   ))}
               </select>
+              {!workersLoading && !workersError && workers.length === 0 ? (
+                <p className="mt-2 text-xs text-amber-800 dark:text-amber-200/90">
+                  Kayıtlı aktif personel yok ve üretim geçmişi de bulunamadı. Ana ekrandan personel ekleyin veya tarih
+                  aralığını kontrol edin.
+                </p>
+              ) : null}
             </div>
             <WeekdayDatePicker label="Başlangıç" value={startDate} onChange={setStartDate} />
             <WeekdayDatePicker label="Bitiş" value={endDate} onChange={setEndDate} />
           </div>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200/90 bg-slate-50/80 px-4 py-3 text-left text-xs leading-relaxed text-slate-700 dark:border-slate-600 dark:bg-slate-800/40 dark:text-slate-300">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-500 dark:border-slate-500"
+              checked={includeSameNameWorkers}
+              onChange={(e) => setIncludeSameNameWorkers(e.target.checked)}
+            />
+            <span>
+              <strong className="font-semibold text-slate-800 dark:text-slate-200">Aynı isimli tüm kayıtları birleştir.</strong>{" "}
+              Bir kişi farklı bölüm veya proses için ayrı çalışan satırlarına sahipse (aynı ad), tüm bu alanların üretimi
+              tek raporda gösterilir; aşağıda bölüm/proses özeti ve günlük satırlar yer alır.
+            </span>
+          </label>
           <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-5 dark:border-slate-700/80">
             <button
               type="button"
-              disabled={loading || workerId === ""}
+              disabled={loading || workerId === "" || workersLoading || !!workersError || workers.length === 0}
               onClick={() => void load()}
               className="rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-600/25 transition hover:from-teal-500 hover:to-emerald-500 hover:shadow-teal-600/30 disabled:opacity-50 disabled:shadow-none"
             >
@@ -419,8 +523,17 @@ export default function PersonAnalysisPage() {
                   <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-900">Kişi bazlı analiz</h2>
                   <p className="mt-2 text-sm text-slate-600">
                     <span className="font-semibold text-slate-800">{meta.name}</span>
-                    {" · "}
-                    {teamLabel(meta.team)} · {meta.process}
+                    {processBreakdown.length <= 1 ? (
+                      <>
+                        {" · "}
+                        {teamLabel(meta.team)} · {meta.process}
+                      </>
+                    ) : (
+                      <span className="mt-1 block text-xs font-normal text-slate-500">
+                        Aynı isimle {processBreakdown.length} çalışma alanı (bölüm/proses kaydı) birleştirildi — özet ve
+                        tabloda tümü listelenir.
+                      </span>
+                    )}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
                     Dönem: {startDate} — {endDate} · Üretim günü: {stats.activeDays}
@@ -457,6 +570,53 @@ export default function PersonAnalysisPage() {
               </div>
             </section>
 
+            {processBreakdown.length > 1 ? (
+              <section className="pdf-avoid-break overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm ring-1 ring-slate-900/[0.04]">
+                <div className="border-b border-slate-100 bg-gradient-to-r from-violet-50/80 to-slate-50/50 px-5 py-4 dark:from-violet-950/30 dark:to-slate-900/50">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-violet-500" aria-hidden />
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                      Bölüm ve proses özeti (dönem)
+                    </h3>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Seçilen kişi adına tanımlı her çalışma alanı için üretim günü sayısı ve toplam adet.
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[520px] border-collapse text-sm text-slate-800 dark:text-slate-100">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                        <th className="px-4 py-3">Bölüm</th>
+                        <th className="px-4 py-3">Proses</th>
+                        <th className="px-3 py-3 text-right">Kayıt no</th>
+                        <th className="px-3 py-3 text-right">Üretim günü</th>
+                        <th className="px-4 py-3 text-right">Toplam</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {processBreakdown.map((row) => (
+                        <tr
+                          key={row.workerId}
+                          className="border-b border-slate-100 odd:bg-white even:bg-slate-50/70 dark:border-slate-700 dark:odd:bg-slate-900/40 dark:even:bg-slate-800/30"
+                        >
+                          <td className="px-4 py-2.5 font-medium">{teamLabel(row.team)}</td>
+                          <td className="px-4 py-2.5">{row.process}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-400">
+                            {row.workerId}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{row.dayCount}</td>
+                          <td className="px-4 py-2.5 text-right font-bold tabular-nums text-violet-800 dark:text-violet-200">
+                            {row.total}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
+
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="pdf-avoid-break rounded-2xl border border-slate-100 bg-white p-5 shadow-sm ring-1 ring-slate-900/[0.04]">
                 <div className="mb-3 flex items-center gap-2">
@@ -470,7 +630,7 @@ export default function PersonAnalysisPage() {
                       <stop offset="100%" stopColor="rgb(13 148 136)" stopOpacity="0" />
                     </linearGradient>
                   </defs>
-                  {rows.length > 1 && trendPoints ? (
+                  {sortedDates.length > 1 && trendPoints ? (
                     <polygon fill={`url(#${chartGradientId})`} points={`0,180 ${trendPoints} 640,180`} />
                   ) : null}
                   <polyline
@@ -479,12 +639,12 @@ export default function PersonAnalysisPage() {
                     strokeWidth="2.5"
                     points={trendPoints}
                   />
-                  {rows.map((r, i) => {
-                    const totals = rows.map(dayTotal);
+                  {sortedDates.map((d, i) => {
+                    const totals = sortedDates.map((x) => dateTotals.get(x) ?? 0);
                     const maxT = Math.max(...totals, 1);
-                    const x = rows.length === 1 ? 320 : Math.round((i / (rows.length - 1)) * 640);
+                    const x = sortedDates.length === 1 ? 320 : Math.round((i / (sortedDates.length - 1)) * 640);
                     const y = 180 - Math.round((totals[i] / maxT) * 170) - 5;
-                    return <circle key={r.productionDate} cx={x} cy={y} r="4" fill="rgb(15 118 110)" />;
+                    return <circle key={d} cx={x} cy={y} r="4" fill="rgb(15 118 110)" />;
                   })}
                 </svg>
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500">
@@ -554,14 +714,22 @@ export default function PersonAnalysisPage() {
                   <h3 className="text-sm font-semibold text-slate-800">Günlük saatlik detay</h3>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {meta.name} · {teamLabel(meta.team)} · {meta.process}
+                  {meta.name}
+                  {processBreakdown.length <= 1
+                    ? ` · ${teamLabel(meta.team)} · ${meta.process}`
+                    : " — günlük satırlar bölüm ve proses kırılımıyla listelenir."}
                 </p>
               </div>
               <div className="overflow-x-auto rounded-b-2xl">
-                <table className="w-full min-w-[640px] border-collapse text-sm text-slate-800">
+                <table className="w-full min-w-[760px] border-collapse text-sm text-slate-800">
                   <thead className="sticky top-0 z-[1] shadow-sm">
                     <tr className="border-b border-slate-200 bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
                       <th className="px-4 py-3">Tarih</th>
+                      {processBreakdown.length > 1 ? (
+                        <th className="px-2 py-3 text-right whitespace-nowrap">Kayıt</th>
+                      ) : null}
+                      <th className="px-3 py-3">Bölüm</th>
+                      <th className="px-3 py-3">Proses</th>
                       <th className="px-3 py-3 text-right">10:00</th>
                       <th className="px-3 py-3 text-right">13:00</th>
                       <th className="px-3 py-3 text-right">16:00</th>
@@ -572,12 +740,22 @@ export default function PersonAnalysisPage() {
                   <tbody>
                     {rows.map((r) => {
                       const t = dayTotal(r);
+                      const rowKey = `${r.productionDate}-${r.workerId ?? 0}-${r.team}-${r.process}`;
                       return (
                         <tr
-                          key={r.productionDate}
+                          key={rowKey}
                           className="border-b border-slate-100 odd:bg-white even:bg-slate-50/70"
                         >
                           <td className="whitespace-nowrap px-4 py-2.5 font-medium text-slate-800">{r.productionDate}</td>
+                          {processBreakdown.length > 1 ? (
+                            <td className="px-2 py-2.5 text-right tabular-nums text-slate-500">{r.workerId ?? "—"}</td>
+                          ) : null}
+                          <td className="max-w-[10rem] truncate px-3 py-2.5 text-slate-700" title={teamLabel(r.team)}>
+                            {teamLabel(r.team)}
+                          </td>
+                          <td className="max-w-[10rem] truncate px-3 py-2.5 text-slate-700" title={r.process}>
+                            {r.process}
+                          </td>
                           <td className="px-3 py-2.5 text-right tabular-nums">{r.t1000}</td>
                           <td className="px-3 py-2.5 text-right tabular-nums">{r.t1300}</td>
                           <td className="px-3 py-2.5 text-right tabular-nums">{r.t1600}</td>
@@ -589,7 +767,12 @@ export default function PersonAnalysisPage() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-slate-200 bg-teal-50/90 font-semibold text-slate-800">
-                      <td className="px-4 py-3">Dönem toplamı</td>
+                      <td
+                        className="px-4 py-3"
+                        colSpan={processBreakdown.length > 1 ? 4 : 3}
+                      >
+                        Dönem toplamı
+                      </td>
                       <td className="px-3 py-3 text-right tabular-nums">{stats.slotTotals.t1000}</td>
                       <td className="px-3 py-3 text-right tabular-nums">{stats.slotTotals.t1300}</td>
                       <td className="px-3 py-3 text-right tabular-nums">{stats.slotTotals.t1600}</td>
@@ -597,7 +780,12 @@ export default function PersonAnalysisPage() {
                       <td className="px-4 py-3 text-right tabular-nums text-teal-800">{stats.grandTotal}</td>
                     </tr>
                     <tr className="bg-slate-100/80 text-xs">
-                      <td className="px-4 py-2 text-slate-600">Günlük ortalama</td>
+                      <td
+                        className="px-4 py-2 text-slate-600"
+                        colSpan={processBreakdown.length > 1 ? 4 : 3}
+                      >
+                        Günlük ortalama
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-700">{stats.slotAvgPerDay.t1000}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-700">{stats.slotAvgPerDay.t1300}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-700">{stats.slotAvgPerDay.t1600}</td>

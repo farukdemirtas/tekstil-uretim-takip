@@ -2,58 +2,39 @@
 
 import { useMemo } from "react";
 
-/** `/api/production/hedef-stage-totals` — hedef takip formülündeki 5 aşama */
-export type HedefStageTotals = {
-  SAG_ON: number;
-  SOL_ON: number;
-  YAKA_HAZIRLIK: number;
-  ARKA_HAZIRLIK: number;
-  BITIM: number;
+export type HedefStageLine = {
+  sortOrder: number;
+  teamCode: string;
+  processName: string;
+  teamLabel: string;
+  total: number;
 };
 
-/** Hedef özetinde ayrı gösterilen bölüm kodları; geri kalanlar "grup günlük toplamı" ile eklenir */
-const HEDEF_BOLUM_KODLARI = new Set(["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM"]);
+/** `/api/production/hedef-stage-totals` — Ayarlar’daki ürün modelinde seçilen bölüm/proses satırları */
+export type HedefStageTotals = {
+  stages: HedefStageLine[];
+};
 
 type AdminPanelProps = {
   workerCount: number;
   stageTotals: HedefStageTotals;
-  /** API sırası (ör. alfabetik); kod + etiket + seçili günün grup toplamı */
-  teamMeta: Array<{ code: string; label: string }>;
-  /** `getRangeStageTotals(date, date)` sonucu */
-  teamGunlukToplamlar: Record<string, number>;
 };
 
 function safeNum(n: unknown): number {
   return typeof n === "number" && Number.isFinite(n) ? n : 0;
 }
 
+function genelTamamlananFromStages(stages: HedefStageLine[]): number {
+  if (!stages.length) return 0;
+  return Math.min(...stages.map((s) => safeNum(s.total)));
+}
+
 export default function AdminPanel({
   workerCount,
   stageTotals,
-  teamMeta,
-  teamGunlukToplamlar,
 }: AdminPanelProps) {
-  const genelTamamlanan = useMemo(
-    () =>
-      Math.min(
-        safeNum(stageTotals.SAG_ON),
-        safeNum(stageTotals.SOL_ON),
-        safeNum(stageTotals.YAKA_HAZIRLIK),
-        safeNum(stageTotals.ARKA_HAZIRLIK),
-        safeNum(stageTotals.BITIM)
-      ),
-    [stageTotals]
-  );
-
-  const digerBolumler = useMemo(() => {
-    return teamMeta
-      .filter((t) => !HEDEF_BOLUM_KODLARI.has(t.code))
-      .map((t) => ({
-        key: t.code,
-        label: t.label,
-        value: safeNum(teamGunlukToplamlar[t.code]),
-      }));
-  }, [teamMeta, teamGunlukToplamlar]);
+  const stages = stageTotals.stages ?? [];
+  const genelTamamlanan = useMemo(() => genelTamamlananFromStages(stages), [stages]);
 
   const boxNeutral =
     "border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800/90 dark:shadow-none";
@@ -61,6 +42,19 @@ export default function AdminPanel({
     "border-emerald-200 bg-emerald-50/90 shadow-md ring-1 ring-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/35 dark:ring-emerald-900/40";
   const numNeutral = "text-slate-800 dark:text-slate-100";
   const numHighlight = "text-emerald-700 dark:text-emerald-300";
+
+  const stageTiles = stages.map((s, i) => {
+    const shortProcess =
+      s.processName.length > 18 ? `${s.processName.slice(0, 16)}…` : s.processName;
+    const label = s.processName ? `${s.teamLabel} · ${shortProcess}` : s.teamLabel;
+    return {
+      key: `stage-${s.sortOrder}-${i}`,
+      label,
+      value: safeNum(s.total),
+      valueClass: numNeutral,
+      boxClass: boxNeutral,
+    };
+  });
 
   const tiles: Array<{ key: string; label: string; value: number; valueClass: string; boxClass: string }> = [
     { key: "calisan", label: "Çalışan", value: safeNum(workerCount), valueClass: numNeutral, boxClass: boxNeutral },
@@ -71,11 +65,7 @@ export default function AdminPanel({
       valueClass: numHighlight,
       boxClass: boxHighlight,
     },
-    { key: "sag", label: "Sağ Ön", value: safeNum(stageTotals.SAG_ON), valueClass: numNeutral, boxClass: boxNeutral },
-    { key: "sol", label: "Sol Ön", value: safeNum(stageTotals.SOL_ON), valueClass: numNeutral, boxClass: boxNeutral },
-    { key: "yaka", label: "Yaka", value: safeNum(stageTotals.YAKA_HAZIRLIK), valueClass: numNeutral, boxClass: boxNeutral },
-    { key: "arka", label: "Arka", value: safeNum(stageTotals.ARKA_HAZIRLIK), valueClass: numNeutral, boxClass: boxNeutral },
-    { key: "bitim", label: "Bitim", value: safeNum(stageTotals.BITIM), valueClass: numNeutral, boxClass: boxNeutral },
+    ...stageTiles,
   ];
 
   return (
@@ -95,27 +85,7 @@ export default function AdminPanel({
             <span className={`mt-1.5 text-xl font-bold tabular-nums sm:text-2xl ${valueClass}`}>{value}</span>
           </div>
         ))}
-        {digerBolumler.map(({ key, label, value }) => (
-          <div
-            key={`bolum-${key}`}
-            className={`flex min-h-[5.5rem] flex-col items-center justify-center rounded-2xl border-2 border-violet-200 bg-violet-50/80 px-2 py-3 text-center shadow-sm dark:border-violet-800/50 dark:bg-violet-950/30 dark:shadow-none sm:min-h-[6rem]`}
-            title="Seçili günde bu bölümdeki tüm proseslerin toplam üretimi"
-          >
-            <span className="line-clamp-2 text-[10px] font-semibold uppercase leading-tight tracking-wide text-violet-700 dark:text-violet-300 sm:text-xs">
-              {label}
-            </span>
-            <span className="mt-1.5 text-xl font-bold tabular-nums text-violet-900 dark:text-violet-100 sm:text-2xl">
-              {value}
-            </span>
-          </div>
-        ))}
       </div>
-      {digerBolumler.length > 0 && (
-        <p className="mt-3 text-[10px] text-slate-500 dark:text-slate-400 sm:text-xs">
-          Mor kutular: o gün için bölümün <strong>tamamı</strong> (tüm prosesler) üretim toplamı. Üstteki Sağ/Sol/Yaka/Arka/Bitim
-          hedef takip formülüne göredir.
-        </p>
-      )}
     </div>
   );
 }

@@ -5,12 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import LogsSection from "@/components/settings/LogsSection";
 import PersonnelNamesSection from "@/components/settings/PersonnelNamesSection";
+import ProductModelsSection from "@/components/settings/ProductModelsSection";
 import TeamsProcessesSection from "@/components/settings/TeamsProcessesSection";
 import UsersSettingsSection from "@/components/settings/UsersSettingsSection";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "kullanici" | "personel" | "proses" | "loglar";
+type TabId = "kullanici" | "personel" | "proses" | "modeller" | "loglar";
 
 export default function AyarlarPageClient() {
   const searchParams = useSearchParams();
@@ -42,6 +43,7 @@ export default function AyarlarPageClient() {
   const activeTab = useMemo((): TabId => {
     const raw = searchParams.get("tab");
     if (raw === "loglar" && canLoglar) return "loglar";
+    if (raw === "modeller" && canAyarlar) return "modeller";
     if (raw === "proses" && canAyarlar) return "proses";
     if (raw === "personel" && canAyarlar) return "personel";
     if (raw === "kullanici" && admin) return "kullanici";
@@ -64,6 +66,7 @@ export default function AyarlarPageClient() {
       ? ([
           { id: "personel" as const, label: "Personel" },
           { id: "proses" as const, label: "Proses ve bölüm" },
+          { id: "modeller" as const, label: "Ürün modelleri" },
         ] as const)
       : []),
     ...(canLoglar ? [{ id: "loglar" as const, label: "Loglar" }] : []),
@@ -110,6 +113,7 @@ export default function AyarlarPageClient() {
       {activeTab === "kullanici" && admin && <UsersSettingsSection />}
       {activeTab === "personel" && canAyarlar && <PersonnelNamesSection />}
       {activeTab === "proses" && canAyarlar && <TeamsProcessesSection />}
+      {activeTab === "modeller" && canAyarlar && <ProductModelsSection />}
       {activeTab === "loglar" && canLoglar && <LogsSection />}
     </main>
   );

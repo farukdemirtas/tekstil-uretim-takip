@@ -111,6 +111,16 @@ export async function getWorkers(): Promise<Worker[]> {
   return response.json();
 }
 
+/** Analiz sayfaları: aktif personel + üretim kaydı olan pasif kayıtlar (x-auth-token gerekir) */
+export async function getWorkersForAnalytics(): Promise<Worker[]> {
+  const response = await apiFetch(`${apiBase()}/workers/for-analysis`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Çalışan listesi alınamadı");
+  return response.json();
+}
+
 export type TeamRow = { id: number; code: string; label: string; sort_order: number };
 export type ProcessRow = { id: number; name: string; sort_order: number };
 
@@ -256,6 +266,33 @@ export async function unhideWorkerForCalendarDay(workerId: number, date: string)
 }
 
 /** Toplu listeden kaldır: `only_day` = yalnızca o tarih; `from_day` = o tarih ve sonrası (soft delete). */
+/** Yalnızca admin: seçili gündeki listeyi bitiş tarihine kadar hafta içi günlere aktarır (kaynak günün üretim rakamları + sahada yok kaldır). */
+export async function copyRosterToFutureDates(
+  sourceDate: string,
+  endDate: string
+): Promise<{
+  workers: number;
+  weekdayCount: number;
+  entriesTouched: number;
+  hidesCleared: number;
+}> {
+  const response = await apiFetch(`${apiBase()}/workers/copy-roster-to-dates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ sourceDate, endDate }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { message?: string }).message ?? "Aktarım başarısız");
+  }
+  return data as {
+    workers: number;
+    weekdayCount: number;
+    entriesTouched: number;
+    hidesCleared: number;
+  };
+}
+
 export async function removeAllWorkersForDay(
   date: string,
   scope: "only_day" | "from_day" = "from_day"
@@ -307,7 +344,29 @@ export async function getProduction(date: string): Promise<ProductionRow[]> {
   return raw.map(parseProductionRow).filter((r): r is ProductionRow => r != null);
 }
 
-export type DayProductMeta = { productName: string; productModel: string };
+export type DayProductMeta = {
+  productName: string;
+  productModel: string;
+  modelId: number | null;
+  metaSource: "manual" | "hedef";
+};
+
+function parseDayProductMetaPayload(raw: unknown): DayProductMeta {
+  if (!raw || typeof raw !== "object") {
+    return { productName: "", productModel: "", modelId: null, metaSource: "manual" };
+  }
+  const o = raw as Record<string, unknown>;
+  const mid = o.modelId;
+  const modelId =
+    mid != null && mid !== "" && Number.isFinite(Number(mid)) ? Number(mid) : null;
+  const ms = o.metaSource === "hedef" ? "hedef" : "manual";
+  return {
+    productName: typeof o.productName === "string" ? o.productName : "",
+    productModel: typeof o.productModel === "string" ? o.productModel : "",
+    modelId,
+    metaSource: ms,
+  };
+}
 
 export async function getDayProductMeta(date: string): Promise<DayProductMeta> {
   const response = await apiFetch(`${apiBase()}/production/day-meta?date=${encodeURIComponent(date)}`, {
@@ -315,13 +374,16 @@ export async function getDayProductMeta(date: string): Promise<DayProductMeta> {
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error("Gün ürün bilgisi alınamadı");
-  return response.json();
+  const raw = await response.json();
+  return parseDayProductMetaPayload(raw);
 }
 
 export async function saveDayProductMeta(payload: {
   date: string;
   productName: string;
   productModel: string;
+  modelId?: number | null;
+  metaSource?: "manual" | "hedef";
 }): Promise<DayProductMeta> {
   const response = await apiFetch(`${apiBase()}/production/day-meta`, {
     method: "PUT",
@@ -329,7 +391,8 @@ export async function saveDayProductMeta(payload: {
     body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error("Ürün bilgisi kaydedilemedi");
-  return response.json();
+  const raw = await response.json();
+  return parseDayProductMetaPayload(raw);
 }
 
 export async function saveProduction(payload: {
@@ -366,21 +429,20 @@ export async function saveProductionBulk(payload: {
   if (!response.ok) throw new Error("Toplu kayıt başarısız");
 }
 
-export type HedefStageTotalsDto = {
-  SAG_ON: number;
-  SOL_ON: number;
-  YAKA_HAZIRLIK: number;
-  ARKA_HAZIRLIK: number;
-  BITIM: number;
+/** API: /production/hedef-stage-totals — sıralı bölüm satırları (N adet) */
+export type HedefStageLineDto = {
+  sortOrder: number;
+  teamCode: string;
+  processName: string;
+  teamLabel: string;
+  total: number;
 };
 
-const ZERO_HEDEF: HedefStageTotalsDto = {
-  SAG_ON: 0,
-  SOL_ON: 0,
-  YAKA_HAZIRLIK: 0,
-  ARKA_HAZIRLIK: 0,
-  BITIM: 0,
+export type HedefStageTotalsDto = {
+  stages: HedefStageLineDto[];
 };
+
+const ZERO_HEDEF: HedefStageTotalsDto = { stages: [] };
 
 function num(v: unknown): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -391,17 +453,43 @@ function num(v: unknown): number {
   return 0;
 }
 
+function parseStageLine(raw: unknown): HedefStageLineDto | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  return {
+    sortOrder: num(o.sortOrder ?? o.sort_order),
+    teamCode: String(o.teamCode ?? o.team_code ?? ""),
+    processName: String(o.processName ?? o.process_name ?? ""),
+    teamLabel: String(o.teamLabel ?? o.team_label ?? ""),
+    total: num(o.total),
+  };
+}
+
 /** API / proxy farklı anahtar döndürse veya sayı string gelse bile güvenli nesne */
 export function parseHedefStageTotalsPayload(raw: unknown): HedefStageTotalsDto {
   if (!raw || typeof raw !== "object") return { ...ZERO_HEDEF };
   const o = raw as Record<string, unknown>;
-  return {
-    SAG_ON: num(o.SAG_ON ?? o.sag_on),
-    SOL_ON: num(o.SOL_ON ?? o.sol_on),
-    YAKA_HAZIRLIK: num(o.YAKA_HAZIRLIK ?? o.yaka),
-    ARKA_HAZIRLIK: num(o.ARKA_HAZIRLIK ?? o.arka),
-    BITIM: num(o.BITIM ?? o.bitim),
-  };
+  const stagesRaw = o.stages;
+  if (Array.isArray(stagesRaw)) {
+    const stages = stagesRaw.map(parseStageLine).filter((s): s is HedefStageLineDto => s != null);
+    return { stages };
+  }
+  // Eski API (5 sabit anahtar) — geriye dönük
+  if ("SAG_ON" in o || "sag_on" in o) {
+    const labels = ["Sağ ön", "Sol ön", "Yaka hazırlık", "Arka hazırlık", "Bitim"];
+    const keys = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM"] as const;
+    const alt = ["sag_on", "sol_on", "yaka", "arka", "bitim"] as const;
+    return {
+      stages: keys.map((k, i) => ({
+        sortOrder: i,
+        teamCode: "",
+        processName: "",
+        teamLabel: labels[i],
+        total: num(o[k] ?? o[alt[i]]),
+      })),
+    };
+  }
+  return { ...ZERO_HEDEF };
 }
 
 export function parseRangeStageTotalsPayload(raw: unknown): Record<string, number> {
@@ -427,16 +515,113 @@ export async function getRangeStageTotals(startDate: string, endDate: string): P
   return parseRangeStageTotalsPayload(raw);
 }
 
-/** Hedef Takip: proses bazlı aşama toplamları */
-export async function getHedefTakipStageTotals(startDate: string, endDate: string): Promise<HedefStageTotalsDto> {
-  const query = new URLSearchParams({ startDate, endDate }).toString();
-  const response = await apiFetch(`${apiBase()}/production/hedef-stage-totals?${query}`, {
+/** Hedef Takip: proses bazlı aşama toplamları (modelId: Ayarlar’daki modele göre bölüm/proses bazı) */
+export async function getHedefTakipStageTotals(
+  startDate: string,
+  endDate: string,
+  modelId?: number | null
+): Promise<HedefStageTotalsDto> {
+  const q = new URLSearchParams({ startDate, endDate });
+  if (modelId != null && Number.isFinite(modelId)) {
+    q.set("modelId", String(modelId));
+  }
+  const response = await apiFetch(`${apiBase()}/production/hedef-stage-totals?${q.toString()}`, {
     cache: "no-store",
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error("Hedef takip verisi alınamadı");
   const raw = await response.json().catch(() => null);
   return parseHedefStageTotalsPayload(raw);
+}
+
+export type ProductModelListItem = { id: number; modelCode: string; productName: string; createdAt?: string };
+
+/** arkaHalf: DB alanı adı; 1 ise o satırın üretim toplamı 0.5 ile çarpılır. */
+export type ProductModelBaseline = {
+  sortOrder: number;
+  teamCode: string;
+  processName: string;
+  arkaHalf: number;
+};
+
+export type ProductModelDetail = ProductModelListItem & {
+  baselines: ProductModelBaseline[];
+};
+
+export async function listProductModels(): Promise<ProductModelListItem[]> {
+  const res = await apiFetch(`${apiBase()}/product-models`, { cache: "no-store", headers: authHeaders() });
+  if (!res.ok) throw new Error("Modeller alınamadı");
+  return res.json();
+}
+
+export async function getProductModel(id: number): Promise<ProductModelDetail> {
+  const res = await apiFetch(`${apiBase()}/product-models/${id}`, { cache: "no-store", headers: authHeaders() });
+  if (!res.ok) throw new Error("Model bulunamadı");
+  return res.json();
+}
+
+export async function createProductModel(payload: {
+  modelCode: string;
+  productName: string;
+  baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
+}): Promise<{ id: number; modelCode: string; productName: string }> {
+  const res = await apiFetch(`${apiBase()}/product-models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Model kaydedilemedi");
+  }
+  return res.json();
+}
+
+export async function updateProductModel(
+  id: number,
+  payload: {
+    modelCode: string;
+    productName: string;
+    baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
+  }
+): Promise<{ id: number; modelCode: string; productName: string }> {
+  const res = await apiFetch(`${apiBase()}/product-models/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Model güncellenemedi");
+  }
+  return res.json();
+}
+
+export async function deleteProductModel(id: number): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/product-models/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Model silinemedi");
+}
+
+export async function applyHedefSession(payload: {
+  modelId: number;
+  startDate: string;
+  endDate: string;
+  productName?: string;
+  productModel?: string;
+}): Promise<{ ok: boolean; datesUpdated: number }> {
+  const res = await apiFetch(`${apiBase()}/hedef/apply-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Oturum uygulanamadı");
+  }
+  return res.json();
 }
 
 export async function getTopWorkersAnalytics(params: {
@@ -511,11 +696,14 @@ export async function getWorkerProductionDailyDetail(params: {
   workerId: number;
   startDate: string;
   endDate: string;
+  /** Aynı ada sahip tüm çalışan kayıtlarının (farklı bölüm/proses) üretimini birleştir */
+  includeSameNameWorkers?: boolean;
 }): Promise<WorkerProductionDayDetail[]> {
   const query = new URLSearchParams({
     workerId: String(params.workerId),
     startDate: params.startDate,
     endDate: params.endDate,
+    ...(params.includeSameNameWorkers ? { includeSameNameWorkers: "1" } : {}),
   }).toString();
   const response = await apiFetch(`${apiBase()}/analytics/worker-production-detail?${query}`, {
     cache: "no-store",

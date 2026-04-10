@@ -14,6 +14,7 @@ import {
   deleteWorkerForDate,
   deleteAllWorkersForVisibleDay,
   hideAllVisibleWorkersForSingleCalendarDay,
+  copyRosterToFutureWeekdays,
   hideWorkerForSingleCalendarDay,
   unhideWorkerForSingleCalendarDay,
   listWorkersHiddenForCalendarDay,
@@ -36,6 +37,7 @@ import {
   verifyUserPassword,
   getTopWorkersAnalytics,
   getWorkers,
+  getWorkersForAnalytics,
   getWorkerNameById,
   getWorkerNamesByIds,
   upsertEntriesBulk,
@@ -53,6 +55,12 @@ import {
   listProcessNames,
   insertActivityLog,
   listActivityLogs,
+  listProductModels,
+  getProductModelWithBaselines,
+  createProductModel,
+  updateProductModel,
+  deleteProductModel,
+  applyHedefSessionToDailyMeta,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 
@@ -294,6 +302,16 @@ app.get("/api/workers", async (_req, res) => {
   }
 });
 
+/** Analiz ekranları: aktif + üretim geçmişi olan pasif kayıtlar */
+app.get("/api/workers/for-analysis", requireAnyPermission(["analysis", "ekran2"]), async (_req, res) => {
+  try {
+    const workers = await getWorkersForAnalytics();
+    res.json(workers);
+  } catch (error) {
+    res.status(500).json({ message: "Çalışan listesi alınamadı", error: String(error) });
+  }
+});
+
 /* ── İsim Havuzu (worker_names) ── */
 app.get("/api/worker-names", requireAuth, async (req, res) => {
   try { res.json(await getWorkerNames()); }
@@ -420,6 +438,97 @@ app.delete("/api/processes/:id", requirePermission("ayarlar"), async (req, res) 
     if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
     logActivity(req, "proses_sil", "processes", { id });
     res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+app.get("/api/product-models", requireAuth, async (_req, res) => {
+  try {
+    res.json(await listProductModels());
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
+app.get("/api/product-models/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const row = await getProductModelWithBaselines(id);
+    if (!row) return res.status(404).json({ message: "Bulunamadı" });
+    res.json(row);
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
+app.post("/api/product-models", requirePermission("ayarlar"), async (req, res) => {
+  try {
+    const teamCodes = await listTeamCodes();
+    const created = await createProductModel(req.body || {}, teamCodes);
+    logActivity(req, "urun_model_ekle", "product_models", { id: created.id, modelCode: created.modelCode });
+    res.status(201).json(created);
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+app.put("/api/product-models/:id", requirePermission("ayarlar"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const teamCodes = await listTeamCodes();
+    const updated = await updateProductModel(id, req.body || {}, teamCodes);
+    logActivity(req, "urun_model_guncelle", "product_models", { id, modelCode: updated.modelCode });
+    res.json(updated);
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+app.delete("/api/product-models/:id", requirePermission("ayarlar"), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const r = await deleteProductModel(id);
+    if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "urun_model_sil", "product_models", { id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+app.post("/api/hedef/apply-session", requirePermission("hedefTakip"), async (req, res) => {
+  const { modelId, startDate, endDate, productName, productModel } = req.body || {};
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid < 1) {
+    return res.status(400).json({ message: "modelId gerekli" });
+  }
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "startDate ve endDate zorunlu" });
+  }
+  try {
+    const m = await getProductModelWithBaselines(mid);
+    if (!m) return res.status(404).json({ message: "Model bulunamadı" });
+    const pn =
+      productName != null && String(productName).trim() !== ""
+        ? String(productName).trim()
+        : String(m.productName || "");
+    const pmd =
+      productModel != null && String(productModel).trim() !== ""
+        ? String(productModel).trim()
+        : String(m.modelCode || "");
+    const result = await applyHedefSessionToDailyMeta({
+      modelId: mid,
+      startDate: String(startDate),
+      endDate: String(endDate),
+      productName: pn,
+      productModel: pmd,
+    });
+    logActivity(req, "hedef_oturum_uygula", "hedef", JSON.stringify({ modelId: mid, startDate, endDate, dates: result.datesUpdated }));
+    res.json(result);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
   }
@@ -568,6 +677,24 @@ app.delete("/api/workers/for-day", requirePermission("topluListeKaldir"), async 
   }
 });
 
+app.post("/api/workers/copy-roster-to-dates", requireAdmin, async (req, res) => {
+  const { sourceDate, endDate } = req.body || {};
+  if (typeof sourceDate !== "string" || typeof endDate !== "string") {
+    return res.status(400).json({ message: "sourceDate ve endDate zorunlu (YYYY-MM-DD)" });
+  }
+  try {
+    const result = await copyRosterToFutureWeekdays(String(sourceDate), String(endDate));
+    logActivity(req, "personel_roster_aktar", "workers", {
+      sourceDate,
+      endDate,
+      ...result,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ message: String(error.message || error) });
+  }
+});
+
 app.delete("/api/workers/:id", requireAuth, async (req, res) => {
   const workerId = Number(req.params.id);
   if (!workerId) {
@@ -610,12 +737,16 @@ app.get("/api/production/range-totals", requireAuth, async (req, res) => {
 });
 
 app.get("/api/production/hedef-stage-totals", requireAuth, async (req, res) => {
-  const { startDate, endDate } = req.query;
+  const { startDate, endDate, modelId: modelIdRaw } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
   }
+  const modelId =
+    modelIdRaw != null && String(modelIdRaw).trim() !== "" && Number.isFinite(Number(modelIdRaw))
+      ? Number(modelIdRaw)
+      : null;
   try {
-    const totals = await getHedefTakipStageTotals(String(startDate), String(endDate));
+    const totals = await getHedefTakipStageTotals(String(startDate), String(endDate), modelId);
     res.json(totals);
   } catch (error) {
     res.status(500).json({ message: "Hedef takip verisi alınamadı", error: String(error) });
@@ -661,7 +792,7 @@ app.get("/api/analytics/worker-hourly", requireAnyPermission(["analysis", "ekran
 });
 
 app.get("/api/analytics/worker-production-detail", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
-  const { workerId, startDate, endDate } = req.query;
+  const { workerId, startDate, endDate, includeSameNameWorkers } = req.query;
   if (!workerId || !startDate || !endDate) {
     return res.status(400).json({ message: "workerId, startDate ve endDate zorunlu" });
   }
@@ -669,11 +800,16 @@ app.get("/api/analytics/worker-production-detail", requireAnyPermission(["analys
   if (!Number.isFinite(wid) || wid < 1) {
     return res.status(400).json({ message: "Geçersiz workerId" });
   }
+  const includeSame =
+    includeSameNameWorkers === "1" ||
+    includeSameNameWorkers === "true" ||
+    String(includeSameNameWorkers).toLowerCase() === "yes";
   try {
     const rows = await getWorkerProductionDailyDetail({
       workerId: wid,
       startDate: String(startDate),
       endDate: String(endDate),
+      includeSameNameWorkers: includeSame,
     });
     res.json(rows);
   } catch (error) {
@@ -693,18 +829,22 @@ app.get("/api/production/day-meta", async (req, res) => {
 });
 
 app.put("/api/production/day-meta", async (req, res) => {
-  const { date, productName, productModel } = req.body || {};
+  const { date, productName, productModel, modelId, metaSource } = req.body || {};
   if (!date) return res.status(400).json({ message: "date zorunlu (YYYY-MM-DD)" });
   try {
     const meta = await upsertDayProductMeta({
       date: String(date),
       productName: productName ?? "",
       productModel: productModel ?? "",
+      modelId,
+      metaSource: metaSource ?? "manual",
     });
     logActivity(req, "urun_meta_guncelle", "daily_product_meta", {
       date,
       productName: meta.productName,
       productModel: meta.productModel,
+      modelId: meta.modelId,
+      metaSource: meta.metaSource,
     });
     res.json(meta);
   } catch (error) {

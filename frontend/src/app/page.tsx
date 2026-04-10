@@ -13,19 +13,19 @@ import {
   getDayProductMeta,
   getHedefTakipStageTotals,
   getProduction,
-  getRangeStageTotals,
   getTeams,
   hideWorkerForCalendarDay,
   login,
   removeWorker,
   removeAllWorkersForDay,
-  saveDayProductMeta,
+  copyRosterToFutureDates,
   saveProduction,
   setAuthToken,
   unhideWorkerForCalendarDay,
   updateWorker,
+  type DayProductMeta,
 } from "@/lib/api";
-import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
 import {
   PRODUCTION_EXCEL_HEADERS,
   PRODUCTION_EXCEL_META_MODEL,
@@ -73,26 +73,23 @@ export default function HomePage() {
   const [role, setRole] = useState<string>("data_entry");
   const [selectedDate, setSelectedDate] = useState<string>(todayWeekdayIso());
   const [rows, setRows] = useState<ProductionRow[]>([]);
-  const [hedefStageTotals, setHedefStageTotals] = useState<HedefStageTotals>({
-    SAG_ON: 0,
-    SOL_ON: 0,
-    YAKA_HAZIRLIK: 0,
-    ARKA_HAZIRLIK: 0,
-    BITIM: 0,
-  });
+  const [hedefStageTotals, setHedefStageTotals] = useState<HedefStageTotals>({ stages: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [productName, setProductName] = useState("");
   const [productModel, setProductModel] = useState("");
-  const [productMetaSaving, setProductMetaSaving] = useState(false);
-  const [productMetaSaved, setProductMetaSaved] = useState(false);
+  const [productMetaSource, setProductMetaSource] = useState<"manual" | "hedef">("manual");
   const router = useRouter();
+  const activeModelIdRef = useRef<number | null>(null);
 
   const [, setPermTick] = useState(0);
   const [teamMeta, setTeamMeta] = useState<Array<{ code: string; label: string }>>([]);
-  const [teamGunlukToplamlar, setTeamGunlukToplamlar] = useState<Record<string, number>>({});
   const [clearingAllWorkers, setClearingAllWorkers] = useState(false);
   const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false);
+  const [copyRosterOpen, setCopyRosterOpen] = useState(false);
+  const [copyRosterEndDate, setCopyRosterEndDate] = useState("");
+  const [copyRosterBusy, setCopyRosterBusy] = useState(false);
+  const [copyRosterSuccess, setCopyRosterSuccess] = useState<string | null>(null);
 
   const rowsRef = useRef<ProductionRow[]>(rows);
   const selectedDateRef = useRef(selectedDate);
@@ -139,20 +136,25 @@ export default function HomePage() {
   async function loadDateData(date: string) {
     setLoading(true);
     setError(null);
-    setProductMetaSaved(false);
-    const emptyHedef: HedefStageTotals = {
-      SAG_ON: 0,
-      SOL_ON: 0,
-      YAKA_HAZIRLIK: 0,
-      ARKA_HAZIRLIK: 0,
-      BITIM: 0,
-    };
+    const emptyHedef: HedefStageTotals = { stages: [] };
     try {
+      const meta = await getDayProductMeta(date).catch(
+        (): DayProductMeta => ({
+          productName: "",
+          productModel: "",
+          modelId: null,
+          metaSource: "manual",
+        })
+      );
+      setProductName(meta.productName);
+      setProductModel(meta.productModel);
+      setProductMetaSource(meta.metaSource);
+      const mid = meta.modelId ?? null;
+      activeModelIdRef.current = mid;
+
       const settled = await Promise.allSettled([
         getProduction(date),
-        getDayProductMeta(date).catch(() => ({ productName: "", productModel: "" })),
-        getHedefTakipStageTotals(date, date),
-        getRangeStageTotals(date, date),
+        getHedefTakipStageTotals(date, date, mid ?? undefined),
       ]);
 
       if (settled[0].status === "fulfilled") {
@@ -165,43 +167,14 @@ export default function HomePage() {
       }
 
       if (settled[1].status === "fulfilled") {
-        const m = settled[1].value;
-        setProductName(m.productName);
-        setProductModel(m.productModel);
-      }
-
-      if (settled[2].status === "fulfilled") {
-        setHedefStageTotals(settled[2].value);
+        setHedefStageTotals(settled[1].value);
       } else {
         setHedefStageTotals(emptyHedef);
-      }
-
-      if (settled[3].status === "fulfilled") {
-        setTeamGunlukToplamlar(settled[3].value);
-      } else {
-        setTeamGunlukToplamlar({});
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function persistProductMeta() {
-    setProductMetaSaving(true);
-    try {
-      await saveDayProductMeta({
-        date: selectedDate,
-        productName,
-        productModel,
-      });
-      setProductMetaSaved(true);
-      window.setTimeout(() => setProductMetaSaved(false), 2500);
-    } catch {
-      setError("Ürün adı / model kaydedilemedi.");
-    } finally {
-      setProductMetaSaving(false);
     }
   }
 
@@ -244,19 +217,15 @@ export default function HomePage() {
   }
 
   async function pushToHedefTakip() {
-    /* Hedef Takip ile aynı proses kuralları: API'den seçili günün toplamları */
     try {
-      const t = await getHedefTakipStageTotals(selectedDate, selectedDate);
-      const totals = {
-        sagOn: t.SAG_ON,
-        solOn: t.SOL_ON,
-        yaka: t.YAKA_HAZIRLIK,
-        arka: t.ARKA_HAZIRLIK,
-        bitim: t.BITIM,
-      };
-      window.localStorage.setItem("hedef_takip_stage_totals_v1", JSON.stringify({ ...totals, date: selectedDate }));
+      const mid = activeModelIdRef.current;
+      const t = await getHedefTakipStageTotals(selectedDate, selectedDate, mid ?? undefined);
+      window.localStorage.setItem(
+        "hedef_takip_stage_totals_v1",
+        JSON.stringify({ stages: t.stages, date: selectedDate, modelId: mid ?? null })
+      );
     } catch {
-      /* API başarısızsa eski davranışa düşme — boş veya önceki cache */
+      /* cache isteğe bağlı */
     }
     router.push("/hedef-takip");
   }
@@ -281,16 +250,14 @@ export default function HomePage() {
       t1830: snap.t1830
     });
     try {
-      const ht = await getHedefTakipStageTotals(dateStr, dateStr);
+      const ht = await getHedefTakipStageTotals(
+        dateStr,
+        dateStr,
+        activeModelIdRef.current ?? undefined
+      );
       setHedefStageTotals(ht);
     } catch {
       /* hedef özeti */
-    }
-    try {
-      const gun = await getRangeStageTotals(dateStr, dateStr);
-      setTeamGunlukToplamlar(gun);
-    } catch {
-      /* grup toplamları */
     }
   }
 
@@ -313,16 +280,12 @@ export default function HomePage() {
     timers.set(workerId, t);
   }
 
-  /** Hedef Takip ile aynı: min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim) */
+  /** Hedef Takip ile aynı: tanımlı bölüm satırları toplamlarının minimumu */
   const genelTamamlanan = useMemo(() => {
     const v = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : 0);
-    return Math.min(
-      v(hedefStageTotals.SAG_ON),
-      v(hedefStageTotals.SOL_ON),
-      v(hedefStageTotals.YAKA_HAZIRLIK),
-      v(hedefStageTotals.ARKA_HAZIRLIK),
-      v(hedefStageTotals.BITIM)
-    );
+    const stages = hedefStageTotals.stages ?? [];
+    if (stages.length === 0) return 0;
+    return Math.min(...stages.map((s) => v(s.total)));
   }, [hedefStageTotals]);
 
   function handleExportExcel() {
@@ -482,6 +445,45 @@ export default function HomePage() {
     void runBulkRemoveFromList(scope);
   }
 
+  function openCopyRosterModal() {
+    const d = new Date(`${selectedDate}T12:00:00`);
+    d.setDate(d.getDate() + 7);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    setCopyRosterEndDate(clampToWeekdayIso(iso));
+    setCopyRosterOpen(true);
+  }
+
+  async function runCopyRosterToFuture() {
+    if (rows.length === 0) return;
+    setError(null);
+    if (!copyRosterEndDate || copyRosterEndDate <= selectedDate) {
+      setError(
+        "Bitiş tarihi, seçili günden sonra bir gün olmalıdır (aynı gün seçilirse aktarılacak hafta içi aralığı boş kalır)."
+      );
+      return;
+    }
+    const ok = window.confirm(
+      `Seçili gün (${selectedDate}) listesindeki ${rows.length} personel, bu tarihten sonraki hafta içi günlerden ` +
+        `${copyRosterEndDate} tarihine kadar aktarılacak:\n\n` +
+        `• Her hedef gün için kaynak gündeki üretim rakamları (10:00–18:30) kopyalanır; hedefte satır varsa güncellenir.\n` +
+        `• Bu günlerdeki “sahada yok” işaretleri kaldırılır.\n\nDevam edilsin mi?`
+    );
+    if (!ok) return;
+    setCopyRosterBusy(true);
+    try {
+      const r = await copyRosterToFutureDates(selectedDate, copyRosterEndDate);
+      setCopyRosterOpen(false);
+      setCopyRosterSuccess(
+        `Aktarım tamam: ${r.weekdayCount} iş günü, ${r.workers} personel; ${r.entriesTouched} üretim satırı güncellendi; ${r.hidesCleared} sahada yok işareti kaldırıldı.`
+      );
+      window.setTimeout(() => setCopyRosterSuccess(null), 8000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Aktarım başarısız");
+    } finally {
+      setCopyRosterBusy(false);
+    }
+  }
+
   if (!isAuthenticated) {
     return <LoginForm onLogin={handleLogin} />;
   }
@@ -535,7 +537,7 @@ export default function HomePage() {
           </div>
           <div
             className="rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-2 text-sm font-semibold text-emerald-800 shadow-surface-sm dark:border-emerald-900/40 dark:from-emerald-950/50 dark:to-teal-950/40 dark:text-emerald-200"
-            title="Hedef Takip formülü: min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim)"
+            title="Hedef Takip: modeldeki bölüm satırları toplamlarının minimumu"
           >
             Genel tamamlanan: {genelTamamlanan}
           </div>
@@ -544,14 +546,14 @@ export default function HomePage() {
         {/* Aksiyon butonları — sarılabilir satır */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {hasPermission("analysis") ? (
-            <>
-              <Link href="/analysis" className="btn-nav">
-                Analiz
-              </Link>
-              <Link href="/analysis/person" className="btn-nav">
-                Kişi analizi
-              </Link>
-            </>
+            <Link href="/analysis" className="btn-nav">
+              Analiz
+            </Link>
+          ) : null}
+          {hasPermission("analysis") || hasPermission("ekran2") ? (
+            <Link href="/analysis/person" className="btn-nav">
+              Kişi analizi
+            </Link>
           ) : null}
           {hasPermission("karsilastirma") ? (
             <Link href="/karsilastirma" className="btn-nav">
@@ -600,66 +602,75 @@ export default function HomePage() {
           <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
             Çalışılacak ürün (seçili tarih)
           </h2>
-          <div className="flex items-center gap-2 text-xs">
-            {productMetaSaving && (
-              <span className="text-slate-500 dark:text-slate-400">Kaydediliyor...</span>
-            )}
-            {productMetaSaved && !productMetaSaving && (
-              <span className="text-emerald-600 dark:text-emerald-400">Kaydedildi</span>
-            )}
-          </div>
+          {productMetaSource === "hedef" ? (
+            <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-800 dark:bg-teal-950/50 dark:text-teal-300">
+              Hedef Takip
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">Excel / manuel</span>
+          )}
         </div>
         <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-          Seçili tarih için çalışılacak ürünün adı ve modeli. Alanlardan çıkınca otomatik kaydedilir.
+          Bu bilgiler <strong className="font-medium text-slate-700 dark:text-slate-300">Hedef Takip</strong> ekranından
+          tarih aralığı uygulandığında otomatik yazılır; ana sayfada değiştirilemez. Günlük özet ve hedef rakamları,
+          Ayarlar’da tanımlı modele göre seçilen bölüm ve proseslerden hesaplanır.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
-            <label htmlFor="product-name" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-              Ürün adı
-            </label>
-            <input
-              id="product-name"
-              type="text"
-              value={productName}
-              onChange={(e) => setProductName(e.target.value)}
-              onBlur={() => void persistProductMeta()}
-              placeholder="Örn. Polo tişört"
-              className="input-modern w-full"
-            />
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Ürün adı</span>
+            <div
+              className="input-modern w-full cursor-default bg-slate-50/90 text-slate-800 dark:bg-slate-900/50 dark:text-slate-100"
+              title="Hedef Takip üzerinden güncellenir"
+            >
+              {productName.trim() ? productName : "—"}
+            </div>
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor="product-model" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-              Model
-            </label>
-            <input
-              id="product-model"
-              type="text"
-              value={productModel}
-              onChange={(e) => setProductModel(e.target.value)}
-              onBlur={() => void persistProductMeta()}
-              placeholder="Örn. YM-2026-04"
-              className="input-modern w-full"
-            />
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Model kodu</span>
+            <div
+              className="input-modern w-full cursor-default bg-slate-50/90 text-slate-800 dark:bg-slate-900/50 dark:text-slate-100"
+              title="Hedef Takip üzerinden güncellenir"
+            >
+              {productModel.trim() ? productModel : "—"}
+            </div>
           </div>
         </div>
       </section>
 
       <WorkerForm onSubmit={handleAddWorker} />
 
-      {!loading && rows.length > 0 && hasPermission("topluListeKaldir") ? (
+      {!loading && rows.length > 0 && (hasPermission("topluListeKaldir") || role === "admin") ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            disabled={clearingAllWorkers}
-            onClick={() => setBulkRemoveOpen(true)}
-            className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/40"
-          >
-            {clearingAllWorkers
-              ? "Siliniyor…"
-              : selectedDate === todayWeekdayIso()
-                ? "Tüm personeli sil… (bugün)"
-                : "Tüm personeli sil… (seçili gün)"}
-          </button>
+          {hasPermission("topluListeKaldir") ? (
+            <button
+              type="button"
+              disabled={clearingAllWorkers}
+              onClick={() => setBulkRemoveOpen(true)}
+              className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/40"
+            >
+              {clearingAllWorkers
+                ? "Siliniyor…"
+                : selectedDate === todayWeekdayIso()
+                  ? "Tüm personeli sil… (bugün)"
+                  : "Tüm personeli sil… (seçili gün)"}
+            </button>
+          ) : null}
+          {role === "admin" ? (
+            <button
+              type="button"
+              disabled={copyRosterBusy}
+              onClick={() => openCopyRosterModal()}
+              className="rounded-xl border border-teal-200 bg-white px-3.5 py-2 text-sm font-medium text-teal-800 shadow-sm transition hover:bg-teal-50 disabled:opacity-50 dark:border-teal-800/50 dark:bg-slate-900 dark:text-teal-200 dark:hover:bg-teal-950/40"
+            >
+              {copyRosterBusy ? "Aktarılıyor…" : "Tüm personeli diğer günlere aktar"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {copyRosterSuccess ? (
+        <div className="rounded-xl border border-teal-200/90 bg-teal-50/90 px-4 py-3 text-sm text-teal-900 dark:border-teal-900/40 dark:bg-teal-950/30 dark:text-teal-200">
+          {copyRosterSuccess}
         </div>
       ) : null}
 
@@ -722,6 +733,60 @@ export default function HomePage() {
         </div>
       ) : null}
 
+      {copyRosterOpen && role === "admin" ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+          role="presentation"
+          onClick={() => !copyRosterBusy && setCopyRosterOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="copy-roster-title"
+            className="surface-card max-w-md space-y-4 p-5 shadow-xl dark:text-slate-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="copy-roster-title" className="text-base font-semibold text-slate-900 dark:text-white">
+              Personeli diğer günlere aktar
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              <span className="font-medium text-slate-800 dark:text-slate-200">Kaynak tarih (seçili):</span>{" "}
+              {selectedDate} — listede {rows.length} kişi.
+            </p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Bu tarihten <strong className="font-medium text-slate-800 dark:text-slate-200">sonraki</strong> her hafta içi
+              gün için (bitiş tarihi dahil) kaynak gündeki üretim rakamları yazılır; satır yoksa oluşturulur, varsa
+              güncellenir. O günlerdeki “sahada yok” işaretleri kaldırılır. Bitiş, seçili günden en az bir gün sonra
+              olmalıdır.
+            </p>
+            <WeekdayDatePicker
+              label="Bitiş tarihi (hafta içi)"
+              value={copyRosterEndDate}
+              onChange={setCopyRosterEndDate}
+              className="w-full"
+            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                disabled={copyRosterBusy}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                onClick={() => !copyRosterBusy && setCopyRosterOpen(false)}
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                disabled={copyRosterBusy || !copyRosterEndDate || copyRosterEndDate <= selectedDate}
+                className="rounded-xl border border-teal-600 bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500"
+                onClick={() => void runCopyRosterToFuture()}
+              >
+                {copyRosterBusy ? "Aktarılıyor…" : "Aktar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {error && (
         <div className="rounded-2xl border border-red-200/90 bg-red-50/90 p-4 text-sm text-red-800 shadow-surface-sm dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
           Hata: {error}
@@ -745,12 +810,7 @@ export default function HomePage() {
         />
       )}
 
-      <AdminPanel
-        workerCount={rows.length}
-        stageTotals={hedefStageTotals}
-        teamMeta={teamMeta}
-        teamGunlukToplamlar={teamGunlukToplamlar}
-      />
+      <AdminPanel workerCount={rows.length} stageTotals={hedefStageTotals} />
     </main>
   );
 }

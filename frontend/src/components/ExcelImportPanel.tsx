@@ -254,6 +254,7 @@ export default function ExcelImportPanel({ teamMeta, onImported }: Props) {
           date: targetDate,
           productName: parsed.meta.productName,
           productModel: parsed.meta.productModel,
+          metaSource: "manual",
         });
       }
       await saveProductionBulk({

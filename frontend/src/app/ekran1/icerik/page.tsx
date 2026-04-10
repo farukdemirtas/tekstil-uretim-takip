@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { getHedefTakipStageTotals, setAuthToken } from "@/lib/api";
+import { getHedefTakipStageTotals, setAuthToken, type HedefStageLineDto } from "@/lib/api";
 import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
 
@@ -30,11 +30,7 @@ function formatDateTr(dateStr: string) {
 
 export default function Ekran1IcerikPage() {
   const [target, setTarget] = useState(5000);
-  const [sagOn, setSagOn] = useState(0);
-  const [solOn, setSolOn] = useState(0);
-  const [yaka, setYaka] = useState(0);
-  const [arka, setArka] = useState(0);
-  const [bitim, setBitim] = useState(0);
+  const [stages, setStages] = useState<HedefStageLineDto[]>([]);
   const [startDate, setStartDate] = useState(todayWeekdayIso());
   const [endDate, setEndDate] = useState(todayWeekdayIso());
   const [error, setError] = useState("");
@@ -42,13 +38,14 @@ export default function Ekran1IcerikPage() {
   const [lastUpdated, setLastUpdated] = useState("");
   const [hasToken, setHasToken] = useState(false);
   const [displayMode, setDisplayMode] = useState<Ekran1Mode>("light");
+  const [modelId, setModelId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dark = displayMode === "dark";
 
-  const genelTamamlanan = useMemo(
-    () => Math.min(sagOn, solOn, yaka, arka, bitim),
-    [sagOn, solOn, yaka, arka, bitim]
-  );
+  const genelTamamlanan = useMemo(() => {
+    if (!stages.length) return 0;
+    return Math.min(...stages.map((s) => (Number.isFinite(s.total) ? s.total : 0)));
+  }, [stages]);
   const genelPercent = useMemo(
     () => calcPercent(genelTamamlanan, target),
     [genelTamamlanan, target]
@@ -58,19 +55,15 @@ export default function Ekran1IcerikPage() {
     if (!silent) setLoading(true);
     setError("");
     try {
-      const totals = await getHedefTakipStageTotals(startDate, endDate);
-      setSagOn(totals.SAG_ON);
-      setSolOn(totals.SOL_ON);
-      setYaka(totals.YAKA_HAZIRLIK);
-      setArka(totals.ARKA_HAZIRLIK);
-      setBitim(totals.BITIM);
+      const totals = await getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined);
+      setStages(totals.stages ?? []);
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
     } catch {
       setError("Veri alınamadı. Oturum veya bağlantıyı kontrol edin.");
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, modelId]);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -88,10 +81,14 @@ export default function Ekran1IcerikPage() {
           target?: number;
           startDate?: string;
           endDate?: string;
+          modelId?: number | null;
         };
         if (Number.isFinite(Number(saved.target))) setTarget(Number(saved.target));
         if (saved.startDate) setStartDate(clampToWeekdayIso(saved.startDate));
         if (saved.endDate) setEndDate(clampToWeekdayIso(saved.endDate));
+        if (saved.modelId != null && Number.isFinite(Number(saved.modelId))) {
+          setModelId(Number(saved.modelId));
+        }
       }
     } catch {
       /* ignore */
@@ -133,17 +130,21 @@ export default function Ekran1IcerikPage() {
     if (el.requestFullscreen) void el.requestFullscreen();
   }
 
-  const stageRows = useMemo(
-    () =>
-      [
-        { label: "Sağ Ön", value: sagOn, pct: calcPercent(sagOn, target), bar: "bg-emerald-400" },
-        { label: "Sol Ön", value: solOn, pct: calcPercent(solOn, target), bar: "bg-sky-400" },
-        { label: "Yaka", value: yaka, pct: calcPercent(yaka, target), bar: "bg-violet-400" },
-        { label: "Arka", value: arka, pct: calcPercent(arka, target), bar: "bg-amber-400" },
-        { label: "Bitim", value: bitim, pct: calcPercent(bitim, target), bar: "bg-rose-400" }
-      ] as const,
-    [sagOn, solOn, yaka, arka, bitim, target]
-  );
+  const BAR_COLORS = ["bg-emerald-400", "bg-sky-400", "bg-violet-400", "bg-amber-400", "bg-rose-400", "bg-cyan-400", "bg-fuchsia-400", "bg-lime-400"] as const;
+
+  const stageRows = useMemo(() => {
+    return stages.map((s, i) => {
+      const shortP = s.processName.length > 16 ? `${s.processName.slice(0, 14)}…` : s.processName;
+      const label = s.processName ? `${s.teamLabel} · ${shortP}` : s.teamLabel;
+      const value = Number.isFinite(s.total) ? s.total : 0;
+      return {
+        label,
+        value,
+        pct: calcPercent(value, target),
+        bar: BAR_COLORS[i % BAR_COLORS.length],
+      };
+    });
+  }, [stages, target]);
 
   if (!hasToken) {
     return (
@@ -348,13 +349,13 @@ export default function Ekran1IcerikPage() {
         </section>
 
         <section
-          className={`mt-auto grid grid-cols-2 gap-4 border-t pt-6 md:grid-cols-5 md:gap-5 md:pt-8 ${
+          className={`mt-auto grid grid-cols-2 gap-4 border-t pt-6 sm:grid-cols-3 md:grid-cols-4 md:gap-5 lg:grid-cols-5 md:pt-8 ${
             dark ? "border-white/10" : "border-slate-300"
           }`}
         >
-          {stageRows.map((row) => (
+          {stageRows.map((row, idx) => (
             <div
-              key={row.label}
+              key={`${row.label}-${idx}`}
               className={`rounded-xl border p-3 md:p-4 ${
                 dark ? "border-white/10 bg-slate-900/50" : "border-slate-200 bg-white shadow-sm"
               }`}

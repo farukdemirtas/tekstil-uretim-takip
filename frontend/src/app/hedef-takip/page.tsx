@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { getHedefTakipStageTotals, setAuthToken } from "@/lib/api";
+import {
+  applyHedefSession,
+  getHedefTakipStageTotals,
+  getProductModel,
+  listProductModels,
+  setAuthToken,
+  type HedefStageLineDto,
+  type ProductModelListItem,
+} from "@/lib/api";
 import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission } from "@/lib/permissions";
@@ -25,25 +33,34 @@ function formatDate(dateStr: string) {
 }
 
 /* localStorage'a yaz — effect dışında, kullanıcı aksiyonlarında çağrılır */
-function persistSettings(target: number, startDate: string, endDate: string, rangeMode: boolean) {
+function persistSettings(
+  target: number,
+  startDate: string,
+  endDate: string,
+  rangeMode: boolean,
+  modelId: number | null
+) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ target, startDate, endDate, rangeMode }));
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ target, startDate, endDate, rangeMode, modelId: modelId ?? null })
+    );
   } catch { /* ignore */ }
 }
 
 export default function HedefTakip() {
-  const [target, setTarget]       = useState<number>(5000);
-  const [sagOn, setSagOn]         = useState<number>(0);
-  const [solOn, setSolOn]         = useState<number>(0);
-  const [yaka, setYaka]           = useState<number>(0);
-  const [arka, setArka]           = useState<number>(0);
-  const [bitim, setBitim]         = useState<number>(0);
+  const [target, setTarget] = useState<number>(5000);
+  const [stages, setStages] = useState<HedefStageLineDto[]>([]);
   const [startDate, setStartDate] = useState<string>(todayWeekdayIso());
   const [endDate, setEndDate]     = useState<string>(todayWeekdayIso());
   const [rangeLoading, setRangeLoading] = useState<boolean>(false);
   const [rangeError, setRangeError]     = useState<string>("");
   const [rangeMode, setRangeMode]       = useState<boolean>(false);
   const [lastUpdated, setLastUpdated]   = useState<string>("");
+  const [models, setModels]             = useState<ProductModelListItem[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<number | "">("");
+  const [applyMsg, setApplyMsg]         = useState<string>("");
+  const [applyLoading, setApplyLoading] = useState(false);
 
   /* Otomatik yenileme zamanlayıcısı */
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -57,6 +74,23 @@ export default function HedefTakip() {
     }
     setAuthToken(token);
 
+    void listProductModels()
+      .then((list) => {
+        setModels(list);
+        try {
+          const raw = window.localStorage.getItem(STORAGE_KEY);
+          const savedMid = raw
+            ? (JSON.parse(raw) as { modelId?: number }).modelId
+            : undefined;
+          if (savedMid != null && Number.isFinite(Number(savedMid)) && list.some((x) => x.id === Number(savedMid))) {
+            setSelectedModelId(Number(savedMid));
+          } else if (list.length === 1) {
+            setSelectedModelId(list[0].id);
+          }
+        } catch { /* ignore */ }
+      })
+      .catch(() => {});
+
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
@@ -66,22 +100,25 @@ export default function HedefTakip() {
         startDate?: string;
         endDate?: string;
         rangeMode?: boolean;
+        modelId?: number | null;
       };
 
       const t  = Number(saved.target) || 5000;
       const sd = clampToWeekdayIso(saved.startDate || todayWeekdayIso());
       const ed = clampToWeekdayIso(saved.endDate || todayWeekdayIso());
       const rm = Boolean(saved.rangeMode);
+      const mid =
+        saved.modelId != null && Number.isFinite(Number(saved.modelId)) ? Number(saved.modelId) : null;
 
       setTarget(t);
       setStartDate(sd);
       setEndDate(ed);
-      persistSettings(t, sd, ed, rm);
+      persistSettings(t, sd, ed, rm, mid);
 
       /* Tarih aralığı modu kayıtlıysa hemen veri çek */
       if (rm) {
         setRangeMode(true);
-        void fetchRangeData(sd, ed, false);
+        void fetchRangeData(sd, ed, false, mid ?? undefined);
       }
     } catch { /* ignore */ }
 
@@ -95,27 +132,37 @@ export default function HedefTakip() {
     if (!rangeMode) return;
 
     timerRef.current = setInterval(() => {
-      void fetchRangeData(startDate, endDate, true);
+      void fetchRangeData(
+        startDate,
+        endDate,
+        true,
+        selectedModelId === "" ? undefined : Number(selectedModelId)
+      );
     }, AUTO_REFRESH_MS);
 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeMode, startDate, endDate]);
+  }, [rangeMode, startDate, endDate, selectedModelId]);
 
   /* ─── API'den tarih aralığı verilerini çek ─── */
-  async function fetchRangeData(start: string, end: string, silent: boolean) {
+  async function fetchRangeData(start: string, end: string, silent: boolean, modelId?: number) {
     if (!silent) setRangeLoading(true);
     setRangeError("");
     try {
-      const totals = await getHedefTakipStageTotals(start, end);
-      setSagOn(totals.SAG_ON);
-      setSolOn(totals.SOL_ON);
-      setYaka(totals.YAKA_HAZIRLIK);
-      setArka(totals.ARKA_HAZIRLIK);
-      setBitim(totals.BITIM);
+      const mid =
+        modelId !== undefined
+          ? modelId
+          : selectedModelId === ""
+            ? undefined
+            : Number(selectedModelId);
+      const totals = await getHedefTakipStageTotals(start, end, mid);
+      setStages(totals.stages ?? []);
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
-    } catch {
-      if (!silent) setRangeError("Veriler alınamadı. Lütfen bağlantıyı kontrol edin.");
+    } catch (e) {
+      if (!silent)
+        setRangeError(
+          e instanceof Error ? e.message : "Veriler alınamadı. Model tanımını veya bağlantıyı kontrol edin."
+        );
     } finally {
       if (!silent) setRangeLoading(false);
     }
@@ -126,10 +173,43 @@ export default function HedefTakip() {
     if (!startDate || !endDate) { setRangeError("Lütfen başlangıç ve bitiş tarihi seçin."); return; }
     if (startDate > endDate)    { setRangeError("Başlangıç tarihi bitiş tarihinden büyük olamaz."); return; }
 
-    await fetchRangeData(startDate, endDate, false);
+    if (selectedModelId === "") {
+      setRangeError("Önce bir ürün modeli seçin (Ayarlar’da tanımlı olmalı).");
+      return;
+    }
+    await fetchRangeData(startDate, endDate, false, Number(selectedModelId));
     setRangeMode(true);
-    /* Tarih ve mod başarıyla uygulandıktan sonra kaydet */
-    persistSettings(target, startDate, endDate, true);
+    persistSettings(target, startDate, endDate, true, Number(selectedModelId));
+  }
+
+  async function handleApplyToMainScreen() {
+    setApplyMsg("");
+    if (selectedModelId === "") {
+      setRangeError("Ürün modeli seçin.");
+      return;
+    }
+    if (!startDate || !endDate || startDate > endDate) {
+      setRangeError("Geçerli bir tarih aralığı seçin.");
+      return;
+    }
+    setApplyLoading(true);
+    try {
+      const m = await getProductModel(Number(selectedModelId));
+      await applyHedefSession({
+        modelId: Number(selectedModelId),
+        startDate,
+        endDate,
+        productName: m.productName,
+        productModel: m.modelCode,
+      });
+      setApplyMsg(
+        `Seçilen hafta içi günlere ürün bilgisi yazıldı. Ana ekranda ilgili tarihlerde “Çalışılacak ürün” otomatik görünür.`
+      );
+    } catch (e) {
+      setRangeError(e instanceof Error ? e.message : "Uygulanamadı");
+    } finally {
+      setApplyLoading(false);
+    }
   }
 
   /* ─── Input onChange yardımcıları — değişikliği anında localStorage'a yaz ─── */
@@ -137,35 +217,50 @@ export default function HedefTakip() {
     const n = Number(value);
     const t = Number.isFinite(n) && n >= 0 ? n : 0;
     setTarget(t);
-    persistSettings(t, startDate, endDate, rangeMode);
+    persistSettings(t, startDate, endDate, rangeMode, selectedModelId === "" ? null : Number(selectedModelId));
   }
 
   function handleStartDateChange(value: string) {
     const v = coerceWeekdayPickerValue(value);
     setStartDate(v);
-    persistSettings(target, v, endDate, rangeMode);
+    persistSettings(target, v, endDate, rangeMode, selectedModelId === "" ? null : Number(selectedModelId));
   }
 
   function handleEndDateChange(value: string) {
     const v = coerceWeekdayPickerValue(value);
     setEndDate(v);
-    persistSettings(target, startDate, v, rangeMode);
+    persistSettings(target, startDate, v, rangeMode, selectedModelId === "" ? null : Number(selectedModelId));
+  }
+
+  function handleModelChange(id: string) {
+    if (id === "") {
+      setSelectedModelId("");
+      persistSettings(target, startDate, endDate, rangeMode, null);
+      return;
+    }
+    const num = Number(id);
+    setSelectedModelId(num);
+    persistSettings(target, startDate, endDate, rangeMode, num);
   }
 
   /* ─── Hesaplamalar ─── */
-  const genelTamamlanan = useMemo(() => Math.min(sagOn, solOn, yaka, arka, bitim), [sagOn, solOn, yaka, arka, bitim]);
-  const sagOnKalan  = useMemo(() => Math.max(0, target - sagOn),           [target, sagOn]);
-  const solOnKalan  = useMemo(() => Math.max(0, target - solOn),           [target, solOn]);
-  const yakaKalan   = useMemo(() => Math.max(0, target - yaka),            [target, yaka]);
-  const arkaKalan   = useMemo(() => Math.max(0, target - arka),            [target, arka]);
-  const bitimKalan  = useMemo(() => Math.max(0, target - bitim),           [target, bitim]);
-  const genelKalan  = useMemo(() => Math.max(0, target - genelTamamlanan), [target, genelTamamlanan]);
-  const sagOnPercent  = useMemo(() => calcPercent(sagOn,           target), [sagOn,           target]);
-  const solOnPercent  = useMemo(() => calcPercent(solOn,           target), [solOn,           target]);
-  const yakaPercent   = useMemo(() => calcPercent(yaka,            target), [yaka,            target]);
-  const arkaPercent   = useMemo(() => calcPercent(arka,            target), [arka,            target]);
-  const bitimPercent  = useMemo(() => calcPercent(bitim,           target), [bitim,           target]);
-  const genelPercent  = useMemo(() => calcPercent(genelTamamlanan, target), [genelTamamlanan, target]);
+  const genelTamamlanan = useMemo(() => {
+    if (!stages.length) return 0;
+    return Math.min(...stages.map((s) => (Number.isFinite(s.total) ? s.total : 0)));
+  }, [stages]);
+  const genelKalan = useMemo(() => Math.max(0, target - genelTamamlanan), [target, genelTamamlanan]);
+  const genelPercent = useMemo(() => calcPercent(genelTamamlanan, target), [genelTamamlanan, target]);
+
+  const STAGE_CARD_COLORS = [
+    "from-emerald-500 to-emerald-600",
+    "from-sky-500 to-sky-600",
+    "from-violet-500 to-violet-600",
+    "from-amber-500 to-amber-600",
+    "from-rose-500 to-rose-600",
+    "from-cyan-500 to-cyan-600",
+    "from-fuchsia-500 to-fuchsia-600",
+    "from-lime-500 to-lime-600",
+  ] as const;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-5 p-4 md:p-8">
@@ -176,7 +271,9 @@ export default function HedefTakip() {
           <div>
             <h1 className="text-xl font-semibold">Hedef Takip</h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              Hedefe göre her aşamanın ilerlemesini ve genel ilerlemeyi takip edin.
+              Ürün modeli, tarih aralığı ve hedef adet seçilir; toplamlar modelde tanımlı bölüm/proses satırlarına göre
+              hesaplanır (satır sayısı ürüne göre değişir). Ana üretim ekranındaki “çalışılacak ürün” bilgisi buradan
+              uygulanır.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -244,13 +341,45 @@ export default function HedefTakip() {
             </div>
           )}
         </div>
+
+        <div className="mt-6 rounded-lg border border-teal-200 bg-teal-50/60 p-4 dark:border-teal-900/40 dark:bg-teal-950/25">
+          <label className="text-sm font-medium text-slate-800 dark:text-slate-100">Çalışılacak ürün modeli</label>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+            Ayarlar → <strong className="font-medium text-slate-700 dark:text-slate-300">Ürün modelleri</strong> bölümünde
+            her satırda çalışılacak bölüm ve baz alınacak proses seçilir. Seçilen modele göre hedef rakamları üretim
+            tablosundan hesaplanır.
+          </p>
+          <select
+            value={selectedModelId === "" ? "" : String(selectedModelId)}
+            onChange={(e) => handleModelChange(e.target.value)}
+            className="mt-2 w-full max-w-lg rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          >
+            <option value="">Model seçin…</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.modelCode} — {m.productName || "—"}
+              </option>
+            ))}
+          </select>
+          {models.length === 0 ? (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              Henüz model yok. Ayarlar → Ürün modelleri üzerinden ekleyin.
+            </p>
+          ) : selectedModelId !== "" ? (
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+              Ürün: <strong>{models.find((x) => x.id === selectedModelId)?.productName || "—"}</strong> · Kod:{" "}
+              <strong>{models.find((x) => x.id === selectedModelId)?.modelCode}</strong>
+            </p>
+          ) : null}
+        </div>
       </section>
 
       {/* ── Tarih Aralığı Filtresi ── */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <h2 className="text-base font-semibold">Tarih Aralığı Filtresi</h2>
+        <h2 className="text-base font-semibold">Tarih aralığı ve ana ekrana aktarım</h2>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-          Belirli tarihler arasındaki toplam üretim verisini çekin. Tarihler ve hedef sayfa yenilenince korunur.
+          Hafta içi günler için toplam üretimi çekin. «Üretim ekranına uygula» ile seçilen aralıktaki her iş gününe ürün
+          adı ve model kodu yazılır; ana sayfada düzenlenemez.
         </p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
           <WeekdayDatePicker
@@ -276,24 +405,57 @@ export default function HedefTakip() {
           {rangeMode && (
             <button
               type="button"
-              onClick={() => void fetchRangeData(startDate, endDate, false)}
+              onClick={() =>
+                void fetchRangeData(
+                  startDate,
+                  endDate,
+                  false,
+                  selectedModelId === "" ? undefined : Number(selectedModelId)
+                )
+              }
               disabled={rangeLoading}
               className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
             >
               Yenile
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => void handleApplyToMainScreen()}
+            disabled={applyLoading || selectedModelId === ""}
+            className="rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500"
+          >
+            {applyLoading ? "Uygulanıyor…" : "Üretim ekranına uygula"}
+          </button>
         </div>
+        {applyMsg ? (
+          <p className="mt-3 rounded-md border border-teal-200 bg-teal-50/80 px-3 py-2 text-xs text-teal-900 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">
+            {applyMsg}
+          </p>
+        ) : null}
         {rangeError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{rangeError}</p>}
       </section>
 
-      {/* ── Aşama Kartları ── */}
+      {/* ── Bölüm satırı kartları (modelde tanımlı N adet) ── */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ProgressCard label="Sağ Ön"        value={sagOn} percent={sagOnPercent} color="from-emerald-500 to-emerald-600" target={target} remaining={sagOnKalan} />
-        <ProgressCard label="Sol Ön"        value={solOn} percent={solOnPercent} color="from-sky-500 to-sky-600"         target={target} remaining={solOnKalan} />
-        <ProgressCard label="Yaka Hazırlık" value={yaka}  percent={yakaPercent}  color="from-violet-500 to-violet-600"  target={target} remaining={yakaKalan}  />
-        <ProgressCard label="Arka Hazırlık" value={arka}  percent={arkaPercent}  color="from-amber-500 to-amber-600"    target={target} remaining={arkaKalan}  />
-        <ProgressCard label="Bitim" value={bitim} percent={bitimPercent} color="from-rose-500 to-rose-600"      target={target} remaining={bitimKalan} />
+        {stages.map((s, i) => {
+          const shortP = s.processName.length > 22 ? `${s.processName.slice(0, 20)}…` : s.processName;
+          const label = s.processName ? `${s.teamLabel} · ${shortP}` : s.teamLabel;
+          const val = Number.isFinite(s.total) ? s.total : 0;
+          const pct = calcPercent(val, target);
+          const rem = Math.max(0, target - val);
+          return (
+            <ProgressCard
+              key={`${s.sortOrder}-${i}`}
+              label={label}
+              value={val}
+              percent={pct}
+              color={STAGE_CARD_COLORS[i % STAGE_CARD_COLORS.length]}
+              target={target}
+              remaining={rem}
+            />
+          );
+        })}
 
         {/* Genel İlerleme */}
         <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">

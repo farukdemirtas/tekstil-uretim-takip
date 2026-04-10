@@ -208,6 +208,124 @@ export function initDb() {
     `);
 
     db.run(`
+      CREATE TABLE IF NOT EXISTS product_models (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_code TEXT NOT NULL UNIQUE,
+        product_name TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
+    db.all("PRAGMA table_info(product_models)", [], (pragmaErr, cols) => {
+      if (pragmaErr || !Array.isArray(cols) || cols.length === 0) return;
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has("product_name")) {
+        db.run("ALTER TABLE product_models ADD COLUMN product_name TEXT NOT NULL DEFAULT ''", (e) => {
+          if (e) {
+            // eslint-disable-next-line no-console
+            console.error("[tekstil-db] product_models product_name migration:", e.message);
+          }
+        });
+      }
+      if (!names.has("created_at")) {
+        db.run("ALTER TABLE product_models ADD COLUMN created_at TEXT NOT NULL DEFAULT ''", (e) => {
+          if (e) {
+            // eslint-disable-next-line no-console
+            console.error("[tekstil-db] product_models created_at migration:", e.message);
+          }
+        });
+      }
+    });
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS model_hedef_baselines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_id INTEGER NOT NULL,
+        sort_order INTEGER NOT NULL,
+        team_code TEXT NOT NULL,
+        process_name TEXT NOT NULL,
+        arka_half INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (model_id, sort_order),
+        FOREIGN KEY (model_id) REFERENCES product_models(id) ON DELETE CASCADE
+      )
+    `);
+
+    db.all("PRAGMA table_info(model_hedef_baselines)", [], (pragmaErr, cols) => {
+      if (pragmaErr || !Array.isArray(cols) || cols.length === 0) return;
+      const names = new Set(cols.map((c) => c.name));
+      if (names.has("hedef_metric") && !names.has("sort_order")) {
+        db.serialize(() => {
+          db.run(
+            `
+            CREATE TABLE model_hedef_baselines_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              model_id INTEGER NOT NULL,
+              sort_order INTEGER NOT NULL,
+              team_code TEXT NOT NULL,
+              process_name TEXT NOT NULL,
+              arka_half INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (model_id, sort_order),
+              FOREIGN KEY (model_id) REFERENCES product_models(id) ON DELETE CASCADE
+            )
+            `,
+            (e1) => {
+              if (e1) {
+                // eslint-disable-next-line no-console
+                console.error("[tekstil-db] model_hedef_baselines migration create:", e1.message);
+                return;
+              }
+              db.run(
+                `
+                INSERT INTO model_hedef_baselines_new (model_id, sort_order, team_code, process_name, arka_half)
+                SELECT model_id,
+                  CASE hedef_metric
+                    WHEN 'SAG_ON' THEN 0 WHEN 'SOL_ON' THEN 1 WHEN 'YAKA_HAZIRLIK' THEN 2
+                    WHEN 'ARKA_HAZIRLIK' THEN 3 WHEN 'BITIM' THEN 4 ELSE 0 END,
+                  team_code, process_name, arka_half
+                FROM model_hedef_baselines
+                `,
+                (e2) => {
+                  if (e2) {
+                    // eslint-disable-next-line no-console
+                    console.error("[tekstil-db] model_hedef_baselines migration copy:", e2.message);
+                    return;
+                  }
+                  db.run("DROP TABLE model_hedef_baselines", (e3) => {
+                    if (e3) {
+                      // eslint-disable-next-line no-console
+                      console.error("[tekstil-db] model_hedef_baselines migration drop:", e3.message);
+                      return;
+                    }
+                    db.run("ALTER TABLE model_hedef_baselines_new RENAME TO model_hedef_baselines", (e4) => {
+                      if (e4) {
+                        // eslint-disable-next-line no-console
+                        console.error("[tekstil-db] model_hedef_baselines migration rename:", e4.message);
+                      }
+                    });
+                  });
+                }
+              );
+            }
+          );
+        });
+      }
+    });
+
+    db.all("PRAGMA table_info(daily_product_meta)", [], (pragmaErr, cols) => {
+      if (pragmaErr || !Array.isArray(cols)) return;
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has("model_id")) {
+        db.run("ALTER TABLE daily_product_meta ADD COLUMN model_id INTEGER", () => {});
+      }
+      if (!names.has("meta_source")) {
+        db.run(
+          "ALTER TABLE daily_product_meta ADD COLUMN meta_source TEXT NOT NULL DEFAULT 'manual'",
+          () => {}
+        );
+      }
+    });
+
+    db.run(`
       CREATE TABLE IF NOT EXISTS worker_names (
         id   INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE
