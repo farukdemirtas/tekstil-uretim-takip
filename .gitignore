@@ -1,6 +1,7 @@
 node_modules
 **/node_modules
 **/.next
+# Üretim verisi (kullanıcılar, loglar, üretim) — commit edilmez; git pull bunları silmez
 backend/data/*.db
 backend/data/*.sqlite
 # SQLite geçici dosyaları (asla commit edilmemeli)

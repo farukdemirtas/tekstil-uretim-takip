@@ -96,15 +96,29 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d takip.yesilimajtekstil.com
 ```
 
-## Kod güncellemesi (git pull)
+## Kod güncellemesi (tek komut, veriyi silmez)
+
+Her seferinde aynı satırı kullanabilirsiniz (`git pull` betiğin içinde zaten var):
 
 ```bash
-cd /var/www/uretim-takip
-chmod +x deploy/sunucu-guncelle.sh
-./deploy/sunucu-guncelle.sh
+cd /var/www/uretim-takip && bash guncelle.sh
 ```
 
-Betik `backend/data/production.db` dosyasını pull öncesi zaman damgalı `.pre-pull-...` ile yedekler, sonra `git pull`, `npm run prod:prepare` ve `pm2 reload` yapar.
+Alternatif (doğrudan deploy betiği):
+
+```bash
+cd /var/www/uretim-takip && bash deploy/sunucu-guncelle.sh
+```
+
+Betik veritabanını pull öncesi zaman damgalı `.pre-pull-...` ile yedekler, sonra `git pull`, `npm run prod:prepare` ve `pm2 reload` yapar. Pull sonrası dosya beklenmedik şekilde yoksa aynı çalıştırmadaki yedekten geri koyar.
+
+### Güncellemede kullanıcı / log / veri neden silinmez?
+
+- **`production.db` repoda yok:** `.gitignore` içinde `backend/data/*.db` var; `git pull` bu dosyayı güncellemez veya silmez.
+- **Sabit yol:** `ecosystem.config.cjs` → `TEKSTIL_DB_PATH` her zaman aynı dosyayı işaret eder; restart veya deploy ile “başka boş .db” açılmaz.
+- **Uygulama kodu:** Sunucu açılışında tablolar `CREATE TABLE IF NOT EXISTS` ile oluşturulur; normal güncelleme akışında kullanıcı veya log tabloları topluca silinmez.
+
+**Sakın:** Proje klasöründe `git clean -fdx` çalıştırmayın; ignored dosyaları da sildiği için veritabanını kaldırır. Yedek almadan `sunucu-proje-sifirla.sh` kullanmayın.
 
 ## Kontrol
 
