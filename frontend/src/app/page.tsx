@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
@@ -15,12 +15,14 @@ import {
   getProduction,
   getRangeStageTotals,
   getTeams,
+  hideWorkerForCalendarDay,
   login,
   removeWorker,
   removeAllWorkersForDay,
   saveDayProductMeta,
   saveProduction,
   setAuthToken,
+  unhideWorkerForCalendarDay,
   updateWorker,
 } from "@/lib/api";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
@@ -92,6 +94,24 @@ export default function HomePage() {
   const [clearingAllWorkers, setClearingAllWorkers] = useState(false);
   const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false);
 
+  const rowsRef = useRef<ProductionRow[]>(rows);
+  const selectedDateRef = useRef(selectedDate);
+  const productionSaveTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+  useEffect(() => {
+    selectedDateRef.current = selectedDate;
+  }, [selectedDate]);
+
+  useEffect(() => {
+    return () => {
+      productionSaveTimersRef.current.forEach((t) => clearTimeout(t));
+      productionSaveTimersRef.current.clear();
+    };
+  }, []);
+
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
     const username = window.localStorage.getItem("auth_user");
@@ -120,24 +140,47 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     setProductMetaSaved(false);
+    const emptyHedef: HedefStageTotals = {
+      SAG_ON: 0,
+      SOL_ON: 0,
+      YAKA_HAZIRLIK: 0,
+      ARKA_HAZIRLIK: 0,
+      BITIM: 0,
+    };
     try {
-      const [data, meta, hedef, gunlukBolum] = await Promise.all([
+      const settled = await Promise.allSettled([
         getProduction(date),
         getDayProductMeta(date).catch(() => ({ productName: "", productModel: "" })),
-        getHedefTakipStageTotals(date, date).catch(() => ({
-          SAG_ON: 0,
-          SOL_ON: 0,
-          YAKA_HAZIRLIK: 0,
-          ARKA_HAZIRLIK: 0,
-          BITIM: 0,
-        })),
-        getRangeStageTotals(date, date).catch(() => ({} as Record<string, number>)),
+        getHedefTakipStageTotals(date, date),
+        getRangeStageTotals(date, date),
       ]);
-      setRows(data);
-      setProductName(meta.productName);
-      setProductModel(meta.productModel);
-      setHedefStageTotals(hedef);
-      setTeamGunlukToplamlar(gunlukBolum && typeof gunlukBolum === "object" ? gunlukBolum : {});
+
+      if (settled[0].status === "fulfilled") {
+        setRows(settled[0].value);
+      } else {
+        setRows([]);
+        setError(
+          settled[0].reason instanceof Error ? settled[0].reason.message : "Üretim verisi alınamadı"
+        );
+      }
+
+      if (settled[1].status === "fulfilled") {
+        const m = settled[1].value;
+        setProductName(m.productName);
+        setProductModel(m.productModel);
+      }
+
+      if (settled[2].status === "fulfilled") {
+        setHedefStageTotals(settled[2].value);
+      } else {
+        setHedefStageTotals(emptyHedef);
+      }
+
+      if (settled[3].status === "fulfilled") {
+        setTeamGunlukToplamlar(settled[3].value);
+      } else {
+        setTeamGunlukToplamlar({});
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu");
     } finally {
@@ -223,48 +266,64 @@ export default function HomePage() {
     await loadDateData(selectedDate);
   }
 
-  async function handleCellChange(workerId: number, field: "t1000" | "t1300" | "t1600" | "t1830", value: number) {
-    const nextRows = rows.map((row) => (row.workerId === workerId ? { ...row, [field]: value } : row));
-    setRows(nextRows);
+  const PRODUCTION_SAVE_DEBOUNCE_MS = 320;
 
-    const target = nextRows.find((row) => row.workerId === workerId);
-    if (!target) return;
-
+  async function flushProductionSave(workerId: number) {
+    const dateStr = selectedDateRef.current;
+    const snap = rowsRef.current.find((r) => r.workerId === workerId);
+    if (!snap || snap.absentForDay) return;
     await saveProduction({
       workerId,
-      date: selectedDate,
-      t1000: target.t1000,
-      t1300: target.t1300,
-      t1600: target.t1600,
-      t1830: target.t1830
+      date: dateStr,
+      t1000: snap.t1000,
+      t1300: snap.t1300,
+      t1600: snap.t1600,
+      t1830: snap.t1830
     });
-
     try {
-      const ht = await getHedefTakipStageTotals(selectedDate, selectedDate);
+      const ht = await getHedefTakipStageTotals(dateStr, dateStr);
       setHedefStageTotals(ht);
     } catch {
       /* hedef özeti */
     }
     try {
-      const gun = await getRangeStageTotals(selectedDate, selectedDate);
+      const gun = await getRangeStageTotals(dateStr, dateStr);
       setTeamGunlukToplamlar(gun);
     } catch {
       /* grup toplamları */
     }
   }
 
+  function handleCellChange(workerId: number, field: "t1000" | "t1300" | "t1600" | "t1830", value: number) {
+    const target = rows.find((row) => row.workerId === workerId);
+    if (!target || target.absentForDay) return;
+
+    const nextRows = rows.map((row) => (row.workerId === workerId ? { ...row, [field]: value } : row));
+    setRows(nextRows);
+
+    const timers = productionSaveTimersRef.current;
+    const prevTimer = timers.get(workerId);
+    if (prevTimer) clearTimeout(prevTimer);
+    const scheduledDate = selectedDate;
+    const t = setTimeout(() => {
+      timers.delete(workerId);
+      if (selectedDateRef.current !== scheduledDate) return;
+      void flushProductionSave(workerId);
+    }, PRODUCTION_SAVE_DEBOUNCE_MS);
+    timers.set(workerId, t);
+  }
+
   /** Hedef Takip ile aynı: min(Sağ Ön, Sol Ön, Yaka, Arka, Bitim) */
-  const genelTamamlanan = useMemo(
-    () =>
-      Math.min(
-        hedefStageTotals.SAG_ON,
-        hedefStageTotals.SOL_ON,
-        hedefStageTotals.YAKA_HAZIRLIK,
-        hedefStageTotals.ARKA_HAZIRLIK,
-        hedefStageTotals.BITIM
-      ),
-    [hedefStageTotals]
-  );
+  const genelTamamlanan = useMemo(() => {
+    const v = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : 0);
+    return Math.min(
+      v(hedefStageTotals.SAG_ON),
+      v(hedefStageTotals.SOL_ON),
+      v(hedefStageTotals.YAKA_HAZIRLIK),
+      v(hedefStageTotals.ARKA_HAZIRLIK),
+      v(hedefStageTotals.BITIM)
+    );
+  }, [hedefStageTotals]);
 
   function handleExportExcel() {
     const sorted = orderedExportRows(rows, teamMeta);
@@ -357,10 +416,43 @@ export default function HomePage() {
   }
 
   async function handleDeleteWorker(workerId: number, workerName: string) {
-    const approved = window.confirm(`${workerName} kullanicisini silmek istiyor musunuz?`);
+    const approved = window.confirm(
+      `“${workerName}” seçili tarih (${selectedDate}) ve sonrasında silinecek (pasif). ` +
+        `Daha önceki günlerde tabloda görünmeye devam eder. Üretim kayıtları silinmez.\n\nDevam edilsin mi?`
+    );
     if (!approved) return;
-    await removeWorker(workerId, selectedDate);
-    await loadDateData(selectedDate);
+    setError(null);
+    try {
+      await removeWorker(workerId, selectedDate);
+      await loadDateData(selectedDate);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "İşlem başarısız");
+    }
+  }
+
+  async function handleHideWorkerForDay(workerId: number, workerName: string) {
+    const approved = window.confirm(
+      `“${workerName}” bu tarihte (${selectedDate}) sahada yok sayılacak: satır listede kalır, soluk görünür ve üretim hücreleri kilitlenir. ` +
+        `Sonraki iş günlerinde normal görünür. Bu güne yazılmış rakamlar silinmez.\n\nDevam edilsin mi?`
+    );
+    if (!approved) return;
+    setError(null);
+    try {
+      await hideWorkerForCalendarDay(workerId, selectedDate);
+      await loadDateData(selectedDate);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "İşaretlenemedi");
+    }
+  }
+
+  async function handleUnhideWorkerForDay(workerId: number, _workerName: string) {
+    setError(null);
+    try {
+      await unhideWorkerForCalendarDay(workerId, selectedDate);
+      await loadDateData(selectedDate);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Görünür yapılamadı");
+    }
   }
 
   async function runBulkRemoveFromList(scope: "only_day" | "from_day") {
@@ -372,7 +464,7 @@ export default function HomePage() {
       await removeAllWorkersForDay(selectedDate, scope);
       await loadDateData(selectedDate);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Personel kaldırılamadı");
+      setError(err instanceof Error ? err.message : "Personel silinemedi");
     } finally {
       setClearingAllWorkers(false);
     }
@@ -384,7 +476,7 @@ export default function HomePage() {
     const tarih = selectedDate;
     const mesaj =
       scope === "only_day"
-        ? `Emin misiniz?\n\n${tarih} tarihinde listedeki ${n} personel yalnızca o gün için gizlenecek; sonraki iş günlerinde yeniden listelenir. Üretim kayıtları silinmez.`
+        ? `Emin misiniz?\n\n${tarih} tarihinde ${n} personel için “sahada yok” işareti konacak: satırlar listede soluk kalır, üretim hücreleri kilitlenir. Sonraki iş günlerinde normal görünürler. Kayıtlar silinmez.`
         : `Emin misiniz?\n\n${tarih} tarihi ve sonrasında listedeki ${n} personel pasif sayılacak (o gün ve ileri tarihler listede görünmez). Geçmiş günler ve analizler etkilenmez.`;
     if (!window.confirm(mesaj)) return;
     void runBulkRemoveFromList(scope);
@@ -452,9 +544,14 @@ export default function HomePage() {
         {/* Aksiyon butonları — sarılabilir satır */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {hasPermission("analysis") ? (
-            <Link href="/analysis" className="btn-nav">
-              Analiz
-            </Link>
+            <>
+              <Link href="/analysis" className="btn-nav">
+                Analiz
+              </Link>
+              <Link href="/analysis/person" className="btn-nav">
+                Kişi analizi
+              </Link>
+            </>
           ) : null}
           {hasPermission("karsilastirma") ? (
             <Link href="/karsilastirma" className="btn-nav">
@@ -558,10 +655,10 @@ export default function HomePage() {
             className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/40"
           >
             {clearingAllWorkers
-              ? "Kaldırılıyor…"
+              ? "Siliniyor…"
               : selectedDate === todayWeekdayIso()
-                ? "Tüm personeli listeden kaldır… (bugün)"
-                : "Tüm personeli listeden kaldır… (seçili gün)"}
+                ? "Tüm personeli sil… (bugün)"
+                : "Tüm personeli sil… (seçili gün)"}
           </button>
         </div>
       ) : null}
@@ -580,7 +677,7 @@ export default function HomePage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="bulk-remove-title" className="text-base font-semibold text-slate-900 dark:text-white">
-              Tüm personeli listeden kaldır
+              Tüm personeli sil
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400">
               <span className="font-medium text-slate-800 dark:text-slate-200">{selectedDate}</span> için listede{" "}
@@ -588,12 +685,12 @@ export default function HomePage() {
             </p>
             <ul className="list-inside list-disc space-y-2 text-sm text-slate-600 dark:text-slate-400">
               <li>
-                <strong className="text-slate-800 dark:text-slate-200">Yalnızca bugün:</strong> Sadece seçili tarihte
-                listede görünmezler; sonraki iş günlerinde tekrar listelenir. Üretim kayıtları silinmez.
+                <strong className="text-slate-800 dark:text-slate-200">Yalnızca bugün:</strong> Seçili günde sahada yok
+                işareti (satırlar soluk, hücreler kilitli); sonraki iş günlerinde normal. Üretim kayıtları silinmez.
               </li>
               <li>
                 <strong className="text-slate-800 dark:text-slate-200">Bugün ve sonrası:</strong> Seçili tarihten
-                itibaren listeden düşer (pasif); geçmiş günler ve analizler etkilenmez.
+                itibaren silinir (pasif; listede görünmez); geçmiş günler ve analizler etkilenmez.
               </li>
             </ul>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
@@ -638,8 +735,11 @@ export default function HomePage() {
       ) : (
         <ProductionTable
           rows={rows}
+          selectedDate={selectedDate}
           onCellChange={(id, field, value) => void handleCellChange(id, field, value)}
           onDeleteWorker={(id, name) => void handleDeleteWorker(id, name)}
+          onHideWorkerForDay={(id, name) => void handleHideWorkerForDay(id, name)}
+          onUnhideWorkerForDay={(id, name) => void handleUnhideWorkerForDay(id, name)}
           onEditWorker={handleEditWorker}
           canDeleteWorkers={true}
         />

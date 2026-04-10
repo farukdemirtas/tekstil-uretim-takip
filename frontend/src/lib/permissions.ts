@@ -9,8 +9,8 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
   { key: "hedefTakip", label: "Hedef takip", description: "Hedef takip ekranı" },
   {
     key: "topluListeKaldir",
-    label: "Toplu listeden kaldır",
-    description: "Ana sayfada tüm personeli listeden kaldır (yalnızca bugün / bugün ve sonrası)",
+    label: "Toplu sil",
+    description: "Ana sayfada tüm personeli sil (yalnızca bugün / bugün ve sonrası; pasif)",
   },
   { key: "ekran1", label: "EKRAN1", description: "Hedef takip TV / tam ekran görünümü" },
   { key: "ekran2", label: "EKRAN2", description: "Aşama analiz panosu (TV)" },

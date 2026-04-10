@@ -23,6 +23,10 @@ type AdminPanelProps = {
   teamGunlukToplamlar: Record<string, number>;
 };
 
+function safeNum(n: unknown): number {
+  return typeof n === "number" && Number.isFinite(n) ? n : 0;
+}
+
 export default function AdminPanel({
   workerCount,
   stageTotals,
@@ -32,11 +36,11 @@ export default function AdminPanel({
   const genelTamamlanan = useMemo(
     () =>
       Math.min(
-        stageTotals.SAG_ON,
-        stageTotals.SOL_ON,
-        stageTotals.YAKA_HAZIRLIK,
-        stageTotals.ARKA_HAZIRLIK,
-        stageTotals.BITIM
+        safeNum(stageTotals.SAG_ON),
+        safeNum(stageTotals.SOL_ON),
+        safeNum(stageTotals.YAKA_HAZIRLIK),
+        safeNum(stageTotals.ARKA_HAZIRLIK),
+        safeNum(stageTotals.BITIM)
       ),
     [stageTotals]
   );
@@ -47,7 +51,7 @@ export default function AdminPanel({
       .map((t) => ({
         key: t.code,
         label: t.label,
-        value: teamGunlukToplamlar[t.code] ?? 0,
+        value: safeNum(teamGunlukToplamlar[t.code]),
       }));
   }, [teamMeta, teamGunlukToplamlar]);
 
@@ -59,7 +63,7 @@ export default function AdminPanel({
   const numHighlight = "text-emerald-700 dark:text-emerald-300";
 
   const tiles: Array<{ key: string; label: string; value: number; valueClass: string; boxClass: string }> = [
-    { key: "calisan", label: "Çalışan", value: workerCount, valueClass: numNeutral, boxClass: boxNeutral },
+    { key: "calisan", label: "Çalışan", value: safeNum(workerCount), valueClass: numNeutral, boxClass: boxNeutral },
     {
       key: "genel",
       label: "Genel tamamlanan",
@@ -67,11 +71,11 @@ export default function AdminPanel({
       valueClass: numHighlight,
       boxClass: boxHighlight,
     },
-    { key: "sag", label: "Sağ Ön", value: stageTotals.SAG_ON, valueClass: numNeutral, boxClass: boxNeutral },
-    { key: "sol", label: "Sol Ön", value: stageTotals.SOL_ON, valueClass: numNeutral, boxClass: boxNeutral },
-    { key: "yaka", label: "Yaka", value: stageTotals.YAKA_HAZIRLIK, valueClass: numNeutral, boxClass: boxNeutral },
-    { key: "arka", label: "Arka", value: stageTotals.ARKA_HAZIRLIK, valueClass: numNeutral, boxClass: boxNeutral },
-    { key: "bitim", label: "Bitim", value: stageTotals.BITIM, valueClass: numNeutral, boxClass: boxNeutral },
+    { key: "sag", label: "Sağ Ön", value: safeNum(stageTotals.SAG_ON), valueClass: numNeutral, boxClass: boxNeutral },
+    { key: "sol", label: "Sol Ön", value: safeNum(stageTotals.SOL_ON), valueClass: numNeutral, boxClass: boxNeutral },
+    { key: "yaka", label: "Yaka", value: safeNum(stageTotals.YAKA_HAZIRLIK), valueClass: numNeutral, boxClass: boxNeutral },
+    { key: "arka", label: "Arka", value: safeNum(stageTotals.ARKA_HAZIRLIK), valueClass: numNeutral, boxClass: boxNeutral },
+    { key: "bitim", label: "Bitim", value: safeNum(stageTotals.BITIM), valueClass: numNeutral, boxClass: boxNeutral },
   ];
 
   return (

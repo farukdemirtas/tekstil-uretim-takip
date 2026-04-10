@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "date-fns": "^4.1.0",
+    "html2pdf.js": "^0.10.2",
     "jspdf": "^3.0.3",
     "jspdf-autotable": "^5.0.2",
     "next": "^15.1.7",

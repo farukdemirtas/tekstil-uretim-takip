@@ -14,6 +14,9 @@ import {
   deleteWorkerForDate,
   deleteAllWorkersForVisibleDay,
   hideAllVisibleWorkersForSingleCalendarDay,
+  hideWorkerForSingleCalendarDay,
+  unhideWorkerForSingleCalendarDay,
+  listWorkersHiddenForCalendarDay,
   getDailyEntries,
   getDayProductMeta,
   upsertDayProductMeta,
@@ -22,6 +25,7 @@ import {
   getHedefTakipStageTotals,
   getWorkerComparisonData,
   getWorkerHourlyBreakdown,
+  getWorkerProductionDailyDetail,
   getWorkerDailyAnalytics,
   createUser,
   deleteUser,
@@ -36,6 +40,7 @@ import {
   getWorkerNamesByIds,
   upsertEntriesBulk,
   upsertEntry,
+  getProductionEntrySlots,
   getTeams,
   getProcesses,
   addTeam,
@@ -480,6 +485,60 @@ app.put("/api/workers/:id", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/workers/roster-hidden", requireAuth, async (req, res) => {
+  const { date } = req.query;
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ message: "date zorunlu (YYYY-MM-DD)" });
+  }
+  try {
+    const rows = await listWorkersHiddenForCalendarDay(String(date));
+    return res.json(rows);
+  } catch (error) {
+    return res.status(500).json({ message: "Liste alınamadı", error: String(error) });
+  }
+});
+
+/** Yalnızca seçili takvim günü listede gösterme (sahada yok); üretim satırı silinmez. */
+app.post("/api/workers/:id/hide-for-day", requireAuth, async (req, res) => {
+  const workerId = Number(req.params.id);
+  const { date } = req.body || {};
+  if (!workerId || typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ message: "Geçersiz çalışan veya tarih (YYYY-MM-DD)" });
+  }
+  try {
+    const workerName = await getWorkerNameById(workerId);
+    const result = await hideWorkerForSingleCalendarDay(workerId, date);
+    logActivity(req, "calisan_gun_gizle", "workers", {
+      id: workerId,
+      date,
+      name: workerName || undefined,
+    });
+    return res.json({ ok: true, hidden: result.hidden });
+  } catch (error) {
+    return res.status(500).json({ message: "Günlük gizleme başarısız", error: String(error) });
+  }
+});
+
+app.delete("/api/workers/:id/hide-for-day", requireAuth, async (req, res) => {
+  const workerId = Number(req.params.id);
+  const { date } = req.query;
+  if (!workerId || typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ message: "Geçersiz çalışan veya tarih (YYYY-MM-DD)" });
+  }
+  try {
+    const workerName = await getWorkerNameById(workerId);
+    const result = await unhideWorkerForSingleCalendarDay(workerId, date);
+    logActivity(req, "calisan_gun_goster", "workers", {
+      id: workerId,
+      date,
+      name: workerName || undefined,
+    });
+    return res.json({ ok: true, removed: result.removed });
+  } catch (error) {
+    return res.status(500).json({ message: "Gizleme kaldırılamadı", error: String(error) });
+  }
+});
+
 app.delete("/api/workers/for-day", requirePermission("topluListeKaldir"), async (req, res) => {
   const { date } = req.query;
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -505,7 +564,7 @@ app.delete("/api/workers/for-day", requirePermission("topluListeKaldir"), async 
     });
     return res.json({ ok: true, removed: result.removed, scope: "from_day" });
   } catch (error) {
-    res.status(500).json({ message: "Toplu kaldırma başarısız", error: String(error) });
+    res.status(500).json({ message: "Toplu silme başarısız", error: String(error) });
   }
 });
 
@@ -601,6 +660,27 @@ app.get("/api/analytics/worker-hourly", requireAnyPermission(["analysis", "ekran
   }
 });
 
+app.get("/api/analytics/worker-production-detail", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
+  const { workerId, startDate, endDate } = req.query;
+  if (!workerId || !startDate || !endDate) {
+    return res.status(400).json({ message: "workerId, startDate ve endDate zorunlu" });
+  }
+  const wid = Number(workerId);
+  if (!Number.isFinite(wid) || wid < 1) {
+    return res.status(400).json({ message: "Geçersiz workerId" });
+  }
+  try {
+    const rows = await getWorkerProductionDailyDetail({
+      workerId: wid,
+      startDate: String(startDate),
+      endDate: String(endDate),
+    });
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ message: "Kişi günlük detay alınamadı", error: String(error) });
+  }
+});
+
 app.get("/api/production/day-meta", async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ message: "date zorunlu (YYYY-MM-DD)" });
@@ -647,7 +727,7 @@ app.get("/api/production", async (req, res) => {
 });
 
 app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2", "ekran3"]), async (req, res) => {
-  const { startDate, endDate, team = "", limit = "20", hour = "" } = req.query;
+  const { startDate, endDate, team = "", process = "", limit = "20", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
   }
@@ -655,6 +735,10 @@ app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2"
   const codes = await listTeamCodes();
   if (team && !codes.includes(String(team))) {
     return res.status(400).json({ message: "Geçersiz grup filtresi" });
+  }
+  const pnamesTop = await listProcessNames();
+  if (process && !pnamesTop.includes(String(process))) {
+    return res.status(400).json({ message: "Geçersiz proses filtresi" });
   }
   if (!VALID_HOURS.includes(String(hour))) {
     return res.status(400).json({ message: "Geçersiz saat filtresi" });
@@ -665,6 +749,7 @@ app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2"
       startDate: String(startDate),
       endDate: String(endDate),
       team: String(team),
+      process: String(process),
       limit: Number(limit) || 20,
       hourColumn: String(hour)
     });
@@ -675,13 +760,17 @@ app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2"
 });
 
 app.get("/api/analytics/daily-trend", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
-  const { startDate, endDate, team = "", hour = "" } = req.query;
+  const { startDate, endDate, team = "", process = "", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
   }
   const codes2 = await listTeamCodes();
   if (team && !codes2.includes(String(team))) {
     return res.status(400).json({ message: "Geçersiz grup filtresi" });
+  }
+  const pnamesTrend = await listProcessNames();
+  if (process && !pnamesTrend.includes(String(process))) {
+    return res.status(400).json({ message: "Geçersiz proses filtresi" });
   }
   if (!VALID_HOURS.includes(String(hour))) {
     return res.status(400).json({ message: "Geçersiz saat filtresi" });
@@ -692,6 +781,7 @@ app.get("/api/analytics/daily-trend", requireAnyPermission(["analysis", "ekran2"
       startDate: String(startDate),
       endDate: String(endDate),
       team: String(team),
+      process: String(process),
       hourColumn: String(hour)
     });
     return res.json(rows);
@@ -701,13 +791,17 @@ app.get("/api/analytics/daily-trend", requireAnyPermission(["analysis", "ekran2"
 });
 
 app.get("/api/analytics/worker-daily", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
-  const { startDate, endDate, team = "", hour = "" } = req.query;
+  const { startDate, endDate, team = "", process = "", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
   }
   const codes3 = await listTeamCodes();
   if (team && !codes3.includes(String(team))) {
     return res.status(400).json({ message: "Geçersiz grup filtresi" });
+  }
+  const pnamesDaily = await listProcessNames();
+  if (process && !pnamesDaily.includes(String(process))) {
+    return res.status(400).json({ message: "Geçersiz proses filtresi" });
   }
   if (!VALID_HOURS.includes(String(hour))) {
     return res.status(400).json({ message: "Geçersiz saat filtresi" });
@@ -718,6 +812,7 @@ app.get("/api/analytics/worker-daily", requireAnyPermission(["analysis", "ekran2
       startDate: String(startDate),
       endDate: String(endDate),
       team: String(team),
+      process: String(process),
       hourColumn: String(hour)
     });
     return res.json(rows);
@@ -734,20 +829,34 @@ app.post("/api/production", async (req, res) => {
 
   try {
     const wid = Number(workerId);
+    const dateStr = String(date);
+    const t1000n = Number(t1000) || 0;
+    const t1300n = Number(t1300) || 0;
+    const t1600n = Number(t1600) || 0;
+    const t1830n = Number(t1830) || 0;
+    const prev = await getProductionEntrySlots(wid, dateStr);
+    const unchanged =
+      prev !== null &&
+      prev.t1000 === t1000n &&
+      prev.t1300 === t1300n &&
+      prev.t1600 === t1600n &&
+      prev.t1830 === t1830n;
     await upsertEntry({
       workerId: wid,
-      date: String(date),
-      t1000: Number(t1000) || 0,
-      t1300: Number(t1300) || 0,
-      t1600: Number(t1600) || 0,
-      t1830: Number(t1830) || 0
+      date: dateStr,
+      t1000: t1000n,
+      t1300: t1300n,
+      t1600: t1600n,
+      t1830: t1830n
     });
-    const workerName = await getWorkerNameById(wid);
-    logActivity(req, "uretim_kayit", "production_entries", {
-      workerId: wid,
-      date: String(date),
-      workerName: workerName || undefined,
-    });
+    if (!unchanged) {
+      const workerName = await getWorkerNameById(wid);
+      logActivity(req, "uretim_kayit", "production_entries", {
+        workerId: wid,
+        date: dateStr,
+        workerName: workerName || undefined,
+      });
+    }
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: "Üretim verisi kaydedilemedi", error: String(error) });

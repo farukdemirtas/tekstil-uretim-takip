@@ -18,6 +18,8 @@ export type ProductionRow = {
   t1300: number;
   t1600: number;
   t1830: number;
+  /** Bu takvim günü sahada yok (satır soluk; üretim hücreleri kapalı) */
+  absentForDay?: boolean;
 };
 
 
@@ -42,6 +44,18 @@ export type WorkerDailyAnalytics = {
   team: string;
   process: string;
   production: number;
+};
+
+/** Kişi bazlı analiz: günlük satır + dört saat dilimi */
+export type WorkerProductionDayDetail = {
+  productionDate: string;
+  name: string;
+  team: string;
+  process: string;
+  t1000: number;
+  t1300: number;
+  t1600: number;
+  t1830: number;
 };
 
 export type HourFilter = "" | "t1000" | "t1300" | "t1600" | "t1830";

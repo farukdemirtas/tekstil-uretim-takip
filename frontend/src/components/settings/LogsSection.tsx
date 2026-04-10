@@ -25,7 +25,9 @@ const ACTION_LABELS: Record<string, string> = {
   calisan_ekle: "Çalışan ekleme",
   calisan_guncelle: "Çalışan güncelleme",
   calisan_sil: "Çalışan silme",
-  calisan_toplu_liste_kaldir: "Tüm personel listeden kaldır (gün)",
+  calisan_gun_gizle: "Çalışan — yalnızca o gün gizle (sahada yok)",
+  calisan_gun_goster: "Çalışan — o gün gizlemeyi kaldır",
+  calisan_toplu_liste_kaldir: "Tüm personel sil (gün)",
   urun_meta_guncelle: "Gün ürün bilgisi",
   uretim_kayit: "Üretim kaydı (tek)",
   uretim_toplu: "Üretim kaydı (toplu)",
@@ -167,9 +169,16 @@ function logIslemDetayi(row: ActivityLogRow): string {
       if (d) {
         const gun = val(d, "date");
         const who = calisanEtiketi(d, "id");
-        if (gun && gun !== "tam") return `${who} yalnızca ${gun} gününden kaldırıldı.`;
-        return `${who} listeden çıkarıldı / pasifleştirildi.`;
+        if (gun && gun !== "tam") return `${who} ${gun} tarihi ve sonrasında silindi (pasif).`;
+        return `${who} silindi (pasif).`;
       }
+      break;
+    case "calisan_gun_gizle":
+      if (d)
+        return `${calisanEtiketi(d, "id")} ${val(d, "date")} tarihinde sahada yok işaretlendi (satır listede soluk).`;
+      break;
+    case "calisan_gun_goster":
+      if (d) return `${calisanEtiketi(d, "id")} ${val(d, "date")} tarihinde sahada yok işareti kaldırıldı.`;
       break;
     case "calisan_toplu_liste_kaldir":
       if (d) {
@@ -177,8 +186,8 @@ function logIslemDetayi(row: ActivityLogRow): string {
         const c = val(d, "count");
         const dt = val(d, "date");
         if (sc === "only_day")
-          return `${dt} tarihinde yalnızca o gün için ${c} personel listeden gizlendi; sonraki günlerde yine görünür.`;
-        return `${dt} tarihi ve sonrasında listeden ${c} personel kaldırıldı (pasif).`;
+          return `${dt} tarihinde ${c} personel sahada yok işaretlendi (satırlar listede soluk); sonraki günlerde normal.`;
+        return `${dt} tarihi ve sonrasında ${c} personel silindi (pasif).`;
       }
       break;
     case "urun_meta_guncelle":

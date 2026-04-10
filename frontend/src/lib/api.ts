@@ -1,4 +1,15 @@
-import { AppPermissions, DailyTrendPoint, HourFilter, ProductionRow, Team, TopWorkerAnalytics, User, Worker, WorkerDailyAnalytics } from "./types";
+import {
+  AppPermissions,
+  DailyTrendPoint,
+  HourFilter,
+  ProductionRow,
+  Team,
+  TopWorkerAnalytics,
+  User,
+  Worker,
+  WorkerDailyAnalytics,
+  WorkerProductionDayDetail,
+} from "./types";
 import { clearStoredPermissions } from "./permissions";
 
 /**
@@ -204,6 +215,46 @@ export async function removeWorker(workerId: number, date: string): Promise<void
   if (!response.ok) throw new Error("Çalışan silinemedi");
 }
 
+/** Seçili günde yalnızca listeden gizlenenler (sahada yok). */
+export async function getRosterHiddenForDay(date: string): Promise<Array<{ workerId: number; name: string }>> {
+  const q = new URLSearchParams({ date }).toString();
+  const response = await apiFetch(`${apiBase()}/workers/roster-hidden?${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Gizli personel listesi alınamadı");
+  const raw = (await response.json()) as unknown;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row) => {
+      const o = row as Record<string, unknown>;
+      const workerId = Number(o.workerId ?? o.worker_id);
+      const name = o.name != null ? String(o.name) : "";
+      if (!Number.isFinite(workerId) || workerId <= 0) return null;
+      return { workerId, name };
+    })
+    .filter((x): x is { workerId: number; name: string } => x != null);
+}
+
+/** Yalnızca bu takvim günü için listede gösterme (üretim kaydı silinmez). */
+export async function hideWorkerForCalendarDay(workerId: number, date: string): Promise<void> {
+  const response = await apiFetch(`${apiBase()}/workers/${workerId}/hide-for-day`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ date }),
+  });
+  if (!response.ok) throw new Error("Bu gün için gizlenemedi");
+}
+
+export async function unhideWorkerForCalendarDay(workerId: number, date: string): Promise<void> {
+  const q = new URLSearchParams({ date }).toString();
+  const response = await apiFetch(`${apiBase()}/workers/${workerId}/hide-for-day?${q}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Listeye geri alınamadı");
+}
+
 /** Toplu listeden kaldır: `only_day` = yalnızca o tarih; `from_day` = o tarih ve sonrası (soft delete). */
 export async function removeAllWorkersForDay(
   date: string,
@@ -216,7 +267,7 @@ export async function removeAllWorkersForDay(
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error((data as { message?: string }).message ?? "Personel kaldırılamadı");
+    throw new Error((data as { message?: string }).message ?? "Personel silinemedi");
   }
   return {
     removed: Number((data as { removed?: number }).removed) || 0,
@@ -224,10 +275,36 @@ export async function removeAllWorkersForDay(
   };
 }
 
+function parseProductionRow(raw: unknown): ProductionRow | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const workerId = Number(o.workerId);
+  if (!Number.isFinite(workerId)) return null;
+  const absentRaw = o.absentForDay ?? o.absentforday;
+  const absentForDay =
+    absentRaw === true ||
+    absentRaw === 1 ||
+    absentRaw === "1" ||
+    String(absentRaw).toLowerCase() === "true";
+  return {
+    workerId,
+    name: o.name != null ? String(o.name) : "",
+    team: o.team != null ? String(o.team) : "",
+    process: o.process != null ? String(o.process) : "",
+    t1000: Number(o.t1000) || 0,
+    t1300: Number(o.t1300) || 0,
+    t1600: Number(o.t1600) || 0,
+    t1830: Number(o.t1830) || 0,
+    absentForDay: absentForDay || undefined,
+  };
+}
+
 export async function getProduction(date: string): Promise<ProductionRow[]> {
   const response = await apiFetch(`${apiBase()}/production?date=${date}`, { cache: "no-store", headers: authHeaders() });
   if (!response.ok) throw new Error("Üretim verisi alınamadı");
-  return response.json();
+  const raw = (await response.json()) as unknown;
+  if (!Array.isArray(raw)) return [];
+  return raw.map(parseProductionRow).filter((r): r is ProductionRow => r != null);
 }
 
 export type DayProductMeta = { productName: string; productModel: string };
@@ -289,6 +366,55 @@ export async function saveProductionBulk(payload: {
   if (!response.ok) throw new Error("Toplu kayıt başarısız");
 }
 
+export type HedefStageTotalsDto = {
+  SAG_ON: number;
+  SOL_ON: number;
+  YAKA_HAZIRLIK: number;
+  ARKA_HAZIRLIK: number;
+  BITIM: number;
+};
+
+const ZERO_HEDEF: HedefStageTotalsDto = {
+  SAG_ON: 0,
+  SOL_ON: 0,
+  YAKA_HAZIRLIK: 0,
+  ARKA_HAZIRLIK: 0,
+  BITIM: 0,
+};
+
+function num(v: unknown): number {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v.replace(/\s/g, "").replace(",", "."));
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+/** API / proxy farklı anahtar döndürse veya sayı string gelse bile güvenli nesne */
+export function parseHedefStageTotalsPayload(raw: unknown): HedefStageTotalsDto {
+  if (!raw || typeof raw !== "object") return { ...ZERO_HEDEF };
+  const o = raw as Record<string, unknown>;
+  return {
+    SAG_ON: num(o.SAG_ON ?? o.sag_on),
+    SOL_ON: num(o.SOL_ON ?? o.sol_on),
+    YAKA_HAZIRLIK: num(o.YAKA_HAZIRLIK ?? o.yaka),
+    ARKA_HAZIRLIK: num(o.ARKA_HAZIRLIK ?? o.arka),
+    BITIM: num(o.BITIM ?? o.bitim),
+  };
+}
+
+export function parseRangeStageTotalsPayload(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const o = raw as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(o)) {
+    const n = num(v);
+    if (k) out[k] = n;
+  }
+  return out;
+}
+
 /** Tarih aralığında bölüm koduna göre üretim toplamları (tüm bölümler) */
 export async function getRangeStageTotals(startDate: string, endDate: string): Promise<Record<string, number>> {
   const query = new URLSearchParams({ startDate, endDate }).toString();
@@ -297,30 +423,27 @@ export async function getRangeStageTotals(startDate: string, endDate: string): P
     headers: authHeaders()
   });
   if (!response.ok) throw new Error("Tarih aralığı verisi alınamadı");
-  return response.json();
+  const raw = await response.json().catch(() => ({}));
+  return parseRangeStageTotalsPayload(raw);
 }
 
 /** Hedef Takip: proses bazlı aşama toplamları */
-export async function getHedefTakipStageTotals(startDate: string, endDate: string): Promise<{
-  SAG_ON: number;
-  SOL_ON: number;
-  YAKA_HAZIRLIK: number;
-  ARKA_HAZIRLIK: number;
-  BITIM: number;
-}> {
+export async function getHedefTakipStageTotals(startDate: string, endDate: string): Promise<HedefStageTotalsDto> {
   const query = new URLSearchParams({ startDate, endDate }).toString();
   const response = await apiFetch(`${apiBase()}/production/hedef-stage-totals?${query}`, {
     cache: "no-store",
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error("Hedef takip verisi alınamadı");
-  return response.json();
+  const raw = await response.json().catch(() => null);
+  return parseHedefStageTotalsPayload(raw);
 }
 
 export async function getTopWorkersAnalytics(params: {
   startDate: string;
   endDate: string;
   team?: Team | "";
+  process?: string;
   hour?: HourFilter;
   limit?: number;
 }): Promise<TopWorkerAnalytics[]> {
@@ -328,6 +451,7 @@ export async function getTopWorkersAnalytics(params: {
     startDate: params.startDate,
     endDate: params.endDate,
     team: params.team ?? "",
+    process: params.process ?? "",
     hour: params.hour ?? "",
     limit: String(params.limit ?? 20)
   }).toString();
@@ -364,12 +488,14 @@ export async function getDailyTrendAnalytics(params: {
   startDate: string;
   endDate: string;
   team?: Team | "";
+  process?: string;
   hour?: HourFilter;
 }): Promise<DailyTrendPoint[]> {
   const query = new URLSearchParams({
     startDate: params.startDate,
     endDate: params.endDate,
     team: params.team ?? "",
+    process: params.process ?? "",
     hour: params.hour ?? ""
   }).toString();
 
@@ -381,16 +507,36 @@ export async function getDailyTrendAnalytics(params: {
   return response.json();
 }
 
+export async function getWorkerProductionDailyDetail(params: {
+  workerId: number;
+  startDate: string;
+  endDate: string;
+}): Promise<WorkerProductionDayDetail[]> {
+  const query = new URLSearchParams({
+    workerId: String(params.workerId),
+    startDate: params.startDate,
+    endDate: params.endDate,
+  }).toString();
+  const response = await apiFetch(`${apiBase()}/analytics/worker-production-detail?${query}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Kişi günlük detay alınamadı");
+  return response.json();
+}
+
 export async function getWorkerDailyAnalytics(params: {
   startDate: string;
   endDate: string;
   team?: Team | "";
+  process?: string;
   hour?: HourFilter;
 }): Promise<WorkerDailyAnalytics[]> {
   const query = new URLSearchParams({
     startDate: params.startDate,
     endDate: params.endDate,
     team: params.team ?? "",
+    process: params.process ?? "",
     hour: params.hour ?? ""
   }).toString();
 

@@ -153,7 +153,10 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
       <div className="mb-6 border-b border-slate-200/80 pb-4 dark:border-slate-700/80">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Listeye personel ekle</h2>
         <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-          Aşağıdaki kutulardan ad, bölüm ve prosesi seçin; kayıtlar seçili güne eklenir.
+          Aşağıdaki kutulardan ad, bölüm ve prosesi seçin; kayıtlar seçili güne eklenir. O gün sahada olmayan için{" "}
+          <span className="font-medium text-slate-700 dark:text-slate-300">Bugün yok</span> — satır listede kalır, soluk
+          görünür; <span className="font-medium text-slate-700 dark:text-slate-300">Bugün var</span> ile normale döner.
+          Kalıcı çıkarma: <span className="font-medium text-slate-700 dark:text-slate-300">Sil</span>.
         </p>
       </div>
 

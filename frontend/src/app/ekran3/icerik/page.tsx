@@ -10,7 +10,7 @@ import {
   setAuthToken,
   type WorkerHourlyBreakdown,
 } from "@/lib/api";
-import { clampToWeekdayIso, formatIsoLocal, parseIsoLocal, todayWeekdayIso } from "@/lib/businessCalendar";
+import { todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import type { TopWorkerAnalytics } from "@/lib/types";
 
@@ -39,13 +39,10 @@ export default function Ekran3Page() {
   const [lastUpdated, setLastUpdated] = useState("");
   const firstFetchRef = useRef(true);
 
-  const { startDate, endDate } = (() => {
-    const end = todayWeekdayIso();
-    const endD = parseIsoLocal(end);
-    if (!endD) return { startDate: end, endDate: end };
-    const s = new Date(endD.getFullYear(), endD.getMonth(), endD.getDate() - 21);
-    return { startDate: clampToWeekdayIso(formatIsoLocal(s)), endDate: end };
-  })();
+  /** Vitrin: yalnızca seçili iş günü (bugün) verisi — toplamlar ve saatlik dağılım o güne ait. */
+  const displayDate = todayWeekdayIso();
+  const startDate = displayDate;
+  const endDate = displayDate;
 
   const fetchAll = useCallback(async () => {
     setError("");
@@ -186,7 +183,8 @@ export default function Ekran3Page() {
           <p className="mt-2 truncate text-xs text-slate-600 sm:text-sm">
             <span className="font-medium text-slate-800">4 vitrin kartı</span>
             <span className="mx-1.5 text-slate-300">·</span>
-            {startDate} — {endDate}
+            <span className="font-semibold text-teal-800">{displayDate}</span>
+            <span className="text-slate-500"> (o günün verisi)</span>
             {lastUpdated ? (
               <>
                 <span className="mx-1.5 text-slate-300">·</span>
@@ -239,6 +237,7 @@ export default function Ekran3Page() {
             rank={c.rank}
             teamLabel={c.teamLabel}
             hourly={c.hourly}
+            singleDayMode
           />
         ))}
       </div>

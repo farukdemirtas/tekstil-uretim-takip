@@ -1,4 +1,5 @@
 import type { WorkerHourlyBreakdown } from "@/lib/api";
+import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import type { TopWorkerAnalytics } from "@/lib/types";
 
 const SLOTS = [
@@ -13,11 +14,14 @@ export function Ekran3WorkerCard({
   rank,
   teamLabel,
   hourly,
+  singleDayMode = false,
 }: {
   worker: TopWorkerAnalytics | null;
   rank: number | null;
   teamLabel: string;
   hourly: WorkerHourlyBreakdown | null;
+  /** true: tek günlük vitrin — toplam = o günün üretimi; yan kutular saatlik özet. */
+  singleDayMode?: boolean;
 }) {
   if (!worker || rank == null) {
     return (
@@ -39,6 +43,7 @@ export function Ekran3WorkerCard({
   const avg = worker.activeDays > 0 ? Math.round(worker.totalProduction / worker.activeDays) : 0;
   const h = hourly ?? { t1000: 0, t1300: 0, t1600: 0, t1830: 0 };
   const maxH = Math.max(h.t1000, h.t1300, h.t1600, h.t1830, 1);
+  const singleAvgs = singleDayMode ? computeShiftHourAverages(h, worker.totalProduction) : null;
 
   const title = worker.name.toLocaleUpperCase("tr-TR");
   const meta = [teamLabel || worker.team, worker.process].filter(Boolean).join("  ·  ");
@@ -65,21 +70,53 @@ export function Ekran3WorkerCard({
       <div className="shrink-0 grid grid-cols-3 gap-2.5 px-3 pb-3 sm:gap-4 sm:px-4 sm:pb-5">
         <div className="flex min-h-[5.25rem] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-slate-100/70 to-white px-2 py-3 text-center shadow-sm sm:min-h-[5.75rem] sm:gap-2 sm:rounded-3xl sm:px-3 sm:py-4">
           <div className="w-full text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-600 sm:text-xs">
-            Toplam
+            {singleDayMode ? "Bugün toplam" : "Toplam"}
           </div>
           <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">{worker.totalProduction}</div>
         </div>
-        <div className="flex min-h-[5.25rem] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-sky-50/80 to-white px-2 py-3 text-center shadow-sm sm:min-h-[5.75rem] sm:gap-2 sm:rounded-3xl sm:px-3 sm:py-4">
-          <div className="w-full text-[10px] font-bold uppercase leading-snug tracking-wide text-slate-600 sm:text-xs">
-            Çalışılan gün
+        <div
+          className="flex min-h-[5.25rem] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-sky-50/80 to-white px-2 py-3 text-center shadow-sm sm:min-h-[5.75rem] sm:gap-2 sm:rounded-3xl sm:px-3 sm:py-4"
+          title={
+            singleDayMode
+              ? "08:00 ile son üretim girilen saat dilimi başlangıcı arasındaki süre; toplam bu süreye bölünür (ör. 10:00’da 100 adet → 2 saatte 50/saat)."
+              : undefined
+          }
+        >
+          <div className="w-full text-[8px] font-bold uppercase leading-snug tracking-wide text-slate-600 sm:text-[10px]">
+            {singleDayMode ? "Ortalama / saat" : "Çalışılan gün"}
           </div>
-          <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">{worker.activeDays}</div>
+          {singleDayMode && singleAvgs ? (
+            <div className="flex w-full min-w-0 flex-col items-center gap-0.5">
+              <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">
+                {singleAvgs.perHourInWindow}
+              </div>
+              <div className="line-clamp-2 px-0.5 text-[9px] font-medium leading-tight text-slate-500 sm:text-[10px]">
+                {singleAvgs.windowHint}
+              </div>
+            </div>
+          ) : (
+            <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">{worker.activeDays}</div>
+          )}
         </div>
-        <div className="flex min-h-[5.25rem] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-violet-50/70 to-white px-1.5 py-3 text-center shadow-sm sm:min-h-[5.75rem] sm:gap-2 sm:rounded-3xl sm:px-2.5 sm:py-4">
+        <div
+          className="flex min-h-[5.25rem] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-violet-50/70 to-white px-1.5 py-3 text-center shadow-sm sm:min-h-[5.75rem] sm:gap-2 sm:rounded-3xl sm:px-2.5 sm:py-4"
+          title={singleDayMode ? `Gün toplamı ÷ ${SHIFT_NOMINAL_HOURS} saat (ör. 900 ÷ 9 = 100).` : undefined}
+        >
           <div className="w-full text-[8px] font-bold uppercase leading-snug tracking-[0.05em] text-slate-600 sm:text-[10px] sm:leading-tight">
-            GÜNLÜK ORTALAMA
+            {singleDayMode ? "Günlük ortalama" : "GÜNLÜK ORTALAMA"}
           </div>
-          <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">{avg}</div>
+          {singleDayMode && singleAvgs ? (
+            <div className="flex w-full min-w-0 flex-col items-center gap-0.5">
+              <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">
+                {singleAvgs.perHourEightHourDay}
+              </div>
+              <div className="text-[9px] font-semibold tabular-nums text-slate-500 sm:text-[10px]">
+                {SHIFT_NOMINAL_HOURS} saat üzerinden
+              </div>
+            </div>
+          ) : (
+            <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">{avg}</div>
+          )}
         </div>
       </div>
 

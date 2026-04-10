@@ -8,15 +8,34 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Üretimde veritabanını repodan ayırın; güncelleme/clone sonrası kullanıcılar sıfırlanmasın.
- * Örnek (PM2 env): SQLITE_DATABASE_PATH=/var/lib/tekstil-uretim/production.db
- * veya: TEKSTIL_DATA_DIR=/var/lib/tekstil-uretim  → .../production.db
+ * Üretimde veritabanını repodan ayırın; git pull / yeniden deploy sonrası kullanıcılar, loglar,
+ * günlük ürün meta (daily_product_meta) aynı dosyada kalsın.
+ *
+ * Öncelik: SQLITE_DATABASE_PATH → TEKSTIL_DATA_DIR → (üretimde) /var/lib/tekstil-uretim/production.db
+ *   yalnızca bu dosya zaten varsa → aksi halde backend/data/production.db
+ *
+ * İlk kez kalıcı dizine geçerken: dosyayı elle kopyalayın, sonra yeniden başlatın.
  */
+const PRODUCTION_PERSISTENT_DB = path.join("/var/lib/tekstil-uretim", "production.db");
+
 function resolveDbPath() {
   const explicit = process.env.SQLITE_DATABASE_PATH?.trim();
   if (explicit) return path.resolve(explicit);
   const extDir = process.env.TEKSTIL_DATA_DIR?.trim();
   if (extDir) return path.join(path.resolve(extDir), "production.db");
+
+  if (process.env.NODE_ENV === "production") {
+    try {
+      if (fs.existsSync(PRODUCTION_PERSISTENT_DB)) {
+        const dir = path.dirname(PRODUCTION_PERSISTENT_DB);
+        fs.accessSync(dir, fs.constants.W_OK);
+        return PRODUCTION_PERSISTENT_DB;
+      }
+    } catch {
+      /* klasik yol */
+    }
+  }
+
   return path.join(path.resolve(__dirname, "../data"), "production.db");
 }
 
@@ -40,6 +59,8 @@ const db = new sqlite3.Database(
       console.error("SQLite açılamadı:", dbPath, err.message);
       process.exit(1);
     }
+    // eslint-disable-next-line no-console
+    console.log("[tekstil-db] SQLite:", dbPath);
   }
 );
 
@@ -77,10 +98,14 @@ export function initDb() {
         }
 
         const schemaSql = String(row?.sql || "");
+        /* Yalnızca eski sabit CHECK(team IN (...)) şeması: dinamik bölüm kodları (teams) için CHECK yoksa bu migrasyonu atla. */
+        const hasLegacyTeamCheck =
+          schemaSql.includes("CHECK(team") && schemaSql.includes("SAG_ON");
         const needsTeamMigration =
-          !schemaSql.includes("ARKA_HAZIRLIK") ||
-          !schemaSql.includes("BITIM") ||
-          !schemaSql.includes("ADET");
+          hasLegacyTeamCheck &&
+          (!schemaSql.includes("ARKA_HAZIRLIK") ||
+            !schemaSql.includes("BITIM") ||
+            !schemaSql.includes("ADET"));
 
         const hasDeletedAt  = schemaSql.includes("deleted_at");
         const hasCreatedAt  = schemaSql.includes("created_at");

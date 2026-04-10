@@ -12,20 +12,50 @@ if [[ ! -f frontend/.env.production ]]; then
 fi
 
 TS="$(date +%Y%m%d-%H%M%S)"
-echo "==> Veritabanı yedeği (git pull öncesi — kullanıcı verisi korunur)"
-if [[ -f backend/data/production.db ]]; then
-  cp -a backend/data/production.db "backend/data/production.db.bak.${TS}"
-  echo "    → backend/data/production.db.bak.${TS}"
+
+backup_db_file() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  cp -a "$f" "${f}.bak.${TS}"
+  echo "    → yedek: ${f}.bak.${TS}"
+}
+
+restore_db_if_missing() {
+  local target="$1"
+  [[ -f "$target" ]] && return 0
+  local dir pattern latest
+  dir="$(dirname "$target")"
+  pattern="${target}.bak.*"
+  shopt -s nullglob
+  local backups=( $pattern )
+  shopt -u nullglob
+  [[ ${#backups[@]} -eq 0 ]] && return 0
+  latest="$(printf '%s\n' "${backups[@]}" | sort -r | head -1)"
+  echo "UYARI: $(basename "$target") yoktu; son yedek geri yükleniyor: $latest"
+  mkdir -p "$dir"
+  cp -a "$latest" "$target"
+}
+
+echo "==> Veritabanı yedeği (git pull öncesi — kullanıcılar, loglar, çalışılacak ürün aynı .db içinde)"
+backup_db_file "$ROOT/backend/data/production.db"
+backup_db_file "/var/lib/tekstil-uretim/production.db"
+if [[ -f "$ROOT/backend/.env" ]]; then
+  _sqlite="$(grep -E '^[[:space:]]*SQLITE_DATABASE_PATH=' "$ROOT/backend/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//')"
+  _datadir="$(grep -E '^[[:space:]]*TEKSTIL_DATA_DIR=' "$ROOT/backend/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//')"
+  [[ -n "${_sqlite// }" ]] && backup_db_file "$_sqlite"
+  [[ -n "${_datadir// }" ]] && backup_db_file "${_datadir%/}/production.db"
 fi
 
 echo "==> git pull"
 git pull
 
-if [[ ! -f backend/data/production.db ]] && compgen -G "backend/data/production.db.bak.*" >/dev/null; then
-  LATEST="$(ls -t backend/data/production.db.bak.* 2>/dev/null | head -1)"
-  echo "UYARI: production.db yoktu; son yedek geri yükleniyor: $LATEST"
-  mkdir -p backend/data
-  cp -a "$LATEST" backend/data/production.db
+restore_db_if_missing "$ROOT/backend/data/production.db"
+restore_db_if_missing "/var/lib/tekstil-uretim/production.db"
+if [[ -f "$ROOT/backend/.env" ]]; then
+  _sqlite="$(grep -E '^[[:space:]]*SQLITE_DATABASE_PATH=' "$ROOT/backend/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//')"
+  _datadir="$(grep -E '^[[:space:]]*TEKSTIL_DATA_DIR=' "$ROOT/backend/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//')"
+  [[ -n "${_sqlite// }" ]] && restore_db_if_missing "$_sqlite"
+  [[ -n "${_datadir// }" ]] && restore_db_if_missing "${_datadir%/}/production.db"
 fi
 
 echo "==> npm + frontend build (Next.js .next yenilenir)"

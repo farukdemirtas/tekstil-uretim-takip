@@ -6,8 +6,14 @@ import { ProductionRow } from "@/lib/types";
 
 type ProductionTableProps = {
   rows: ProductionRow[];
+  /** Seçili takvim günü (ipucu / tutarlılık) */
+  selectedDate: string;
   onCellChange: (workerId: number, field: "t1000" | "t1300" | "t1600" | "t1830", value: number) => void;
   onDeleteWorker: (workerId: number, workerName: string) => void;
+  /** Bu gün sahada yok (satır soluk, hücreler kilitli) */
+  onHideWorkerForDay?: (workerId: number, workerName: string) => void;
+  /** Sahada yok işaretini kaldır */
+  onUnhideWorkerForDay?: (workerId: number, workerName: string) => void;
   onEditWorker: (workerId: number, process: string) => Promise<void>;
   canDeleteWorkers?: boolean;
 };
@@ -85,8 +91,11 @@ function ProcessSelectEditor({
 
 export default function ProductionTable({
   rows,
+  selectedDate,
   onCellChange,
   onDeleteWorker,
+  onHideWorkerForDay,
+  onUnhideWorkerForDay,
   onEditWorker,
   canDeleteWorkers,
 }: ProductionTableProps) {
@@ -114,6 +123,7 @@ export default function ProductionTable({
   const canDelete = Boolean(canDeleteWorkers);
 
   function startEdit(row: ProductionRow) {
+    if (row.absentForDay) return;
     setEditingId(row.workerId);
     setEditingProcess(row.process);
   }
@@ -187,14 +197,26 @@ export default function ProductionTable({
                 {teamRows.map((row, index) => {
                   const total = row.t1000 + row.t1300 + row.t1600 + row.t1830;
                   const isEditing = editingId === row.workerId;
+                  const absent = Boolean(row.absentForDay);
                   return (
                     <tr
                       key={`${team}-${row.workerId}-${index}`}
-                      className="border-b border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-600"
+                      className={`border-b border-slate-200 dark:border-slate-700 ${
+                        absent
+                          ? "bg-slate-100/80 text-slate-500 opacity-[0.72] dark:bg-slate-800/50 dark:text-slate-400"
+                          : "hover:bg-slate-50 dark:hover:bg-slate-600"
+                      }`}
                     >
                       <td className="px-3 py-2 text-center">{startNo + index}</td>
                       <td className="px-3 py-2">
-                        <span className="font-medium text-slate-900 dark:text-slate-100">{row.name}</span>
+                        <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
+                          {row.name}
+                        </span>
+                        {absent ? (
+                          <span className="ml-2 inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                            Sahada yok
+                          </span>
+                        ) : null}
                       </td>
                       <td className="min-w-[10rem] px-3 py-2">
                         {isEditing ? (
@@ -213,13 +235,20 @@ export default function ProductionTable({
                           <input
                             type="number"
                             min={0}
+                            disabled={absent}
+                            aria-disabled={absent}
+                            title={absent ? "Sahada yok — önce Bugün var ile açın" : undefined}
                             value={cellInputValue(row[key])}
                             onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
-                            className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-right outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-300"
+                            className={`w-20 rounded border px-2 py-1 text-right outline-none dark:text-slate-100 ${
+                              absent
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500"
+                                : "border-slate-300 bg-white focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:focus:border-blue-300"
+                            }`}
                           />
                         </td>
                       ))}
-                      <td className="px-3 py-2 text-right font-semibold">{total}</td>
+                      <td className={`px-3 py-2 text-right font-semibold ${absent ? "text-slate-500 dark:text-slate-400" : ""}`}>{total}</td>
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center justify-center gap-1">
                           {isEditing ? (
@@ -238,16 +267,42 @@ export default function ProductionTable({
                           ) : (
                             <>
                               <button
+                                type="button"
+                                disabled={absent}
                                 onClick={() => startEdit(row)}
-                                className="rounded-lg border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-950/35"
+                                className="rounded-lg border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-950/35"
                               >
                                 Düzenle
                               </button>
+                              {absent && onUnhideWorkerForDay ? (
+                                <button
+                                  type="button"
+                                  title={`${selectedDate}: sahada yok işaretini kaldır`}
+                                  onClick={() => onUnhideWorkerForDay(row.workerId, row.name)}
+                                  className="rounded border border-teal-400 px-2 py-1 text-xs font-medium text-teal-800 hover:bg-teal-50 dark:border-teal-600 dark:text-teal-200 dark:hover:bg-teal-950/40"
+                                >
+                                  Bugün var
+                                </button>
+                              ) : null}
+                              {!absent && onHideWorkerForDay ? (
+                                <button
+                                  type="button"
+                                  title={`${selectedDate}: sahada yok (satır soluk kalır, hücreler kilitlenir)`}
+                                  onClick={() => onHideWorkerForDay(row.workerId, row.name)}
+                                  className="rounded border border-amber-300/90 px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 dark:border-amber-700/70 dark:text-amber-200 dark:hover:bg-amber-950/40"
+                                >
+                                  Bugün yok
+                                </button>
+                              ) : null}
                               {canDelete ? (
                                 <button
+                                  type="button"
+                                  title="Seçili tarih ve sonrasında sil (pasif)"
                                   onClick={() => onDeleteWorker(row.workerId, row.name)}
                                   className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-700/60 dark:text-red-200 dark:hover:bg-red-900/20"
-                                >Sil</button>
+                                >
+                                  Sil
+                                </button>
                               ) : (
                                 <span className="text-xs text-slate-400 dark:text-slate-500">-</span>
                               )}
@@ -274,16 +329,24 @@ export default function ProductionTable({
             {teamRows.map((row, index) => {
               const total = row.t1000 + row.t1300 + row.t1600 + row.t1830;
               const isEditing = editingId === row.workerId;
+              const absent = Boolean(row.absentForDay);
 
               return (
                 <div
                   key={`${team}-${row.workerId}-${index}`}
-                  className="p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60"
+                  className={`p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60 ${
+                    absent ? "!bg-slate-100/90 opacity-[0.78] dark:!bg-slate-900/70" : ""
+                  }`}
                 >
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <span className="mr-1.5 text-xs text-slate-400">{startNo + index}.</span>
-                      <span className="font-medium">{row.name}</span>
+                      <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : ""}`}>{row.name}</span>
+                      {absent ? (
+                        <span className="ml-2 inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                          Sahada yok
+                        </span>
+                      ) : null}
                       {isEditing ? (
                         <div className="mt-2">
                           <ProcessSelectEditor
@@ -311,9 +374,14 @@ export default function ProductionTable({
                           type="number"
                           inputMode="numeric"
                           min={0}
+                          disabled={absent}
                           value={cellInputValue(row[key])}
                           onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
-                          className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none focus:text-blue-600 dark:focus:text-blue-300"
+                          className={`min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none ${
+                            absent
+                              ? "cursor-not-allowed text-slate-400 dark:text-slate-500"
+                              : "focus:text-blue-600 dark:focus:text-blue-300"
+                          }`}
                         />
                       </div>
                     ))}
@@ -336,16 +404,40 @@ export default function ProductionTable({
                     ) : (
                       <>
                         <button
+                          type="button"
+                          disabled={absent}
                           onClick={() => startEdit(row)}
-                          className="flex-1 rounded-lg border border-blue-300 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-950/35"
+                          className="flex-1 rounded-lg border border-blue-300 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-40 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-950/35"
                         >
                           Düzenle
                         </button>
+                        {absent && onUnhideWorkerForDay && (
+                          <button
+                            type="button"
+                            onClick={() => onUnhideWorkerForDay(row.workerId, row.name)}
+                            className="flex-1 rounded-lg border border-teal-400 py-2 text-sm font-medium text-teal-800 hover:bg-teal-50 dark:border-teal-600 dark:text-teal-200 dark:hover:bg-teal-950/40"
+                          >
+                            Bugün var
+                          </button>
+                        )}
+                        {!absent && onHideWorkerForDay && (
+                          <button
+                            type="button"
+                            title={`${selectedDate}: sahada yok (satır soluk)`}
+                            onClick={() => onHideWorkerForDay(row.workerId, row.name)}
+                            className="flex-1 rounded-lg border border-amber-300 py-2 text-sm font-medium text-amber-900 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-950/40"
+                          >
+                            Bugün yok
+                          </button>
+                        )}
                         {canDelete && (
                           <button
+                            type="button"
                             onClick={() => onDeleteWorker(row.workerId, row.name)}
                             className="flex-1 rounded-lg border border-red-300 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-700/60 dark:text-red-200 dark:hover:bg-red-900/20"
-                          >Sil</button>
+                          >
+                            Sil
+                          </button>
                         )}
                       </>
                     )}

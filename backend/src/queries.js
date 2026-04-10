@@ -172,6 +172,52 @@ export function deleteAllWorkersForVisibleDay(date) {
   });
 }
 
+/** Tek çalışan: yalnızca o gün listede gösterme (sahada yok). */
+export function hideWorkerForSingleCalendarDay(workerId, date) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT OR IGNORE INTO worker_roster_day_hide (worker_id, hide_date) VALUES (?, ?)`,
+      [workerId, date],
+      function onRun(err) {
+        if (err) return reject(err);
+        resolve({ hidden: this.changes > 0 });
+      }
+    );
+  });
+}
+
+/** O gün için roster gizlemesi olan çalışanlar (geri alma listesi). */
+export function listWorkersHiddenForCalendarDay(date) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT w.id AS workerId, w.name AS name
+       FROM worker_roster_day_hide h
+       JOIN workers w ON w.id = h.worker_id
+       WHERE h.hide_date = ?
+       ORDER BY w.name`,
+      [date],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      }
+    );
+  });
+}
+
+/** Tek çalışan: o gün için gizlemeyi kaldır (yeniden listele). */
+export function unhideWorkerForSingleCalendarDay(workerId, date) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `DELETE FROM worker_roster_day_hide WHERE worker_id = ? AND hide_date = ?`,
+      [workerId, date],
+      function onRun(err) {
+        if (err) return reject(err);
+        resolve({ removed: this.changes > 0 });
+      }
+    );
+  });
+}
+
 /** Yalnızca o takvim günü ana listede gösterme; ertesi günlerde yine listelenir. */
 export function hideAllVisibleWorkersForSingleCalendarDay(date) {
   return new Promise((resolve, reject) => {
@@ -205,17 +251,17 @@ export function getDailyEntries(date) {
         COALESCE(p.t1000, 0) AS t1000,
         COALESCE(p.t1300, 0) AS t1300,
         COALESCE(p.t1600, 0) AS t1600,
-        COALESCE(p.t1830, 0) AS t1830
+        COALESCE(p.t1830, 0) AS t1830,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM worker_roster_day_hide h
+          WHERE h.worker_id = w.id AND h.hide_date = ?
+        ) THEN 1 ELSE 0 END AS absentForDay
       FROM workers w
       LEFT JOIN production_entries p
         ON p.worker_id = w.id
         AND p.production_date = ?
       WHERE (w.created_at IS NULL OR w.created_at <= ?)
         AND (w.deleted_at IS NULL OR w.deleted_at > ?)
-        AND NOT EXISTS (
-          SELECT 1 FROM worker_roster_day_hide h
-          WHERE h.worker_id = w.id AND h.hide_date = ?
-        )
       ORDER BY w.team, w.process, w.name
       `,
       [date, date, date, date],
@@ -259,6 +305,26 @@ export function upsertDayProductMeta({ date, productName, productModel }) {
       (err) => {
         if (err) return reject(err);
         resolve({ productName: name, productModel: model });
+      }
+    );
+  });
+}
+
+/** Tek satır — aktivite logunda tekrarı önlemek için önceki değerlerle karşılaştırma. */
+export function getProductionEntrySlots(workerId, date) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT t1000, t1300, t1600, t1830 FROM production_entries WHERE worker_id = ? AND production_date = ?`,
+      [workerId, date],
+      (err, row) => {
+        if (err) return reject(err);
+        if (!row) return resolve(null);
+        resolve({
+          t1000: Number(row.t1000) || 0,
+          t1300: Number(row.t1300) || 0,
+          t1600: Number(row.t1600) || 0,
+          t1830: Number(row.t1830) || 0,
+        });
       }
     );
   });
@@ -335,7 +401,7 @@ function getHourExpression(hourColumn = "") {
   return "COALESCE(p.t1000, 0) + COALESCE(p.t1300, 0) + COALESCE(p.t1600, 0) + COALESCE(p.t1830, 0)";
 }
 
-export function getTopWorkersAnalytics({ startDate, endDate, team = "", limit = 20, hourColumn = "" }) {
+export function getTopWorkersAnalytics({ startDate, endDate, team = "", process = "", limit = 20, hourColumn = "" }) {
   const productionExpr = getHourExpression(hourColumn);
   return new Promise((resolve, reject) => {
     db.all(
@@ -351,13 +417,14 @@ export function getTopWorkersAnalytics({ startDate, endDate, team = "", limit = 
       JOIN production_entries p ON p.worker_id = w.id
       WHERE p.production_date BETWEEN ? AND ?
         AND (? = '' OR w.team = ?)
+        AND (? = '' OR w.process = ?)
         AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
       GROUP BY w.id, w.name, w.team, w.process
       ORDER BY totalProduction DESC, w.name ASC
       LIMIT ?
       `,
-      [startDate, endDate, team, team, limit],
+      [startDate, endDate, team, team, process, process, limit],
       (err, rows) => {
         if (err) return reject(err);
         resolve(
@@ -372,7 +439,7 @@ export function getTopWorkersAnalytics({ startDate, endDate, team = "", limit = 
   });
 }
 
-export function getDailyTrendAnalytics({ startDate, endDate, team = "", hourColumn = "" }) {
+export function getDailyTrendAnalytics({ startDate, endDate, team = "", process = "", hourColumn = "" }) {
   const productionExpr = getHourExpression(hourColumn);
   return new Promise((resolve, reject) => {
     db.all(
@@ -384,12 +451,13 @@ export function getDailyTrendAnalytics({ startDate, endDate, team = "", hourColu
       JOIN workers w ON w.id = p.worker_id
       WHERE p.production_date BETWEEN ? AND ?
         AND (? = '' OR w.team = ?)
+        AND (? = '' OR w.process = ?)
         AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
       GROUP BY p.production_date
       ORDER BY p.production_date ASC
       `,
-      [startDate, endDate, team, team],
+      [startDate, endDate, team, team, process, process],
       (err, rows) => {
         if (err) return reject(err);
         resolve(
@@ -403,7 +471,7 @@ export function getDailyTrendAnalytics({ startDate, endDate, team = "", hourColu
   });
 }
 
-export function getWorkerDailyAnalytics({ startDate, endDate, team = "", hourColumn = "" }) {
+export function getWorkerDailyAnalytics({ startDate, endDate, team = "", process = "", hourColumn = "" }) {
   const productionExpr = getHourExpression(hourColumn);
   return new Promise((resolve, reject) => {
     db.all(
@@ -419,11 +487,12 @@ export function getWorkerDailyAnalytics({ startDate, endDate, team = "", hourCol
       JOIN workers w ON w.id = p.worker_id
       WHERE p.production_date BETWEEN ? AND ?
         AND (? = '' OR w.team = ?)
+        AND (? = '' OR w.process = ?)
         AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
       ORDER BY p.production_date ASC, production DESC, w.name ASC
       `,
-      [startDate, endDate, team, team],
+      [startDate, endDate, team, team, process, process],
       (err, rows) => {
         if (err) return reject(err);
         resolve(
@@ -492,7 +561,7 @@ export function getHedefTakipStageTotals(startDate, endDate) {
         COALESCE(SUM(CASE WHEN pr.hedef_metric = 'BITIM' AND w.team = pr.hedef_team THEN ${mult} * (${line}) ELSE 0 END), 0) AS bitim
       FROM production_entries p
       JOIN workers w ON w.id = p.worker_id
-      LEFT JOIN processes pr ON pr.name = w.process
+      LEFT JOIN processes pr ON TRIM(COALESCE(pr.name, '')) = TRIM(COALESCE(w.process, ''))
       WHERE p.production_date BETWEEN ? AND ?
         AND (w.created_at IS NULL OR w.created_at <= p.production_date)
         AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
@@ -588,6 +657,48 @@ export function getWorkerComparisonData({ worker1Id, worker2Id, startDate, endDa
               daily: [...dateMap.values()],
             });
           }
+        );
+      }
+    );
+  });
+}
+
+/** Kişi bazlı analiz: her iş günü için dört saat dilimi + meta (aynı satırda tekrarlanır). */
+export function getWorkerProductionDailyDetail({ workerId, startDate, endDate }) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `
+      SELECT
+        p.production_date AS productionDate,
+        w.name AS name,
+        w.team AS team,
+        w.process AS process,
+        COALESCE(p.t1000, 0) AS t1000,
+        COALESCE(p.t1300, 0) AS t1300,
+        COALESCE(p.t1600, 0) AS t1600,
+        COALESCE(p.t1830, 0) AS t1830
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.worker_id = ?
+        AND p.production_date BETWEEN ? AND ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      ORDER BY p.production_date ASC
+      `,
+      [workerId, startDate, endDate],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(
+          (rows || []).map((row) => ({
+            productionDate: String(row.productionDate),
+            name: String(row.name || ""),
+            team: String(row.team || ""),
+            process: String(row.process || ""),
+            t1000: Number(row.t1000) || 0,
+            t1300: Number(row.t1300) || 0,
+            t1600: Number(row.t1600) || 0,
+            t1830: Number(row.t1830) || 0,
+          }))
         );
       }
     );
