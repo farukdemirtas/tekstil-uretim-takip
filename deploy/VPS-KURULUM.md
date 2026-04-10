@@ -98,4 +98,32 @@ sudo certbot --nginx -d takip.yesilimajtekstil.com
 - `curl -s http://127.0.0.1:4000/api/health`
 - Tarayıcı: **https://takip.yesilimajtekstil.com**
 
-Veritabanı: `backend/data/production.db`
+## Veritabanı ve güncelleme (kullanıcıların silinmemesi)
+
+Tek SQLite dosyasında tutulur: **kullanıcılar**, **activity_logs**, **çalışılacak ürün** (`daily_product_meta`), üretim ve personel verisi. Uygulama bu tabloları güncellemede silmez; veri kaybı genelde **yanlış veya yeni boş .db dosyasına** bağlanmaktan olur.
+
+Varsayılan geliştirme: `backend/data/production.db`.
+
+**Üretim (`NODE_ENV=production`):**
+
+1. Açık ortam değişkeni yoksa ve `/var/lib/tekstil-uretim/production.db` **dosyası varsa**, backend otomatik bu dosyayı kullanır (repodan bağımsız).
+2. Yoksa `backend/data/production.db` kullanılır (`git pull` tek başına bu dosyayı silmez; `git clean -fdx` veya klasörü silmek risklidir).
+
+**Önerilen:** Kalıcı dizini bir kez oluşturup mevcut veritabanını kopyalayın:
+
+```bash
+sudo mkdir -p /var/lib/tekstil-uretim
+sudo chown "$USER":"$USER" /var/lib/tekstil-uretim
+cp -a /var/www/tekstil-uretim-takip/backend/data/production.db /var/lib/tekstil-uretim/production.db
+```
+
+İsterseniz `ecosystem.config.cjs` (`tekstil-api`) veya `backend/.env` ile sabitleyin:
+
+- `SQLITE_DATABASE_PATH=/var/lib/tekstil-uretim/production.db`  
+  **veya** `TEKSTIL_DATA_DIR=/var/lib/tekstil-uretim`
+
+Sonra: `pm2 restart tekstil-api --update-env`.
+
+PM2 loglarında açılışta `[tekstil-db] SQLite: ...` satırı hangi dosyanın kullanıldığını gösterir.
+
+`deploy/sunucu-guncelle.sh` git pull öncesi **bulabildiği tüm** olası `production.db` konumlarını zaman damgalı `.bak` ile yedekler; pull sonrası dosya kaybolmuşsa son yedeği geri yüklemeyi dener (`backend/.env` içindeki `SQLITE_DATABASE_PATH` / `TEKSTIL_DATA_DIR` dahil).

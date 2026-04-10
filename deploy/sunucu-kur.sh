@@ -15,6 +15,13 @@ fi
 echo "==> backend/data"
 mkdir -p backend/data
 
+echo ""
+echo "Kalıcı veritabanı (güncellemede kullanıcılar / loglar / çalışılacak ürün silinmesin):"
+echo "  sudo mkdir -p /var/lib/tekstil-uretim && sudo chown \$(whoami):\$(whoami) /var/lib/tekstil-uretim"
+echo "  cp -a backend/data/production.db /var/lib/tekstil-uretim/production.db   # varsa taşıyın; sonra pm2 restart"
+echo "  veya backend/.env içinde TEKSTIL_DATA_DIR=/var/lib/tekstil-uretim"
+echo ""
+
 echo "==> npm bağımlılıkları + frontend build"
 npm run prod:prepare
 

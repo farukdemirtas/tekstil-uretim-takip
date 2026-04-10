@@ -3,5 +3,9 @@ node_modules
 **/.next
 backend/data/*.db
 backend/data/*.sqlite
+# SQLite geçici dosyaları (asla commit edilmemeli)
+*.db-journal
+*.db-wal
+*.db-shm
 *.log
 frontend/.env.production

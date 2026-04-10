@@ -14,6 +14,8 @@ function emptyDraft(): AppPermissions {
     ekran1: false,
     ekran2: false,
     ekran3: false,
+    loglar: false,
+    topluListeKaldir: false,
   };
 }
 
@@ -36,7 +38,7 @@ export default function UsersSettingsSection() {
       const draft: Record<number, AppPermissions> = {};
       for (const u of result) {
         if (u.role === "data_entry" && u.permissions) {
-          draft[u.id] = { ...u.permissions };
+          draft[u.id] = { ...emptyDraft(), ...u.permissions };
         }
       }
       setPermDraft(draft);

@@ -21,9 +21,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 4000,
-        // SQLite tek dosya: mutlak yol verin (restart’ta yanlış klasör riski olmasın).
-        // TEKSTIL_DB_PATH: path.join(root, "backend", "data", "production.db"),
-        // veya sadece klasör: TEKSTIL_DATA_DIR: path.join(root, "backend", "data"),
+        // Depo kökü (__dirname) üzerinden sabit yol; örn. sunucu: /var/www/uretim-takip/...
+        TEKSTIL_DB_PATH: path.join(root, "backend", "data", "production.db"),
         // APP_USERNAME: "admin",
         // APP_PASSWORD: "güçlü-bir-şifre",
         // APP_TOKEN_SECRET: "en-az-32-karakter-rastgele"

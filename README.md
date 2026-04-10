@@ -110,7 +110,7 @@ npm run dev:frontend
 - Veri girisleri hucre degistikce kaydedilir.
 - Toplu veri girisinde format: `Ad Soyad[TAB]10:00[TAB]13:00[TAB]16:00[TAB]18:30`
 - `production_entries` tablosunda `worker_id + production_date` benzersizdir.
-- SQLite dosyasi: `backend/data/production.db`
+- SQLite dosyasi: `backend/data/production.db` (gelistirme). Uretimde kalici yol icin `backend/.env.example` ve `deploy/VPS-KURULUM.md` bakin; kullanicilar, loglar ve gunluk urun meta ayni .db dosyasindadir.
 
 Isterseniz backend icin ortam degiskenleri tanimlayarak degistirebilirsiniz:
 

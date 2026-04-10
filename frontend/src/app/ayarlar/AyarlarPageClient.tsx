@@ -3,18 +3,22 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import LogsSection from "@/components/settings/LogsSection";
 import PersonnelNamesSection from "@/components/settings/PersonnelNamesSection";
+import ProductModelsSection from "@/components/settings/ProductModelsSection";
 import TeamsProcessesSection from "@/components/settings/TeamsProcessesSection";
 import UsersSettingsSection from "@/components/settings/UsersSettingsSection";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "kullanici" | "personel" | "proses";
+type TabId = "kullanici" | "personel" | "proses" | "modeller" | "loglar";
 
 export default function AyarlarPageClient() {
   const searchParams = useSearchParams();
   const [ready, setReady] = useState(false);
   const [admin, setAdmin] = useState(false);
+  const [canAyarlar, setCanAyarlar] = useState(false);
+  const [canLoglar, setCanLoglar] = useState(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -23,26 +27,34 @@ export default function AyarlarPageClient() {
       return;
     }
     setAuthToken(token);
-    const allowed = isAdminRole() || hasPermission("ayarlar");
-    if (!allowed) {
+    const isAdmin = isAdminRole();
+    const aya = isAdmin || hasPermission("ayarlar");
+    const log = isAdmin || hasPermission("loglar");
+    if (!aya && !log) {
       window.location.href = "/";
       return;
     }
-    setAdmin(isAdminRole());
+    setAdmin(isAdmin);
+    setCanAyarlar(aya);
+    setCanLoglar(log);
     setReady(true);
   }, []);
 
   const activeTab = useMemo((): TabId => {
     const raw = searchParams.get("tab");
-    if (raw === "proses") return "proses";
-    if (raw === "personel") return "personel";
+    if (raw === "loglar" && canLoglar) return "loglar";
+    if (raw === "modeller" && canAyarlar) return "modeller";
+    if (raw === "proses" && canAyarlar) return "proses";
+    if (raw === "personel" && canAyarlar) return "personel";
     if (raw === "kullanici" && admin) return "kullanici";
+    if (canAyarlar) return "personel";
+    if (canLoglar) return "loglar";
     return "personel";
-  }, [searchParams, admin]);
+  }, [searchParams, admin, canAyarlar, canLoglar]);
 
   if (!ready) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-5xl items-center justify-center p-4">
+      <main className="mx-auto flex min-h-screen max-w-6xl items-center justify-center p-4">
         <p className="text-sm text-slate-500">Yükleniyor…</p>
       </main>
     );
@@ -50,12 +62,18 @@ export default function AyarlarPageClient() {
 
   const tabs: { id: TabId; label: string }[] = [
     ...(admin ? [{ id: "kullanici" as const, label: "Kullanıcı" }] : []),
-    { id: "personel", label: "Personel" },
-    { id: "proses", label: "Proses ve bölüm" },
+    ...(canAyarlar
+      ? ([
+          { id: "personel" as const, label: "Personel" },
+          { id: "proses" as const, label: "Proses ve bölüm" },
+          { id: "modeller" as const, label: "Ürün modelleri" },
+        ] as const)
+      : []),
+    ...(canLoglar ? [{ id: "loglar" as const, label: "Loglar" }] : []),
   ];
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-5 p-4 md:p-8">
+    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-5 p-4 md:p-8">
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -93,8 +111,10 @@ export default function AyarlarPageClient() {
       </section>
 
       {activeTab === "kullanici" && admin && <UsersSettingsSection />}
-      {activeTab === "personel" && <PersonnelNamesSection />}
-      {activeTab === "proses" && <TeamsProcessesSection />}
+      {activeTab === "personel" && canAyarlar && <PersonnelNamesSection />}
+      {activeTab === "proses" && canAyarlar && <TeamsProcessesSection />}
+      {activeTab === "modeller" && canAyarlar && <ProductModelsSection />}
+      {activeTab === "loglar" && canLoglar && <LogsSection />}
     </main>
   );
 }

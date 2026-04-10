@@ -1,4 +1,15 @@
-import { AppPermissions, DailyTrendPoint, HourFilter, ProductionRow, Team, TopWorkerAnalytics, User, Worker, WorkerDailyAnalytics } from "./types";
+import {
+  AppPermissions,
+  DailyTrendPoint,
+  HourFilter,
+  ProductionRow,
+  Team,
+  TopWorkerAnalytics,
+  User,
+  Worker,
+  WorkerDailyAnalytics,
+  WorkerProductionDayDetail,
+} from "./types";
 import { clearStoredPermissions } from "./permissions";
 
 /**
@@ -97,6 +108,16 @@ export async function deleteWorkerName(id: number): Promise<void> {
 export async function getWorkers(): Promise<Worker[]> {
   const response = await apiFetch(`${apiBase()}/workers`, { cache: "no-store", headers: authHeaders() });
   if (!response.ok) throw new Error("Çalışanlar alınamadı");
+  return response.json();
+}
+
+/** Analiz sayfaları: aktif personel + üretim kaydı olan pasif kayıtlar (x-auth-token gerekir) */
+export async function getWorkersForAnalytics(): Promise<Worker[]> {
+  const response = await apiFetch(`${apiBase()}/workers/for-analysis`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Çalışan listesi alınamadı");
   return response.json();
 }
 
@@ -204,13 +225,148 @@ export async function removeWorker(workerId: number, date: string): Promise<void
   if (!response.ok) throw new Error("Çalışan silinemedi");
 }
 
+/** Seçili günde yalnızca listeden gizlenenler (sahada yok). */
+export async function getRosterHiddenForDay(date: string): Promise<Array<{ workerId: number; name: string }>> {
+  const q = new URLSearchParams({ date }).toString();
+  const response = await apiFetch(`${apiBase()}/workers/roster-hidden?${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Gizli personel listesi alınamadı");
+  const raw = (await response.json()) as unknown;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row) => {
+      const o = row as Record<string, unknown>;
+      const workerId = Number(o.workerId ?? o.worker_id);
+      const name = o.name != null ? String(o.name) : "";
+      if (!Number.isFinite(workerId) || workerId <= 0) return null;
+      return { workerId, name };
+    })
+    .filter((x): x is { workerId: number; name: string } => x != null);
+}
+
+/** Yalnızca bu takvim günü için listede gösterme (üretim kaydı silinmez). */
+export async function hideWorkerForCalendarDay(workerId: number, date: string): Promise<void> {
+  const response = await apiFetch(`${apiBase()}/workers/${workerId}/hide-for-day`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ date }),
+  });
+  if (!response.ok) throw new Error("Bu gün için gizlenemedi");
+}
+
+export async function unhideWorkerForCalendarDay(workerId: number, date: string): Promise<void> {
+  const q = new URLSearchParams({ date }).toString();
+  const response = await apiFetch(`${apiBase()}/workers/${workerId}/hide-for-day?${q}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Listeye geri alınamadı");
+}
+
+/** Toplu listeden kaldır: `only_day` = yalnızca o tarih; `from_day` = o tarih ve sonrası (soft delete). */
+/** Yalnızca admin: seçili gündeki listeyi bitiş tarihine kadar hafta içi günlere aktarır (kaynak günün üretim rakamları + sahada yok kaldır). */
+export async function copyRosterToFutureDates(
+  sourceDate: string,
+  endDate: string
+): Promise<{
+  workers: number;
+  weekdayCount: number;
+  entriesTouched: number;
+  hidesCleared: number;
+}> {
+  const response = await apiFetch(`${apiBase()}/workers/copy-roster-to-dates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ sourceDate, endDate }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { message?: string }).message ?? "Aktarım başarısız");
+  }
+  return data as {
+    workers: number;
+    weekdayCount: number;
+    entriesTouched: number;
+    hidesCleared: number;
+  };
+}
+
+export async function removeAllWorkersForDay(
+  date: string,
+  scope: "only_day" | "from_day" = "from_day"
+): Promise<{ removed: number; scope: string }> {
+  const q = new URLSearchParams({ date, scope });
+  const response = await apiFetch(`${apiBase()}/workers/for-day?${q}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { message?: string }).message ?? "Personel silinemedi");
+  }
+  return {
+    removed: Number((data as { removed?: number }).removed) || 0,
+    scope: String((data as { scope?: string }).scope || scope),
+  };
+}
+
+function parseProductionRow(raw: unknown): ProductionRow | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const workerId = Number(o.workerId);
+  if (!Number.isFinite(workerId)) return null;
+  const absentRaw = o.absentForDay ?? o.absentforday;
+  const absentForDay =
+    absentRaw === true ||
+    absentRaw === 1 ||
+    absentRaw === "1" ||
+    String(absentRaw).toLowerCase() === "true";
+  return {
+    workerId,
+    name: o.name != null ? String(o.name) : "",
+    team: o.team != null ? String(o.team) : "",
+    process: o.process != null ? String(o.process) : "",
+    t1000: Number(o.t1000) || 0,
+    t1300: Number(o.t1300) || 0,
+    t1600: Number(o.t1600) || 0,
+    t1830: Number(o.t1830) || 0,
+    absentForDay: absentForDay || undefined,
+  };
+}
+
 export async function getProduction(date: string): Promise<ProductionRow[]> {
   const response = await apiFetch(`${apiBase()}/production?date=${date}`, { cache: "no-store", headers: authHeaders() });
   if (!response.ok) throw new Error("Üretim verisi alınamadı");
-  return response.json();
+  const raw = (await response.json()) as unknown;
+  if (!Array.isArray(raw)) return [];
+  return raw.map(parseProductionRow).filter((r): r is ProductionRow => r != null);
 }
 
-export type DayProductMeta = { productName: string; productModel: string };
+export type DayProductMeta = {
+  productName: string;
+  productModel: string;
+  modelId: number | null;
+  metaSource: "manual" | "hedef";
+};
+
+function parseDayProductMetaPayload(raw: unknown): DayProductMeta {
+  if (!raw || typeof raw !== "object") {
+    return { productName: "", productModel: "", modelId: null, metaSource: "manual" };
+  }
+  const o = raw as Record<string, unknown>;
+  const mid = o.modelId;
+  const modelId =
+    mid != null && mid !== "" && Number.isFinite(Number(mid)) ? Number(mid) : null;
+  const ms = o.metaSource === "hedef" ? "hedef" : "manual";
+  return {
+    productName: typeof o.productName === "string" ? o.productName : "",
+    productModel: typeof o.productModel === "string" ? o.productModel : "",
+    modelId,
+    metaSource: ms,
+  };
+}
 
 export async function getDayProductMeta(date: string): Promise<DayProductMeta> {
   const response = await apiFetch(`${apiBase()}/production/day-meta?date=${encodeURIComponent(date)}`, {
@@ -218,13 +374,16 @@ export async function getDayProductMeta(date: string): Promise<DayProductMeta> {
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error("Gün ürün bilgisi alınamadı");
-  return response.json();
+  const raw = await response.json();
+  return parseDayProductMetaPayload(raw);
 }
 
 export async function saveDayProductMeta(payload: {
   date: string;
   productName: string;
   productModel: string;
+  modelId?: number | null;
+  metaSource?: "manual" | "hedef";
 }): Promise<DayProductMeta> {
   const response = await apiFetch(`${apiBase()}/production/day-meta`, {
     method: "PUT",
@@ -232,7 +391,8 @@ export async function saveDayProductMeta(payload: {
     body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error("Ürün bilgisi kaydedilemedi");
-  return response.json();
+  const raw = await response.json();
+  return parseDayProductMetaPayload(raw);
 }
 
 export async function saveProduction(payload: {
@@ -269,6 +429,80 @@ export async function saveProductionBulk(payload: {
   if (!response.ok) throw new Error("Toplu kayıt başarısız");
 }
 
+/** API: /production/hedef-stage-totals — sıralı bölüm satırları (N adet) */
+export type HedefStageLineDto = {
+  sortOrder: number;
+  teamCode: string;
+  processName: string;
+  teamLabel: string;
+  total: number;
+};
+
+export type HedefStageTotalsDto = {
+  stages: HedefStageLineDto[];
+};
+
+const ZERO_HEDEF: HedefStageTotalsDto = { stages: [] };
+
+function num(v: unknown): number {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v.replace(/\s/g, "").replace(",", "."));
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function parseStageLine(raw: unknown): HedefStageLineDto | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  return {
+    sortOrder: num(o.sortOrder ?? o.sort_order),
+    teamCode: String(o.teamCode ?? o.team_code ?? ""),
+    processName: String(o.processName ?? o.process_name ?? ""),
+    teamLabel: String(o.teamLabel ?? o.team_label ?? ""),
+    total: num(o.total),
+  };
+}
+
+/** API / proxy farklı anahtar döndürse veya sayı string gelse bile güvenli nesne */
+export function parseHedefStageTotalsPayload(raw: unknown): HedefStageTotalsDto {
+  if (!raw || typeof raw !== "object") return { ...ZERO_HEDEF };
+  const o = raw as Record<string, unknown>;
+  const stagesRaw = o.stages;
+  if (Array.isArray(stagesRaw)) {
+    const stages = stagesRaw.map(parseStageLine).filter((s): s is HedefStageLineDto => s != null);
+    return { stages };
+  }
+  // Eski API (5 sabit anahtar) — geriye dönük
+  if ("SAG_ON" in o || "sag_on" in o) {
+    const labels = ["Sağ ön", "Sol ön", "Yaka hazırlık", "Arka hazırlık", "Bitim"];
+    const keys = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM"] as const;
+    const alt = ["sag_on", "sol_on", "yaka", "arka", "bitim"] as const;
+    return {
+      stages: keys.map((k, i) => ({
+        sortOrder: i,
+        teamCode: "",
+        processName: "",
+        teamLabel: labels[i],
+        total: num(o[k] ?? o[alt[i]]),
+      })),
+    };
+  }
+  return { ...ZERO_HEDEF };
+}
+
+export function parseRangeStageTotalsPayload(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const o = raw as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(o)) {
+    const n = num(v);
+    if (k) out[k] = n;
+  }
+  return out;
+}
+
 /** Tarih aralığında bölüm koduna göre üretim toplamları (tüm bölümler) */
 export async function getRangeStageTotals(startDate: string, endDate: string): Promise<Record<string, number>> {
   const query = new URLSearchParams({ startDate, endDate }).toString();
@@ -277,30 +511,124 @@ export async function getRangeStageTotals(startDate: string, endDate: string): P
     headers: authHeaders()
   });
   if (!response.ok) throw new Error("Tarih aralığı verisi alınamadı");
-  return response.json();
+  const raw = await response.json().catch(() => ({}));
+  return parseRangeStageTotalsPayload(raw);
 }
 
-/** Hedef Takip: proses bazlı aşama toplamları */
-export async function getHedefTakipStageTotals(startDate: string, endDate: string): Promise<{
-  SAG_ON: number;
-  SOL_ON: number;
-  YAKA_HAZIRLIK: number;
-  ARKA_HAZIRLIK: number;
-  BITIM: number;
-}> {
-  const query = new URLSearchParams({ startDate, endDate }).toString();
-  const response = await apiFetch(`${apiBase()}/production/hedef-stage-totals?${query}`, {
+/** Hedef Takip: proses bazlı aşama toplamları (modelId: Ayarlar’daki modele göre bölüm/proses bazı) */
+export async function getHedefTakipStageTotals(
+  startDate: string,
+  endDate: string,
+  modelId?: number | null
+): Promise<HedefStageTotalsDto> {
+  const q = new URLSearchParams({ startDate, endDate });
+  if (modelId != null && Number.isFinite(modelId)) {
+    q.set("modelId", String(modelId));
+  }
+  const response = await apiFetch(`${apiBase()}/production/hedef-stage-totals?${q.toString()}`, {
     cache: "no-store",
     headers: authHeaders(),
   });
   if (!response.ok) throw new Error("Hedef takip verisi alınamadı");
-  return response.json();
+  const raw = await response.json().catch(() => null);
+  return parseHedefStageTotalsPayload(raw);
+}
+
+export type ProductModelListItem = { id: number; modelCode: string; productName: string; createdAt?: string };
+
+/** arkaHalf: DB alanı adı; 1 ise o satırın üretim toplamı 0.5 ile çarpılır. */
+export type ProductModelBaseline = {
+  sortOrder: number;
+  teamCode: string;
+  processName: string;
+  arkaHalf: number;
+};
+
+export type ProductModelDetail = ProductModelListItem & {
+  baselines: ProductModelBaseline[];
+};
+
+export async function listProductModels(): Promise<ProductModelListItem[]> {
+  const res = await apiFetch(`${apiBase()}/product-models`, { cache: "no-store", headers: authHeaders() });
+  if (!res.ok) throw new Error("Modeller alınamadı");
+  return res.json();
+}
+
+export async function getProductModel(id: number): Promise<ProductModelDetail> {
+  const res = await apiFetch(`${apiBase()}/product-models/${id}`, { cache: "no-store", headers: authHeaders() });
+  if (!res.ok) throw new Error("Model bulunamadı");
+  return res.json();
+}
+
+export async function createProductModel(payload: {
+  modelCode: string;
+  productName: string;
+  baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
+}): Promise<{ id: number; modelCode: string; productName: string }> {
+  const res = await apiFetch(`${apiBase()}/product-models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Model kaydedilemedi");
+  }
+  return res.json();
+}
+
+export async function updateProductModel(
+  id: number,
+  payload: {
+    modelCode: string;
+    productName: string;
+    baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
+  }
+): Promise<{ id: number; modelCode: string; productName: string }> {
+  const res = await apiFetch(`${apiBase()}/product-models/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Model güncellenemedi");
+  }
+  return res.json();
+}
+
+export async function deleteProductModel(id: number): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/product-models/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Model silinemedi");
+}
+
+export async function applyHedefSession(payload: {
+  modelId: number;
+  startDate: string;
+  endDate: string;
+  productName?: string;
+  productModel?: string;
+}): Promise<{ ok: boolean; datesUpdated: number }> {
+  const res = await apiFetch(`${apiBase()}/hedef/apply-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Oturum uygulanamadı");
+  }
+  return res.json();
 }
 
 export async function getTopWorkersAnalytics(params: {
   startDate: string;
   endDate: string;
   team?: Team | "";
+  process?: string;
   hour?: HourFilter;
   limit?: number;
 }): Promise<TopWorkerAnalytics[]> {
@@ -308,6 +636,7 @@ export async function getTopWorkersAnalytics(params: {
     startDate: params.startDate,
     endDate: params.endDate,
     team: params.team ?? "",
+    process: params.process ?? "",
     hour: params.hour ?? "",
     limit: String(params.limit ?? 20)
   }).toString();
@@ -344,12 +673,14 @@ export async function getDailyTrendAnalytics(params: {
   startDate: string;
   endDate: string;
   team?: Team | "";
+  process?: string;
   hour?: HourFilter;
 }): Promise<DailyTrendPoint[]> {
   const query = new URLSearchParams({
     startDate: params.startDate,
     endDate: params.endDate,
     team: params.team ?? "",
+    process: params.process ?? "",
     hour: params.hour ?? ""
   }).toString();
 
@@ -361,16 +692,39 @@ export async function getDailyTrendAnalytics(params: {
   return response.json();
 }
 
+export async function getWorkerProductionDailyDetail(params: {
+  workerId: number;
+  startDate: string;
+  endDate: string;
+  /** Aynı ada sahip tüm çalışan kayıtlarının (farklı bölüm/proses) üretimini birleştir */
+  includeSameNameWorkers?: boolean;
+}): Promise<WorkerProductionDayDetail[]> {
+  const query = new URLSearchParams({
+    workerId: String(params.workerId),
+    startDate: params.startDate,
+    endDate: params.endDate,
+    ...(params.includeSameNameWorkers ? { includeSameNameWorkers: "1" } : {}),
+  }).toString();
+  const response = await apiFetch(`${apiBase()}/analytics/worker-production-detail?${query}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("Kişi günlük detay alınamadı");
+  return response.json();
+}
+
 export async function getWorkerDailyAnalytics(params: {
   startDate: string;
   endDate: string;
   team?: Team | "";
+  process?: string;
   hour?: HourFilter;
 }): Promise<WorkerDailyAnalytics[]> {
   const query = new URLSearchParams({
     startDate: params.startDate,
     endDate: params.endDate,
     team: params.team ?? "",
+    process: params.process ?? "",
     hour: params.hour ?? ""
   }).toString();
 
@@ -465,5 +819,53 @@ export async function getWorkerComparison(params: {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error("Karşılaştırma verisi alınamadı");
+  return res.json();
+}
+
+export type ActivityLogRow = {
+  id: number;
+  created_at: string;
+  actor_username: string;
+  action: string;
+  resource: string;
+  details: string;
+};
+
+export type ActivityLogQuery = {
+  limit?: number;
+  offset?: number;
+  /** Tam eşleşme (sunucu action kodu) */
+  action?: string;
+  /** Kullanıcı adında geçen metin */
+  actor?: string;
+  /** Kaynak alanında geçen metin */
+  resource?: string;
+  /** Ayrıntı, işlem, kaynak veya kullanıcıda arama */
+  q?: string;
+  /** YYYY-MM-DD */
+  dateFrom?: string;
+  /** YYYY-MM-DD */
+  dateTo?: string;
+};
+
+export async function getActivityLogs(params?: ActivityLogQuery): Promise<ActivityLogRow[]> {
+  const q = new URLSearchParams();
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
+  if (params?.action?.trim()) q.set("action", params.action.trim());
+  if (params?.actor?.trim()) q.set("actor", params.actor.trim());
+  if (params?.resource?.trim()) q.set("resource", params.resource.trim());
+  if (params?.q?.trim()) q.set("q", params.q.trim());
+  if (params?.dateFrom?.trim()) q.set("dateFrom", params.dateFrom.trim());
+  if (params?.dateTo?.trim()) q.set("dateTo", params.dateTo.trim());
+  const qs = q.toString();
+  const res = await apiFetch(`${apiBase()}/activity-logs${qs ? `?${qs}` : ""}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Loglar alınamadı");
+  }
   return res.json();
 }
