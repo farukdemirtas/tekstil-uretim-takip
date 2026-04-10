@@ -6,8 +6,16 @@ import { pbkdf2Sync, randomBytes } from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataDir = path.resolve(__dirname, "../data");
-const dbPath = path.join(dataDir, "production.db");
+const defaultDataDir = path.resolve(__dirname, "../data");
+const dbPath = process.env.TEKSTIL_DB_PATH
+  ? path.resolve(process.env.TEKSTIL_DB_PATH)
+  : path.join(
+      process.env.TEKSTIL_DATA_DIR
+        ? path.resolve(process.env.TEKSTIL_DATA_DIR)
+        : defaultDataDir,
+      "production.db"
+    );
+const dataDir = path.dirname(dbPath);
 
 try {
   fs.mkdirSync(dataDir, { recursive: true });
