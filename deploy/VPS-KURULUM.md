@@ -2,6 +2,9 @@
 
 Ben (Cursor) sizin sunucunuza bağlanamam; DNS ve panel işleri sizde. Aşağıdaki adımları **SSH ile VPS’te** uygulayın.
 
+**Üretim klasörü:** `/var/www/uretim-takip`  
+**Depo:** [github.com/farukdemirtas/tekstil-uretim-takip](https://github.com/farukdemirtas/tekstil-uretim-takip)
+
 ## DNS (Natro / alan adı paneli)
 
 **A kaydı:** `takip` → VPS sunucunuzun **IPv4** adresi  
@@ -9,14 +12,14 @@ Ben (Cursor) sizin sunucunuza bağlanamam; DNS ve panel işleri sizde. Aşağıd
 
 ## Sıfırdan temiz kurulum (sunucudaki proje karıştıysa)
 
-**Kapsam:** Yalnızca `/var/www/tekstil-uretim-takip` ve PM2’deki `tekstil-api` / `tekstil-web` silinir; depo veya başka siteler dokunulmaz.
+**Kapsam:** Yalnızca `/var/www/uretim-takip` ve PM2’deki `tekstil-api` / `tekstil-web` silinir; depo veya başka siteler dokunulmaz.
 
 1. **Hâlâ erişebiliyorsanız** (repo dizininde betik varsa):
 
 ```bash
 export TEKSTIL_RESET_CONFIRM=yes
-export TEKSTIL_REPO_URL='https://github.com/KULLANICI/tekstil-uretim-takip.git'
-sudo -E bash /var/www/tekstil-uretim-takip/deploy/sunucu-proje-sifirla.sh
+export TEKSTIL_REPO_URL='https://github.com/farukdemirtas/tekstil-uretim-takip.git'
+sudo -E bash /var/www/uretim-takip/deploy/sunucu-proje-sifirla.sh
 ```
 
 `TEKSTIL_REPO_URL` vermezseniz sadece yedek + silme yapılır; sonra elle `git clone` edersiniz. Yedekler `/root/tekstil-reset-backup-...` altına alınır (`backend/.env`, `frontend/.env.production`, vb.).
@@ -26,8 +29,8 @@ sudo -E bash /var/www/tekstil-uretim-takip/deploy/sunucu-proje-sifirla.sh
 3. **Nginx:** Bozuk site dosyalarını repodaki hazır dosyalarla değiştirin (yapıştırma yerine `cp` kullanın):
 
 ```bash
-sudo cp /var/www/tekstil-uretim-takip/deploy/nginx-yesilimajtekstil.conf /etc/nginx/sites-available/yesilimajtekstil
-sudo cp /var/www/tekstil-uretim-takip/deploy/nginx-tekstil.conf /etc/nginx/sites-available/tekstil
+sudo cp /var/www/uretim-takip/deploy/nginx-yesilimajtekstil.conf /etc/nginx/sites-available/yesilimajtekstil
+sudo cp /var/www/uretim-takip/deploy/nginx-tekstil.conf /etc/nginx/sites-available/tekstil
 sudo ln -sf /etc/nginx/sites-available/yesilimajtekstil /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/tekstil /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
@@ -39,8 +42,8 @@ SSL için domain’lere göre `certbot --nginx` ile yenileyin.
 
 ```bash
 cd /var/www
-git clone <repo-url> tekstil-uretim-takip
-cd tekstil-uretim-takip
+git clone https://github.com/farukdemirtas/tekstil-uretim-takip.git uretim-takip
+cd uretim-takip
 ```
 
 ## 2) Ortam dosyası
@@ -78,7 +81,7 @@ cd frontend && npm run build && cd ..
 
 ```bash
 npm install -g pm2
-cd /var/www/tekstil-uretim-takip
+cd /var/www/uretim-takip
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
@@ -93,37 +96,35 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d takip.yesilimajtekstil.com
 ```
 
+## Kod güncellemesi (git pull)
+
+```bash
+cd /var/www/uretim-takip
+chmod +x deploy/sunucu-guncelle.sh
+./deploy/sunucu-guncelle.sh
+```
+
+Betik `backend/data/production.db` dosyasını pull öncesi zaman damgalı `.pre-pull-...` ile yedekler, sonra `git pull`, `npm run prod:prepare` ve `pm2 reload` yapar.
+
 ## Kontrol
 
 - `curl -s http://127.0.0.1:4000/api/health`
 - Tarayıcı: **https://takip.yesilimajtekstil.com**
+- PM2 loglarında hangi SQLite dosyasının açıldığını görmek için: `pm2 logs tekstil-api` — satır: `[tekstil-db] SQLite: ...`
 
-## Veritabanı ve güncelleme (kullanıcıların silinmemesi)
+## Veritabanı
 
-Tek SQLite dosyasında tutulur: **kullanıcılar**, **activity_logs**, **çalışılacak ürün** (`daily_product_meta`), üretim ve personel verisi. Uygulama bu tabloları güncellemede silmez; veri kaybı genelde **yanlış veya yeni boş .db dosyasına** bağlanmaktan olur.
+Tek SQLite dosyasında kullanıcılar, loglar, üretim ve personel verisi tutulur. `ecosystem.config.cjs` içinde `TEKSTIL_DB_PATH`, depo köküne göre `backend/data/production.db` olarak ayarlıdır; sunucu dizini `/var/www/uretim-takip` ise dosya **`/var/www/uretim-takip/backend/data/production.db`** olur.
 
-Varsayılan geliştirme: `backend/data/production.db`.
-
-**Üretim (`NODE_ENV=production`):**
-
-1. Açık ortam değişkeni yoksa ve `/var/lib/tekstil-uretim/production.db` **dosyası varsa**, backend otomatik bu dosyayı kullanır (repodan bağımsız).
-2. Yoksa `backend/data/production.db` kullanılır (`git pull` tek başına bu dosyayı silmez; `git clean -fdx` veya klasörü silmek risklidir).
-
-**Önerilen:** Kalıcı dizini bir kez oluşturup mevcut veritabanını kopyalayın:
+İsterseniz veriyi repodan ayırmak için `/var/lib/tekstil-uretim/production.db` kullanın: dosyayı kopyalayıp `ecosystem.config.cjs` içinde `TEKSTIL_DB_PATH` değerini bu tam yola değiştirin (`path.join` yerine `"/var/lib/tekstil-uretim/production.db"`). `TEKSTIL_DB_PATH` tanımlıyken uygulama yalnızca bu yolu kullanır.
 
 ```bash
 sudo mkdir -p /var/lib/tekstil-uretim
 sudo chown "$USER":"$USER" /var/lib/tekstil-uretim
-cp -a /var/www/tekstil-uretim-takip/backend/data/production.db /var/lib/tekstil-uretim/production.db
+cp -a /var/www/uretim-takip/backend/data/production.db /var/lib/tekstil-uretim/production.db
+# ecosystem: TEKSTIL_DB_PATH → "/var/lib/tekstil-uretim/production.db"  sonra: pm2 reload ecosystem.config.cjs --update-env
 ```
 
-İsterseniz `ecosystem.config.cjs` (`tekstil-api`) veya `backend/.env` ile sabitleyin:
+`TEKSTIL_DB_PATH` kaldırılırsa (önerilmez): üretimde `/var/lib/tekstil-uretim/production.db` dosyası varsa ve yazılabilirse otomatik seçilir; yoksa `backend/data/production.db` kullanılır.
 
-- `SQLITE_DATABASE_PATH=/var/lib/tekstil-uretim/production.db`  
-  **veya** `TEKSTIL_DATA_DIR=/var/lib/tekstil-uretim`
-
-Sonra: `pm2 restart tekstil-api --update-env`.
-
-PM2 loglarında açılışta `[tekstil-db] SQLite: ...` satırı hangi dosyanın kullanıldığını gösterir.
-
-`deploy/sunucu-guncelle.sh` git pull öncesi **bulabildiği tüm** olası `production.db` konumlarını zaman damgalı `.bak` ile yedekler; pull sonrası dosya kaybolmuşsa son yedeği geri yüklemeyi dener (`backend/.env` içindeki `SQLITE_DATABASE_PATH` / `TEKSTIL_DATA_DIR` dahil).
+Farklı bir kurulum dizini için: `export TEKSTIL_APP_DIR=/yol` ile `sunucu-proje-sifirla.sh` ve `sunucu-guncelle.sh` kullanılabilir.

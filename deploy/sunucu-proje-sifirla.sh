@@ -4,15 +4,15 @@
 #
 # 1) Yedek + temizlik + (isteğe bağlı) yeniden clone:
 #    export TEKSTIL_RESET_CONFIRM=yes
-#    export TEKSTIL_REPO_URL='https://github.com/KULLANICI/tekstil-uretim-takip.git'
-#    sudo -E bash /var/www/tekstil-uretim-takip/deploy/sunucu-proje-sifirla.sh
+#    export TEKSTIL_REPO_URL='https://github.com/farukdemirtas/tekstil-uretim-takip.git'
+#    sudo -E bash /var/www/uretim-takip/deploy/sunucu-proje-sifirla.sh
 #
 # 2) Sadece silmek (clone siz yaparsınız): TEKSTIL_REPO_URL vermeyin.
 #
 # Sonra: ortam dosyalarını kontrol edin, ./deploy/sunucu-kur.sh, pm2 start, nginx.
 set -euo pipefail
 
-APP_DIR="${TEKSTIL_APP_DIR:-/var/www/tekstil-uretim-takip}"
+APP_DIR="${TEKSTIL_APP_DIR:-/var/www/uretim-takip}"
 BACKUP_ROOT="${TEKSTIL_BACKUP_ROOT:-/root}"
 
 if [[ "${TEKSTIL_RESET_CONFIRM:-}" != "yes" ]]; then
