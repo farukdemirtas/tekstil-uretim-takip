@@ -20,6 +20,7 @@ import {
   removeAllWorkersForDay,
   copyRosterToFutureDates,
   saveProduction,
+  saveProductionBulk,
   setAuthToken,
   unhideWorkerForCalendarDay,
   updateWorker,
@@ -33,6 +34,7 @@ import {
   PRODUCTION_EXCEL_SHEET_NAME,
 } from "@/lib/productionExcelFormat";
 import ExcelImportPanel from "@/components/ExcelImportPanel";
+import BulkEntryPanel from "@/components/BulkEntryPanel";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission, isAdminRole, persistPermissions, clearStoredPermissions } from "@/lib/permissions";
 import { ProductionRow } from "@/lib/types";
@@ -809,6 +811,17 @@ export default function HomePage() {
           canDeleteWorkers={true}
         />
       )}
+
+      {/* Yönetici: Excel içe aktarma var; yapıştırma paneli yalnızca «veri girişi» + Toplu ekle yetkisi */}
+      {!loading && rows.length > 0 && role !== "admin" && hasPermission("topluEkle") ? (
+        <BulkEntryPanel
+          rows={rows}
+          onApply={async (entries) => {
+            await saveProductionBulk({ date: selectedDate, entries });
+            await loadDateData(selectedDate);
+          }}
+        />
+      ) : null}
 
       <AdminPanel workerCount={rows.length} stageTotals={hedefStageTotals} />
     </main>

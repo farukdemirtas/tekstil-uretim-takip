@@ -74,6 +74,8 @@ export type AppPermissions = {
   ekran3: boolean;
   loglar: boolean;
   topluListeKaldir: boolean;
+  /** Excel’den yapıştırma ile toplu üretim kaydı */
+  topluEkle: boolean;
 };
 
 export type User = {

@@ -66,13 +66,27 @@ export async function login(payload: {
   username: string;
   password: string;
 }): Promise<{ token: string; username: string; role: string; permissions?: AppPermissions }> {
-  const response = await fetch(`${apiBase()}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) throw new Error("Giriş başarısız");
-  return response.json();
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase()}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error(
+      "Sunucuya bağlanılamadı. Backend’in çalıştığından emin olun (npm run dev, port 4000)."
+    );
+  }
+  const data = (await response.json().catch(() => ({}))) as { message?: string };
+  if (!response.ok) {
+    throw new Error(
+      typeof data.message === "string" && data.message.trim()
+        ? data.message
+        : `Giriş başarısız (${response.status})`
+    );
+  }
+  return data as { token: string; username: string; role: string; permissions?: AppPermissions };
 }
 
 export async function getWorkerNames(): Promise<{ id: number; name: string }[]> {

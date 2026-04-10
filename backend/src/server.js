@@ -1003,7 +1003,7 @@ app.post("/api/production", async (req, res) => {
   }
 });
 
-app.post("/api/production/bulk", requireAdmin, async (req, res) => {
+app.post("/api/production/bulk", requirePermission("topluEkle"), async (req, res) => {
   const { date, entries } = req.body;
   if (!date || !Array.isArray(entries)) {
     return res.status(400).json({ message: "date ve entries (array) zorunlu" });

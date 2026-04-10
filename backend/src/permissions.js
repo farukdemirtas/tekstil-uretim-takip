@@ -10,6 +10,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   loglar: false,
   /** Ana sayfada “tüm personeli listeden kaldır” (gün / gün ve sonrası) */
   topluListeKaldir: false,
+  /** Excel yapıştırma ile toplu üretim kaydı (POST /api/production/bulk) */
+  topluEkle: false,
 };
 
 export const PERMISSION_KEYS = Object.keys(DEFAULT_DATA_ENTRY_PERMISSIONS);
