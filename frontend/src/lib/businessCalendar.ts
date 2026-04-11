@@ -37,6 +37,18 @@ export function todayWeekdayIso(): string {
   return clampToWeekdayIso(formatIsoLocal(new Date()));
 }
 
+/** Türkiye takvim günü YYYY-MM-DD (log / sunucu filtreleriyle uyumlu) */
+export function todayIsoTurkey(): string {
+  const s = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Istanbul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return formatIsoLocal(new Date());
+}
+
 /** Takvimden hafta sonu seçilirse hafta içine çeker */
 export function coerceWeekdayPickerValue(raw: string): string {
   if (!raw) return raw;

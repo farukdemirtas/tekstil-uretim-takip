@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { getActivityLogs, setAuthToken } from "@/lib/api";
 import type { ActivityLogQuery, ActivityLogRow } from "@/lib/api";
-import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { clampToWeekdayIso, todayIsoTurkey } from "@/lib/businessCalendar";
 
 const ACTION_LABELS: Record<string, string> = {
   giris: "Oturum açma",
@@ -42,8 +42,9 @@ type FilterForm = {
   dateTo: string;
 };
 
+/** Log ekranı: bugün (İstanbul takvimi), hafta sonuysa son hafta içi — sunucu tarih filtresiyle aynı gün */
 function defaultLogFilterForm(): FilterForm {
-  const t = todayWeekdayIso();
+  const t = clampToWeekdayIso(todayIsoTurkey());
   return {
     action: "",
     actor: "",
@@ -297,8 +298,19 @@ export default function LogsSection() {
         <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-600">
           <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Filtreler</h3>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Koşulları seçip &quot;Filtrele&quot;ye basın; en fazla 500 satır döner.
+            Sekmeye her gelişte <strong className="font-medium text-slate-600 dark:text-slate-300">bugünün</strong> tarihi (
+            Türkiye saati, hafta içi) seçilir ve liste buna göre yüklenir. İsterseniz tarihleri değiştirip &quot;Filtrele&quot;ye
+            basın; en fazla 500 satır döner.
           </p>
+          {form.dateFrom && form.dateTo ? (
+            <p className="mt-2 rounded-lg bg-teal-50 px-3 py-2 text-xs text-teal-900 dark:bg-teal-950/40 dark:text-teal-100">
+              Listelenen aralık:{" "}
+              <span className="font-mono font-semibold tabular-nums">
+                {form.dateFrom === form.dateTo ? form.dateFrom : `${form.dateFrom} — ${form.dateTo}`}
+              </span>
+              {form.dateFrom === form.dateTo ? " (tek gün, İstanbul takvimine göre)" : ""}
+            </p>
+          ) : null}
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="flex flex-col gap-1">
               <label htmlFor="flt-action" className="text-xs font-medium text-slate-600 dark:text-slate-400">

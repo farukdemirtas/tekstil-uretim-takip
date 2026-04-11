@@ -341,13 +341,16 @@ export function getDailyEntries(date) {
           (w.created_at IS NULL OR date(w.created_at) <= date(?))
           AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))
         )
-        OR EXISTS (
-          SELECT 1 FROM production_entries pe
-          WHERE pe.worker_id = w.id AND pe.production_date = ?
+        OR (
+          EXISTS (
+            SELECT 1 FROM production_entries pe
+            WHERE pe.worker_id = w.id AND pe.production_date = ?
+          )
+          AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))
         )
       ORDER BY w.team, w.process, w.name
       `,
-      [date, date, date, date, date],
+      [date, date, date, date, date, date],
       (err, rows) => {
         if (err) return reject(err);
         resolve(rows);
