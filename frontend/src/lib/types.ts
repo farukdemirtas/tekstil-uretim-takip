@@ -1,4 +1,4 @@
-/** Bölüm kodu (SAG_ON vb.); ayarlardan yönetilir */
+﻿/** Bölüm kodu (SAG_ON vb.); ayarlardan yönetilir */
 export type Team = string;
 
 export type Worker = {
@@ -78,6 +78,8 @@ export type AppPermissions = {
   topluListeKaldir: boolean;
   /** Excel’den yapıştırma ile toplu üretim kaydı */
   topluEkle: boolean;
+  /** Tamir orani ekranina erisim ve tamir verisi girisi */
+  tamirOrani: boolean;
 };
 
 export type User = {

@@ -1633,3 +1633,111 @@ export function listActivityLogs(options = {}) {
     });
   });
 }
+
+// ─── Tamir Oranı ─────────────────────────────────────────────────────────────
+
+export function getRepairEntries(date) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT process_name, repair_count FROM repair_entries
+       WHERE repair_date = ? ORDER BY repair_count DESC`,
+      [date],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve((rows || []).map((r) => ({ processName: r.process_name, repairCount: r.repair_count })));
+      }
+    );
+  });
+}
+
+export function upsertRepairEntries(date, entries) {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run("BEGIN", (beginErr) => {
+        if (beginErr) return reject(beginErr);
+        db.run(`DELETE FROM repair_entries WHERE repair_date = ?`, [date], (delErr) => {
+          if (delErr) {
+            db.run("ROLLBACK");
+            return reject(delErr);
+          }
+          const filtered = (entries || []).filter((e) => e.repairCount > 0);
+          if (filtered.length === 0) {
+            db.run("COMMIT", (commitErr) => {
+              if (commitErr) return reject(commitErr);
+              resolve({ ok: true });
+            });
+            return;
+          }
+          const stmt = db.prepare(
+            `INSERT INTO repair_entries (repair_date, process_name, repair_count) VALUES (?, ?, ?)
+             ON CONFLICT(repair_date, process_name) DO UPDATE SET repair_count = excluded.repair_count`
+          );
+          for (const e of filtered) {
+            stmt.run([date, String(e.processName).trim(), Number(e.repairCount)]);
+          }
+          stmt.finalize((finalErr) => {
+            if (finalErr) {
+              db.run("ROLLBACK");
+              return reject(finalErr);
+            }
+            db.run("COMMIT", (commitErr) => {
+              if (commitErr) return reject(commitErr);
+              resolve({ ok: true });
+            });
+          });
+        });
+      });
+    });
+  });
+}
+
+export async function getRepairHistory(startDate, endDate) {
+  // 1. Tamir kayıtlarını çek (tarih + toplam tamir adedi)
+  const repairRows = await new Promise((resolve, reject) => {
+    db.all(
+      `SELECT repair_date, SUM(repair_count) AS total_repairs
+       FROM repair_entries
+       WHERE repair_date BETWEEN ? AND ?
+       GROUP BY repair_date
+       ORDER BY repair_date DESC`,
+      [startDate, endDate],
+      (err, rows) => { if (err) return reject(err); resolve(rows || []); }
+    );
+  });
+
+  if (repairRows.length === 0) return [];
+
+  // 2. Her günün genel tamamlananını hedef aşama formülüyle hesapla
+  const results = [];
+  for (const row of repairRows) {
+    const date = row.repair_date;
+    let genelTamamlanan = 0;
+    try {
+      // Günün modelini al
+      const metaRow = await dbGet(
+        `SELECT model_id FROM daily_product_meta WHERE production_date = ?`,
+        [date]
+      );
+      const modelId = metaRow?.model_id ?? null;
+      const stageTotals = await getHedefTakipStageTotals(date, date, modelId);
+      const stages = stageTotals.stages ?? [];
+      if (stages.length > 0) {
+        const nums = stages.map((s) => (typeof s.total === "number" && s.total > 0 ? s.total : null)).filter((n) => n !== null);
+        genelTamamlanan = nums.length > 0 ? Math.min(...nums) : 0;
+      }
+    } catch {
+      genelTamamlanan = 0;
+    }
+    const totalRepairs = Number(row.total_repairs) || 0;
+    const repairRate = genelTamamlanan > 0
+      ? Math.round((totalRepairs / genelTamamlanan) * 10000) / 100
+      : 0;
+    results.push({
+      repairDate: date,
+      totalRepairs,
+      totalProduction: Math.round(genelTamamlanan),
+      repairRate,
+    });
+  }
+  return results;
+}

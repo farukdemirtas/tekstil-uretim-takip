@@ -12,6 +12,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   topluListeKaldir: false,
   /** Excel yapıştırma ile toplu üretim kaydı (POST /api/production/bulk) */
   topluEkle: false,
+  /** Tamir oranı ekranına erişim ve tamir verisi girişi */
+  tamirOrani: false,
 };
 
 export const PERMISSION_KEYS = Object.keys(DEFAULT_DATA_ENTRY_PERMISSIONS);

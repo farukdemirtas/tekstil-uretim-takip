@@ -897,3 +897,48 @@ export async function getActivityLogs(params?: ActivityLogQuery): Promise<Activi
   }
   return res.json();
 }
+
+// ─── Tamir Oranı ──────────────────────────────────────────────────────────────
+
+export type RepairEntry = { processName: string; repairCount: number };
+
+export type RepairHistoryPoint = {
+  repairDate: string;
+  totalRepairs: number;
+  totalProduction: number;
+  repairRate: number;
+};
+
+export async function getRepairs(date: string): Promise<{ date: string; entries: RepairEntry[] }> {
+  const res = await apiFetch(`${apiBase()}/repairs?date=${encodeURIComponent(date)}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Tamir verileri alınamadı");
+  return res.json() as Promise<{ date: string; entries: RepairEntry[] }>;
+}
+
+export async function saveRepairs(payload: { date: string; entries: RepairEntry[] }): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/repairs`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Tamir verisi kaydedilemedi");
+  }
+}
+
+export async function getRepairsHistory(params: {
+  startDate: string;
+  endDate: string;
+}): Promise<RepairHistoryPoint[]> {
+  const q = new URLSearchParams({ startDate: params.startDate, endDate: params.endDate }).toString();
+  const res = await apiFetch(`${apiBase()}/repairs/history?${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Tamir geçmişi alınamadı");
+  return res.json() as Promise<RepairHistoryPoint[]>;
+}

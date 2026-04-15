@@ -99,7 +99,6 @@ export function Ekran3WorkerCard({
     return today > prev ? "up" : "down";
   }
 
-  const dailyAvgArrow = dirFor(todayTotal, prevDayTotal);
   const hourlyArrow = dirFor(todayPerHour, prevPerHour);
 
   const title = worker.name.toLocaleUpperCase("tr-TR");
@@ -182,7 +181,6 @@ export function Ekran3WorkerCard({
             <div className="flex w-full min-w-0 flex-col items-center gap-0.5">
               <div className="flex items-center gap-1 text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">
                 {multiDayDailyAvg}
-                <TrendArrow dir={dailyAvgArrow} />
               </div>
               <div className="text-[9px] font-semibold tabular-nums text-slate-500 sm:text-[10px]">
                 {hasMultiDay ? `${multiDayActiveDays} gün` : `${SHIFT_NOMINAL_HOURS} saat üzerinden`}

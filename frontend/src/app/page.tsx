@@ -794,6 +794,11 @@ export default function HomePage() {
               }}
             />
           ) : null}
+          {hasPermission("tamirOrani") || isAdminRole() ? (
+            <Link href="/tamir-orani" className="btn-nav">
+              Tamir Oranı
+            </Link>
+          ) : null}
           {hasPermission("ayarlar") || isAdminRole() ? (
             <Link href="/ayarlar" className="btn-nav">
               Ayarlar

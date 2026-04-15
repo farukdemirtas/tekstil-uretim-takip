@@ -470,6 +470,17 @@ export function initDb() {
     `);
     db.run(`CREATE INDEX IF NOT EXISTS idx_activity_logs_id_desc ON activity_logs (id DESC)`);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS repair_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repair_date TEXT NOT NULL,
+        process_name TEXT NOT NULL,
+        repair_count INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(repair_date, process_name)
+      )
+    `);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_repair_entries_date ON repair_entries (repair_date)`);
+
     seedTeamsAndProcessesIfEmpty();
     migrateWorkersRemoveTeamCheckIfNeeded();
   });

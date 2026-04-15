@@ -62,6 +62,9 @@ import {
   updateProductModel,
   deleteProductModel,
   applyHedefSessionToDailyMeta,
+  getRepairEntries,
+  upsertRepairEntries,
+  getRepairHistory,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 
@@ -1073,6 +1076,46 @@ app.post("/api/production/bulk", requirePermission("topluEkle"), async (req, res
     return res.json({ ok: true, count: normalized.length });
   } catch (error) {
     return res.status(500).json({ message: "Toplu kayıt başarısız", error: String(error) });
+  }
+});
+
+// ─── Tamir Oranı ─────────────────────────────────────────────────────────────
+
+app.get("/api/repairs", requireAuth, async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    const entries = await getRepairEntries(String(date));
+    return res.json({ date, entries });
+  } catch (err) {
+    return res.status(500).json({ message: "Tamir verileri alınamadı", error: String(err) });
+  }
+});
+
+app.put("/api/repairs", requireAuth, async (req, res) => {
+  const { date, entries } = req.body || {};
+  if (!date || !Array.isArray(entries)) {
+    return res.status(400).json({ message: "date ve entries zorunlu" });
+  }
+  try {
+    await upsertRepairEntries(String(date), entries);
+    logActivity(req, "tamir_kaydet", "repair_entries", { date: String(date), count: entries.length });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: "Tamir verisi kaydedilemedi", error: String(err) });
+  }
+});
+
+app.get("/api/repairs/history", requireAuth, async (req, res) => {
+  const { startDate, endDate } = req.query;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "startDate ve endDate zorunlu" });
+  }
+  try {
+    const history = await getRepairHistory(String(startDate), String(endDate));
+    return res.json(history);
+  } catch (err) {
+    return res.status(500).json({ message: "Tamir geçmişi alınamadı", error: String(err) });
   }
 });
 
