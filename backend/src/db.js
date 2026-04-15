@@ -183,6 +183,19 @@ export function initDb() {
       )
     `);
 
+    db.all("PRAGMA table_info(production_entries)", [], (pragmaErr, cols) => {
+      if (pragmaErr || !Array.isArray(cols) || cols.length === 0) return;
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has("note")) {
+        db.run("ALTER TABLE production_entries ADD COLUMN note TEXT NOT NULL DEFAULT ''", (e) => {
+          if (e) {
+            // eslint-disable-next-line no-console
+            console.error("[tekstil-db] production_entries note migration:", e.message);
+          }
+        });
+      }
+    });
+
     db.run(`
       CREATE TABLE IF NOT EXISTS worker_roster_day_hide (
         worker_id INTEGER NOT NULL,

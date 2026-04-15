@@ -42,6 +42,7 @@ import {
   getWorkerNamesByIds,
   upsertEntriesBulk,
   upsertEntry,
+  upsertWorkerNote,
   getProductionEntrySlots,
   getTeams,
   getProcesses,
@@ -571,21 +572,36 @@ app.put("/api/workers/:id", requireAuth, async (req, res) => {
   const workerId = Number(req.params.id);
   if (!workerId) return res.status(400).json({ message: "Geçersiz worker id" });
 
-  const { process } = req.body;
-  if (!process) return res.status(400).json({ message: "process zorunlu" });
-  const procNorm = String(process).trim().toUpperCase();
-  const pnames = await listProcessNames();
-  if (!pnames.includes(procNorm)) {
-    return res.status(400).json({ message: "Geçersiz proses" });
+  const { process, team } = req.body;
+  if (!process && !team) return res.status(400).json({ message: "process veya team zorunlu" });
+
+  const payload = {};
+
+  if (process) {
+    const procNorm = String(process).trim().toUpperCase();
+    const pnames = await listProcessNames();
+    if (!pnames.includes(procNorm)) {
+      return res.status(400).json({ message: "Geçersiz proses" });
+    }
+    payload.process = procNorm;
+  }
+
+  if (team) {
+    const teamNorm = String(team).trim().toUpperCase();
+    const tcodes = await listTeamCodes();
+    if (!tcodes.includes(teamNorm)) {
+      return res.status(400).json({ message: "Geçersiz bölüm" });
+    }
+    payload.team = teamNorm;
   }
 
   try {
-    const result = await updateWorker(workerId, { process: procNorm });
+    const result = await updateWorker(workerId, payload);
     if (!result.updated) return res.status(404).json({ message: "Çalışan bulunamadı" });
     const workerName = await getWorkerNameById(workerId);
     logActivity(req, "calisan_guncelle", "workers", {
       id: workerId,
-      process: procNorm,
+      ...payload,
       name: workerName || undefined,
     });
     res.json({ ok: true });
@@ -825,6 +841,19 @@ app.get("/api/production/day-meta", async (req, res) => {
     res.json(meta);
   } catch (error) {
     res.status(500).json({ message: "Gün ürün bilgisi alınamadı", error: String(error) });
+  }
+});
+
+app.put("/api/production/note", async (req, res) => {
+  const { workerId, date, note } = req.body || {};
+  if (!workerId || !date) {
+    return res.status(400).json({ message: "workerId ve date zorunlu" });
+  }
+  try {
+    await upsertWorkerNote({ workerId: Number(workerId), date: String(date), note: note ?? "" });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "Not kaydedilemedi", error: String(error) });
   }
 });
 

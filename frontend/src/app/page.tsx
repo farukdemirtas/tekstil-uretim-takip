@@ -24,6 +24,7 @@ import {
   setAuthToken,
   unhideWorkerForCalendarDay,
   updateWorker,
+  saveWorkerNote,
   type DayProductMeta,
 } from "@/lib/api";
 import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
@@ -375,8 +376,13 @@ export default function HomePage() {
     XLSX.writeFile(workbook, `üretim-${selectedDate}.xlsx`);
   }
 
-  async function handleEditWorker(workerId: number, process: string) {
-    await updateWorker(workerId, { process });
+  async function handleEditWorker(workerId: number, payload: { process: string; team: string }) {
+    await updateWorker(workerId, payload);
+    await loadDateData(selectedDate);
+  }
+
+  async function handleSaveNote(workerId: number, note: string) {
+    await saveWorkerNote({ workerId, date: selectedDate, note });
     await loadDateData(selectedDate);
   }
 
@@ -808,6 +814,7 @@ export default function HomePage() {
           onHideWorkerForDay={(id, name) => void handleHideWorkerForDay(id, name)}
           onUnhideWorkerForDay={(id, name) => void handleUnhideWorkerForDay(id, name)}
           onEditWorker={handleEditWorker}
+          onSaveNote={handleSaveNote}
           canDeleteWorkers={true}
         />
       )}

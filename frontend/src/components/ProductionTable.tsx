@@ -14,7 +14,8 @@ type ProductionTableProps = {
   onHideWorkerForDay?: (workerId: number, workerName: string) => void;
   /** Sahada yok işaretini kaldır */
   onUnhideWorkerForDay?: (workerId: number, workerName: string) => void;
-  onEditWorker: (workerId: number, process: string) => Promise<void>;
+  onEditWorker: (workerId: number, payload: { process: string; team: string }) => Promise<void>;
+  onSaveNote?: (workerId: number, note: string) => Promise<void>;
   canDeleteWorkers?: boolean;
 };
 
@@ -97,11 +98,15 @@ export default function ProductionTable({
   onHideWorkerForDay,
   onUnhideWorkerForDay,
   onEditWorker,
+  onSaveNote,
   canDeleteWorkers,
 }: ProductionTableProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingProcess, setEditingProcess] = useState<string>("");
+  const [editingTeam, setEditingTeam] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  const [noteEditingId, setNoteEditingId] = useState<number | null>(null);
+  const [noteText, setNoteText] = useState<string>("");
   const [teamOrder, setTeamOrder] = useState<string[]>(FALLBACK_TEAM_ORDER);
   const [teamLabels, setTeamLabels] = useState<Record<string, string>>(FALLBACK_LABELS);
   const [processNames, setProcessNames] = useState<string[]>([]);
@@ -126,20 +131,50 @@ export default function ProductionTable({
     if (row.absentForDay) return;
     setEditingId(row.workerId);
     setEditingProcess(row.process);
+    setEditingTeam(row.team);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setEditingProcess("");
+    setEditingTeam("");
+    setNoteEditingId(null);
+    setNoteText("");
+  }
+
+  function startNoteEdit(row: ProductionRow) {
+    setNoteEditingId(row.workerId);
+    setNoteText(row.note ?? "");
+  }
+
+  function cancelNoteEdit() {
+    setNoteEditingId(null);
+    setNoteText("");
+  }
+
+  async function saveNote(workerId: number) {
+    if (!onSaveNote) return;
+    setSaving(true);
+    try {
+      await onSaveNote(workerId, noteText.trim());
+      setNoteEditingId(null);
+      setNoteText("");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveEdit(workerId: number) {
-    if (!editingProcess.trim()) return;
+    if (!editingProcess.trim() || !editingTeam.trim()) return;
     setSaving(true);
     try {
-      await onEditWorker(workerId, editingProcess.trim().toUpperCase());
+      await onEditWorker(workerId, {
+        process: editingProcess.trim().toUpperCase(),
+        team: editingTeam.trim().toUpperCase(),
+      });
       setEditingId(null);
       setEditingProcess("");
+      setEditingTeam("");
     } finally {
       setSaving(false);
     }
@@ -217,15 +252,69 @@ export default function ProductionTable({
                             Sahada yok
                           </span>
                         ) : null}
+                        {!isEditing && row.note ? (
+                          <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500 italic">{row.note}</p>
+                        ) : null}
+                        {isEditing && noteEditingId === row.workerId ? (
+                          <div className="mt-1.5 flex flex-col gap-1">
+                            <textarea
+                              value={noteText}
+                              onChange={(e) => setNoteText(e.target.value)}
+                              placeholder="Açıklama yazın…"
+                              rows={2}
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                            />
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => void saveNote(row.workerId)}
+                                disabled={saving}
+                                className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                              >Kaydet</button>
+                              <button
+                                type="button"
+                                onClick={cancelNoteEdit}
+                                disabled={saving}
+                                className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300"
+                              >İptal</button>
+                            </div>
+                          </div>
+                        ) : isEditing && noteEditingId !== row.workerId && onSaveNote ? (
+                          <button
+                            type="button"
+                            onClick={() => startNoteEdit(row)}
+                            className="mt-1 block text-xs text-slate-400 underline underline-offset-2 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+                          >
+                            {row.note ? "Açıklamayı düzenle" : "+ Açıklama ekle"}
+                          </button>
+                        ) : null}
                       </td>
                       <td className="min-w-[10rem] px-3 py-2">
                         {isEditing ? (
-                          <ProcessSelectEditor
-                            value={editingProcess}
-                            onChange={setEditingProcess}
-                            options={processOptions}
-                            autoFocus
-                          />
+                          <div className="flex flex-col gap-1.5">
+                            <div className="relative w-full">
+                              <select
+                                value={editingTeam}
+                                onChange={(e) => setEditingTeam(e.target.value)}
+                                className="select-modern-compact w-full max-w-[16rem]"
+                                autoFocus
+                              >
+                                {teamOrder.map((code) => (
+                                  <option key={code} value={code}>
+                                    {teamLabel(code)}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500 dark:text-slate-400">
+                                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              </span>
+                            </div>
+                            <ProcessSelectEditor
+                              value={editingProcess}
+                              onChange={setEditingProcess}
+                              options={processOptions}
+                            />
+                          </div>
                         ) : (
                           <span className="text-slate-800 dark:text-slate-200">{row.process}</span>
                         )}
@@ -270,9 +359,9 @@ export default function ProductionTable({
                                 type="button"
                                 disabled={absent}
                                 onClick={() => startEdit(row)}
-                                className="rounded-lg border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-950/35"
+                                className="rounded-lg border border-violet-300 px-2 py-1 text-xs font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-600 dark:text-violet-300 dark:hover:bg-violet-950/35"
                               >
-                                Düzenle
+                                Taşı
                               </button>
                               {absent && onUnhideWorkerForDay ? (
                                 <button
@@ -347,8 +436,60 @@ export default function ProductionTable({
                           Sahada yok
                         </span>
                       ) : null}
+                      {!isEditing && row.note ? (
+                        <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500 italic">{row.note}</p>
+                      ) : null}
+                      {isEditing && noteEditingId === row.workerId ? (
+                        <div className="mt-1.5 flex flex-col gap-1">
+                          <textarea
+                            value={noteText}
+                            onChange={(e) => setNoteText(e.target.value)}
+                            placeholder="Açıklama yazın…"
+                            rows={2}
+                            className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => void saveNote(row.workerId)}
+                              disabled={saving}
+                              className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                            >Kaydet</button>
+                            <button
+                              type="button"
+                              onClick={cancelNoteEdit}
+                              disabled={saving}
+                              className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300"
+                            >İptal</button>
+                          </div>
+                        </div>
+                      ) : isEditing && noteEditingId !== row.workerId && onSaveNote ? (
+                        <button
+                          type="button"
+                          onClick={() => startNoteEdit(row)}
+                          className="mt-1 block text-xs text-slate-400 underline underline-offset-2 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+                        >
+                          {row.note ? "Açıklamayı düzenle" : "+ Açıklama ekle"}
+                        </button>
+                      ) : null}
                       {isEditing ? (
-                        <div className="mt-2">
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          <div className="relative w-full">
+                            <select
+                              value={editingTeam}
+                              onChange={(e) => setEditingTeam(e.target.value)}
+                              className="select-modern-compact w-full max-w-none"
+                            >
+                              {teamOrder.map((code) => (
+                                <option key={code} value={code}>
+                                  {teamLabel(code)}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500 dark:text-slate-400">
+                              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </span>
+                          </div>
                           <ProcessSelectEditor
                             value={editingProcess}
                             onChange={setEditingProcess}
@@ -407,9 +548,9 @@ export default function ProductionTable({
                           type="button"
                           disabled={absent}
                           onClick={() => startEdit(row)}
-                          className="flex-1 rounded-lg border border-blue-300 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-40 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-950/35"
+                          className="flex-1 rounded-lg border border-violet-300 py-2 text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:opacity-40 dark:border-violet-600 dark:text-violet-300 dark:hover:bg-violet-950/35"
                         >
-                          Düzenle
+                          Taşı
                         </button>
                         {absent && onUnhideWorkerForDay && (
                           <button

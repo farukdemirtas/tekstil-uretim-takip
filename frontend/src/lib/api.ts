@@ -222,7 +222,7 @@ export async function addWorker(payload: { name: string; team: Team; process: st
   return response.json();
 }
 
-export async function updateWorker(workerId: number, payload: { process: string }): Promise<void> {
+export async function updateWorker(workerId: number, payload: { process?: string; team?: string }): Promise<void> {
   const response = await apiFetch(`${apiBase()}/workers/${workerId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -347,6 +347,7 @@ function parseProductionRow(raw: unknown): ProductionRow | null {
     t1600: Number(o.t1600) || 0,
     t1830: Number(o.t1830) || 0,
     absentForDay: absentForDay || undefined,
+    note: typeof o.note === "string" && o.note ? o.note : undefined,
   };
 }
 
@@ -407,6 +408,19 @@ export async function saveDayProductMeta(payload: {
   if (!response.ok) throw new Error("Ürün bilgisi kaydedilemedi");
   const raw = await response.json();
   return parseDayProductMetaPayload(raw);
+}
+
+export async function saveWorkerNote(payload: {
+  workerId: number;
+  date: string;
+  note: string;
+}): Promise<void> {
+  const response = await apiFetch(`${apiBase()}/production/note`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error("Not kaydedilemedi");
 }
 
 export async function saveProduction(payload: {

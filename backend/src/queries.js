@@ -128,11 +128,17 @@ export function createWorker({ name, team, process, created_at }) {
   });
 }
 
-export function updateWorker(workerId, { process }) {
+export function updateWorker(workerId, { process, team }) {
+  const updates = [];
+  const params = [];
+  if (process !== undefined) { updates.push("process = ?"); params.push(process); }
+  if (team !== undefined) { updates.push("team = ?"); params.push(team); }
+  if (updates.length === 0) return Promise.resolve({ updated: false });
+  params.push(workerId);
   return new Promise((resolve, reject) => {
     db.run(
-      "UPDATE workers SET process = ? WHERE id = ?",
-      [process, workerId],
+      `UPDATE workers SET ${updates.join(", ")} WHERE id = ?`,
+      params,
       function onUpdate(err) {
         if (err) return reject(err);
         resolve({ updated: this.changes > 0 });
@@ -329,6 +335,7 @@ export function getDailyEntries(date) {
         COALESCE(p.t1300, 0) AS t1300,
         COALESCE(p.t1600, 0) AS t1600,
         COALESCE(p.t1830, 0) AS t1830,
+        COALESCE(p.note, '') AS note,
         CASE WHEN EXISTS (
           SELECT 1 FROM worker_roster_day_hide h
           WHERE h.worker_id = w.id AND h.hide_date = ?
@@ -514,6 +521,24 @@ export function upsertEntry({ workerId, date, t1000, t1300, t1600, t1830 }) {
         t1830 = excluded.t1830
       `,
       [workerId, date, t1000, t1300, t1600, t1830],
+      (err) => {
+        if (err) return reject(err);
+        resolve(true);
+      }
+    );
+  });
+}
+
+export function upsertWorkerNote({ workerId, date, note }) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `
+      INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, note)
+      VALUES (?, ?, 0, 0, 0, 0, ?)
+      ON CONFLICT(worker_id, production_date) DO UPDATE SET
+        note = excluded.note
+      `,
+      [workerId, date, note ?? ""],
       (err) => {
         if (err) return reject(err);
         resolve(true);

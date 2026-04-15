@@ -22,6 +22,8 @@ export type ProductionRow = {
   t1830: number;
   /** Bu takvim günü sahada yok (satır soluk; üretim hücreleri kapalı) */
   absentForDay?: boolean;
+  /** Personele özel not / açıklama (gün bazlı) */
+  note?: string;
 };
 
 
