@@ -93,7 +93,13 @@ export default function HomePage() {
   const [copyRosterEndDate, setCopyRosterEndDate] = useState("");
   const [copyRosterBusy, setCopyRosterBusy] = useState(false);
   const [copyRosterSuccess, setCopyRosterSuccess] = useState<string | null>(null);
-  const [bulkExportOpen, setBulkExportOpen] = useState(false);
+  const [excelPanelOpen, setExcelPanelOpen] = useState(false);
+  const [excelPanelTab, setExcelPanelTab] = useState<"export" | "bulk" | "import">("export");
+  const [importOpen, setImportOpen] = useState(false);
+  function setBulkExportOpen(v: boolean) {
+    if (v) { setExcelPanelOpen(true); setExcelPanelTab("bulk"); }
+    else setExcelPanelOpen(false);
+  }
   const [bulkExportStart, setBulkExportStart] = useState("");
   const [bulkExportEnd, setBulkExportEnd] = useState("");
   const [bulkExporting, setBulkExporting] = useState(false);
@@ -763,26 +769,23 @@ export default function HomePage() {
             </Link>
           ) : null}
           <button
-            onClick={handleExportExcel}
-            className="btn-nav"
-          >
-            Excel Export
-          </button>
-          <button
             type="button"
             onClick={() => {
-              setBulkExportOpen((v) => !v);
+              setExcelPanelOpen((v) => !v);
               if (!bulkExportStart) setBulkExportStart(selectedDate);
               if (!bulkExportEnd) setBulkExportEnd(selectedDate);
             }}
             className="btn-nav"
           >
-            Toplu Export
+            Excel
           </button>
           {role === "admin" ? (
             <ExcelImportPanel
               teamMeta={teamMeta}
+              open={importOpen}
+              onOpenChange={setImportOpen}
               onImported={(targetDate) => {
+                setImportOpen(false);
                 if (targetDate === selectedDate) {
                   void loadDateData(selectedDate);
                 } else {
@@ -877,16 +880,35 @@ export default function HomePage() {
         </div>
       ) : null}
 
-      {/* Toplu Excel Export paneli */}
-      {bulkExportOpen ? (
+      {/* Excel birleşik panel */}
+      {excelPanelOpen ? (
         <div className="surface-card dark:text-slate-100">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-              Toplu Excel Export
-            </h3>
+            <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+              {(
+                [
+                  { key: "export", label: "Dışa aktar" },
+                  { key: "bulk", label: "Toplu export" },
+                  ...(role === "admin" ? [{ key: "import", label: "İçe aktar" }] : []),
+                ] as { key: "export" | "bulk" | "import"; label: string }[]
+              ).map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setExcelPanelTab(tab.key)}
+                  className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+                    excelPanelTab === tab.key
+                      ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
-              onClick={() => setBulkExportOpen(false)}
+              onClick={() => setExcelPanelOpen(false)}
               className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -894,64 +916,105 @@ export default function HomePage() {
               </svg>
             </button>
           </div>
-          <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-            Seçilen tarih aralığındaki her iş günü ayrı bir sayfa olarak tek Excel dosyasına aktarılır.
-          </p>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Başlangıç</label>
-              <input
-                type="date"
-                value={bulkExportStart}
-                onChange={(e) => setBulkExportStart(e.target.value)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              />
+
+          {excelPanelTab === "export" && (
+            <div>
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                Seçili tarihin ({selectedDate}) üretim verisini Excel dosyası olarak indir.
+              </p>
+              <button
+                type="button"
+                onClick={() => { handleExportExcel(); }}
+                className="flex items-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                İndir ({selectedDate})
+              </button>
             </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Bitiş</label>
-              <input
-                type="date"
-                value={bulkExportEnd}
-                onChange={(e) => setBulkExportEnd(e.target.value)}
-                min={bulkExportStart}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              />
-            </div>
-            <button
-              type="button"
-              disabled={bulkExporting || !bulkExportStart || !bulkExportEnd || bulkExportStart > bulkExportEnd}
-              onClick={() => void handleBulkExportExcel()}
-              className="flex items-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {bulkExporting ? (
-                <>
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  {bulkExportProgress
-                    ? `${bulkExportProgress.done} / ${bulkExportProgress.total} gün…`
-                    : "Hazırlanıyor…"}
-                </>
-              ) : (
-                <>
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  İndir
-                </>
+          )}
+
+          {excelPanelTab === "bulk" && (
+            <div>
+              <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                Seçilen tarih aralığındaki her iş günü ayrı bir sayfa olarak tek Excel dosyasına aktarılır.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Başlangıç</label>
+                  <input
+                    type="date"
+                    value={bulkExportStart}
+                    onChange={(e) => setBulkExportStart(e.target.value)}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Bitiş</label>
+                  <input
+                    type="date"
+                    value={bulkExportEnd}
+                    onChange={(e) => setBulkExportEnd(e.target.value)}
+                    min={bulkExportStart}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={bulkExporting || !bulkExportStart || !bulkExportEnd || bulkExportStart > bulkExportEnd}
+                  onClick={() => void handleBulkExportExcel()}
+                  className="flex items-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {bulkExporting ? (
+                    <>
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      {bulkExportProgress
+                        ? `${bulkExportProgress.done} / ${bulkExportProgress.total} gün…`
+                        : "Hazırlanıyor…"}
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      İndir
+                    </>
+                  )}
+                </button>
+              </div>
+              {bulkExporting && bulkExportProgress && (
+                <div className="mt-3">
+                  <div className="mb-1 flex justify-between text-xs text-slate-500">
+                    <span>{bulkExportProgress.done} / {bulkExportProgress.total} gün işlendi</span>
+                    <span>{Math.round((bulkExportProgress.done / bulkExportProgress.total) * 100)}%</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                      style={{ width: `${Math.round((bulkExportProgress.done / bulkExportProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                </div>
               )}
-            </button>
-          </div>
-          {bulkExporting && bulkExportProgress && (
-            <div className="mt-3">
-              <div className="mb-1 flex justify-between text-xs text-slate-500">
-                <span>{bulkExportProgress.done} / {bulkExportProgress.total} gün işlendi</span>
-                <span>{Math.round((bulkExportProgress.done / bulkExportProgress.total) * 100)}%</span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                <div
-                  className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${Math.round((bulkExportProgress.done / bulkExportProgress.total) * 100)}%` }}
-                />
-              </div>
+            </div>
+          )}
+
+          {excelPanelTab === "import" && role === "admin" && (
+            <div>
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                Daha önce dışa aktarılan .xlsx dosyasını seçerek üretim verilerini sisteme aktar.
+              </p>
+              <button
+                type="button"
+                onClick={() => setImportOpen(true)}
+                className="flex items-center gap-2 rounded-xl border border-teal-500 bg-teal-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Dosya seç ve aktar
+              </button>
             </div>
           )}
         </div>

@@ -15,14 +15,12 @@ import { rankTercileStyles } from "@/lib/rankTercile";
 import type { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics } from "@/lib/types";
 
 const STORAGE_KEY = "ekran2_settings_v1";
-const EKRAN2_MODE_KEY = "ekran2_display_mode";
 const AUTO_REFRESH_MS = 30_000;
 /** Backend LIMIT; analiz sayfasıyla aynı mantık — tüm sıralı personel */
 const WORKER_LIST_LIMIT = 9999;
 /** Analiz — Günlük Trend Çizgisi stroke */
 const ANALYSIS_TREND_STROKE = "#16a34a";
 
-type Ekran2Mode = "dark" | "light";
 type Phase = "setup" | "display";
 
 type StoredSettings = {
@@ -93,7 +91,7 @@ type TeamBlockData = {
   trend: DailyTrendPoint[];
 };
 
-function MiniTrendChart({ points, dark, compact }: { points: DailyTrendPoint[]; dark: boolean; compact?: boolean }) {
+function MiniTrendChart({ points, compact }: { points: DailyTrendPoint[]; compact?: boolean }) {
   const stroke = ANALYSIS_TREND_STROKE;
   const W = 280;
   const H = compact ? 48 : 80;
@@ -101,7 +99,7 @@ function MiniTrendChart({ points, dark, compact }: { points: DailyTrendPoint[]; 
   const svgH = compact ? "h-10" : "h-16";
   if (points.length === 0) {
     return (
-      <div className={`py-1 text-center text-xs sm:text-sm ${dark ? "text-slate-500" : "text-slate-500"}`}>Trend yok</div>
+      <div className="py-1 text-center text-xs text-slate-500 sm:text-sm">Trend yok</div>
     );
   }
   const max = Math.max(...points.map((p) => p.totalProduction), 1);
@@ -129,7 +127,6 @@ function MiniTrendChart({ points, dark, compact }: { points: DailyTrendPoint[]; 
         strokeWidth={compact ? 2 : 2.5}
         strokeLinecap="round"
         strokeLinejoin="round"
-        opacity={dark ? 0.95 : 1}
       />
     </svg>
   );
@@ -142,7 +139,6 @@ function PersonnelRows({
   metaKey,
   maxTop,
   total,
-  dark,
   textClass,
   barH,
 }: {
@@ -152,7 +148,6 @@ function PersonnelRows({
   metaKey: Team;
   maxTop: number;
   total: number;
-  dark: boolean;
   textClass: string;
   barH: string;
 }) {
@@ -170,7 +165,7 @@ function PersonnelRows({
           >
             <span className={`tabular-nums ${rankClass}`}>{index + 1}</span>
             <span className="truncate font-medium">{row.name}</span>
-            <div className={`${barH} overflow-hidden rounded-full ${dark ? "bg-slate-800" : "bg-slate-200"}`}>
+            <div className={`${barH} overflow-hidden rounded-full bg-slate-200`}>
               <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${w}%` }} />
             </div>
             <span className="text-right tabular-nums font-semibold">{row.totalProduction}</span>
@@ -184,7 +179,6 @@ function PersonnelRows({
 function Ekran2TeamPanel({
   meta,
   dataMap,
-  dark,
   className = "",
   compactChart = false,
   personnelTwoCols = false,
@@ -192,7 +186,6 @@ function Ekran2TeamPanel({
 }: {
   meta: { key: Team; label: string };
   dataMap: Map<Team, TeamBlockData>;
-  dark: boolean;
   className?: string;
   /** Dar (Yaka/Arka) bloklar için daha kısa trend grafiği */
   compactChart?: boolean;
@@ -214,49 +207,41 @@ function Ekran2TeamPanel({
   const mid = Math.ceil(top.length / 2);
 
   const extraRing =
-    variant === "extra"
-      ? dark
-        ? "ring-1 ring-violet-400/35 border-violet-500/25"
-        : "ring-1 ring-violet-400/50 border-violet-200"
-      : "";
+    variant === "extra" ? "ring-1 ring-violet-400/50 border-violet-200" : "";
 
   return (
     <div
-      className={`flex min-h-0 flex-col overflow-hidden rounded-xl border p-2 sm:p-2.5 lg:p-3 ${
-        dark ? "border-white/10 bg-slate-900/55" : "border-slate-200 bg-white shadow-sm"
-      } ${extraRing} ${className}`.trim()}
+      className={`flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-2.5 lg:p-3 ${extraRing} ${className}`.trim()}
     >
-      <h2
-        className={`text-center text-sm font-bold leading-tight sm:text-base lg:text-lg xl:text-xl ${dark ? "text-white" : "text-slate-900"}`}
-      >
+      <h2 className="text-center text-sm font-bold leading-tight text-slate-900 sm:text-base lg:text-lg xl:text-xl">
         {meta.label}
       </h2>
 
       <div className="mt-1.5 grid grid-cols-3 gap-1 text-center text-xs sm:text-sm lg:text-base">
-        <div className={`rounded-lg py-1 sm:py-1.5 ${dark ? "bg-slate-800/80" : "bg-slate-50"}`}>
-          <div className={`font-bold tabular-nums ${dark ? "text-teal-300" : "text-teal-700"}`}>{totalTrend}</div>
-          <div className={`text-[10px] sm:text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>Toplam</div>
+        <div className="rounded-lg bg-slate-50 py-1 sm:py-1.5">
+          <div className="font-bold tabular-nums text-teal-700">{totalTrend}</div>
+          <div className="text-[10px] text-slate-500 sm:text-xs">Toplam</div>
         </div>
-        <div className={`rounded-lg py-1 sm:py-1.5 ${dark ? "bg-slate-800/80" : "bg-slate-50"}`}>
+        <div className="rounded-lg bg-slate-50 py-1 sm:py-1.5">
           <div className="font-bold tabular-nums">{daysWith}</div>
-          <div className={`text-[10px] sm:text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>Aktif gün</div>
+          <div className="text-[10px] text-slate-500 sm:text-xs">Aktif gün</div>
         </div>
-        <div className={`rounded-lg py-1 sm:py-1.5 ${dark ? "bg-slate-800/80" : "bg-slate-50"}`}>
+        <div className="rounded-lg bg-slate-50 py-1 sm:py-1.5">
           <div className="font-bold tabular-nums">{avgDay}</div>
-          <div className={`text-[10px] sm:text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>Ort./gün</div>
+          <div className="text-[10px] text-slate-500 sm:text-xs">Ort./gün</div>
         </div>
       </div>
 
       <div className="mt-1.5 shrink-0" title="Günlük trend">
-        <MiniTrendChart points={trend} dark={dark} compact={compactChart} />
+        <MiniTrendChart points={trend} compact={compactChart} />
       </div>
 
-      <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-hidden border-t border-transparent pt-1.5 dark:border-white/5">
-        <p className={`mb-1 shrink-0 text-[10px] font-semibold uppercase tracking-wide sm:text-xs lg:text-sm ${dark ? "text-slate-400" : "text-slate-500"}`}>
+      <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-hidden border-t border-transparent pt-1.5">
+        <p className="mb-1 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs lg:text-sm">
           Personel ({top.length})
         </p>
         {top.length === 0 ? (
-          <p className={`text-sm sm:text-base ${dark ? "text-slate-500" : "text-slate-500"}`}>Kayıt yok</p>
+          <p className="text-sm text-slate-500 sm:text-base">Kayıt yok</p>
         ) : personnelTwoCols ? (
           <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 lg:gap-3">
             <PersonnelRows
@@ -266,7 +251,6 @@ function Ekran2TeamPanel({
               metaKey={meta.key}
               maxTop={maxTop}
               total={top.length}
-              dark={dark}
               textClass={rowText}
               barH={barH}
             />
@@ -277,7 +261,6 @@ function Ekran2TeamPanel({
               metaKey={meta.key}
               maxTop={maxTop}
               total={top.length}
-              dark={dark}
               textClass={rowText}
               barH={barH}
             />
@@ -290,7 +273,6 @@ function Ekran2TeamPanel({
             metaKey={meta.key}
             maxTop={maxTop}
             total={top.length}
-            dark={dark}
             textClass={rowText}
             barH={barH}
           />
@@ -307,7 +289,6 @@ export default function Ekran2Page() {
   const [startDate, setStartDate] = useState(todayWeekdayIso());
   const [endDate, setEndDate] = useState(todayWeekdayIso());
   const [hourFilter, setHourFilter] = useState<HourFilter>("");
-  const [displayMode, setDisplayMode] = useState<Ekran2Mode>("light");
   const [blocks, setBlocks] = useState<TeamBlockData[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -316,8 +297,6 @@ export default function Ekran2Page() {
   /** null = tüm bölümler; dizi = yalnızca bu kodlar */
   const [selectedTeamCodes, setSelectedTeamCodes] = useState<string[] | null>(null);
   const [setupError, setSetupError] = useState("");
-
-  const dark = displayMode === "dark";
 
   const fullTeamOrder = useMemo(() => {
     const codes = new Set(teamMetas.map((t) => t.code));
@@ -357,13 +336,6 @@ export default function Ekran2Page() {
       void getTeams()
         .then((rows) => setTeamMetas(rows.map((r) => ({ code: r.code, label: r.label }))))
         .catch(() => {});
-    }
-
-    try {
-      const m = window.localStorage.getItem(EKRAN2_MODE_KEY);
-      if (m === "light" || m === "dark") setDisplayMode(m);
-    } catch {
-      /* ignore */
     }
 
     const stored = readStored();
@@ -438,15 +410,6 @@ export default function Ekran2Page() {
     return m;
   }, [blocks]);
 
-  function setMode(mode: Ekran2Mode) {
-    setDisplayMode(mode);
-    try {
-      window.localStorage.setItem(EKRAN2_MODE_KEY, mode);
-    } catch {
-      /* ignore */
-    }
-  }
-
   function persistSettings(applied: boolean) {
     writeStored({
       startDate,
@@ -498,27 +461,18 @@ export default function Ekran2Page() {
     setSelectedTeamCodes(codes.length > 0 ? [...codes] : []);
   }
 
-
   if (!hasToken) {
     return (
-      <div
-        className={`fixed inset-0 flex flex-col items-center justify-center gap-6 px-8 text-center ${
-          dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"
-        }`}
-      >
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-6 bg-slate-100 px-8 text-center text-slate-900">
         <p className="text-2xl font-semibold tracking-wide md:text-3xl">EKRAN2</p>
-        <p className={`max-w-xl text-lg md:text-xl ${dark ? "text-slate-300" : "text-slate-600"}`}>
+        <p className="max-w-xl text-lg text-slate-600 md:text-xl">
           Aşama bazlı analiz panosu için önce ana uygulamada giriş yapın. Veriler, Analiz ekranı ile aynı kaynaktan gelir
           (EKRAN2 veya analiz yetkisi gerekir).
         </p>
         <div className="flex flex-wrap justify-center gap-4">
           <Link
             href="/"
-            className={
-              dark
-                ? "rounded-xl border-2 border-white px-8 py-4 text-lg font-semibold hover:bg-white hover:text-[#030712]"
-                : "rounded-xl border-2 border-slate-800 px-8 py-4 text-lg font-semibold text-slate-900 hover:bg-slate-800 hover:text-white"
-            }
+            className="rounded-xl border-2 border-slate-800 px-8 py-4 text-lg font-semibold text-slate-900 hover:bg-slate-800 hover:text-white"
           >
             Giriş
           </Link>
@@ -535,13 +489,9 @@ export default function Ekran2Page() {
 
   if (!canUseEkran2) {
     return (
-      <div
-        className={`fixed inset-0 flex flex-col items-center justify-center gap-6 px-8 text-center ${
-          dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"
-        }`}
-      >
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-6 bg-slate-100 px-8 text-center text-slate-900">
         <p className="text-2xl font-semibold md:text-3xl">EKRAN2</p>
-        <p className={`max-w-xl text-lg md:text-xl ${dark ? "text-slate-300" : "text-slate-600"}`}>
+        <p className="max-w-xl text-lg text-slate-600 md:text-xl">
           Bu ekran için hesabınıza Analiz veya EKRAN2 yetkisi (veya yönetici) tanımlanmalıdır.
         </p>
         <Link
@@ -556,47 +506,28 @@ export default function Ekran2Page() {
 
   if (phase === "setup") {
     return (
-      <div
-        className={`fixed inset-0 overflow-auto ${dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"}`}
-        style={{ minHeight: "100dvh" }}
-      >
+      <div className="fixed inset-0 overflow-auto bg-slate-100 text-slate-900" style={{ minHeight: "100dvh" }}>
         <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-8 px-6 py-10 md:py-16">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className={`text-sm font-medium uppercase tracking-[0.35em] ${dark ? "text-teal-400/90" : "text-teal-700"}`}>
-                EKRAN2
-              </p>
+              <p className="text-sm font-medium uppercase tracking-[0.35em] text-teal-700">EKRAN2</p>
               <h1 className="mt-2 text-2xl font-bold md:text-3xl">Filtreleri seçin</h1>
-              <p className={`mt-2 text-sm md:text-base ${dark ? "text-slate-400" : "text-slate-600"}`}>
+              <p className="mt-2 text-sm text-slate-600 md:text-base">
                 Tarih, saat ve gösterilecek bölümler panoya uygulanır. İstatistik
                 yalnızca işaretlediğiniz bölümler için yüklenir; veriler her 30 saniyede yenilenir.
               </p>
             </div>
           </div>
 
-          <div
-            className={`rounded-2xl border p-6 md:p-8 ${
-              dark ? "border-white/10 bg-slate-900/60" : "border-slate-200 bg-white shadow-sm"
-            }`}
-          >
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
             <div className="grid gap-4 sm:grid-cols-2">
-              <WeekdayDatePicker
-                label="Başlangıç"
-                value={startDate}
-                onChange={setStartDate}
-                tone={dark ? "dark" : "default"}
-              />
-              <WeekdayDatePicker
-                label="Bitiş"
-                value={endDate}
-                onChange={setEndDate}
-                tone={dark ? "dark" : "default"}
-              />
+              <WeekdayDatePicker label="Başlangıç" value={startDate} onChange={setStartDate} />
+              <WeekdayDatePicker label="Bitiş" value={endDate} onChange={setEndDate} />
             </div>
 
             <div className="mt-6">
               <label className="text-sm font-medium">Saat filtresi</label>
-              <p className={`mb-3 mt-1 text-xs ${dark ? "text-slate-500" : "text-slate-500"}`}>
+              <p className="mb-3 mt-1 text-xs text-slate-500">
                 Analiz ekranındaki ile aynı: tek dilim veya tümü.
               </p>
               <div className="flex flex-wrap gap-2">
@@ -615,12 +546,8 @@ export default function Ekran2Page() {
                     onClick={() => setHourFilter(h)}
                     className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
                       hourFilter === h
-                        ? dark
-                          ? "border-teal-500 bg-teal-950/50 text-teal-200"
-                          : "border-teal-600 bg-teal-50 text-teal-800"
-                        : dark
-                          ? "border-slate-600 hover:bg-white/5"
-                          : "border-slate-300 hover:bg-slate-50"
+                        ? "border-teal-600 bg-teal-50 text-teal-800"
+                        : "border-slate-300 hover:bg-slate-50"
                     }`}
                   >
                     {l}
@@ -631,47 +558,35 @@ export default function Ekran2Page() {
 
             <div className="mt-6">
               <label className="text-sm font-medium">Gösterilecek bölümler</label>
-              <p className={`mb-3 mt-1 text-xs ${dark ? "text-slate-500" : "text-slate-500"}`}>
-                TV panosunda hangi bölümlerin özeti ve personel sıralaması yer alacağını seçin. “Tümü” tüm tanımlı bölümleri
+              <p className="mb-3 mt-1 text-xs text-slate-500">
+                TV panosunda hangi bölümlerin özeti ve personel sıralaması yer alacağını seçin. "Tümü" tüm tanımlı bölümleri
                 açar; daraltmak için tek tek kapatın veya yalnızca ana beşliyi kullanın.
               </p>
               <div className="mb-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={selectAllTeams}
-                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold sm:text-sm ${
-                    dark ? "border-slate-600 hover:bg-white/5" : "border-slate-300 hover:bg-slate-50"
-                  }`}
+                  className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 sm:text-sm"
                 >
                   Tümünü seç
                 </button>
                 <button
                   type="button"
                   onClick={selectPrimaryFiveOnly}
-                  className={`rounded-xl border px-3 py-1.5 text-xs font-semibold sm:text-sm ${
-                    dark ? "border-slate-600 hover:bg-white/5" : "border-slate-300 hover:bg-slate-50"
-                  }`}
+                  className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 sm:text-sm"
                 >
                   Yalnızca ana bölümler (Sağ/Sol ön, Yaka, Arka, Bitim)
                 </button>
               </div>
               {teamMetas.length === 0 ? (
-                <p className={`text-sm ${dark ? "text-slate-500" : "text-slate-500"}`}>Bölüm listesi yükleniyor…</p>
+                <p className="text-sm text-slate-500">Bölüm listesi yükleniyor…</p>
               ) : (
-                <ul
-                  className={`grid max-h-[min(40vh,22rem)] grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-3 sm:grid-cols-2 [scrollbar-width:thin] ${
-                    dark ? "border-slate-600 bg-slate-800/40" : "border-slate-200 bg-slate-50/80"
-                  }`}
-                >
+                <ul className="grid max-h-[min(40vh,22rem)] grid-cols-1 gap-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2 [scrollbar-width:thin]">
                   {teamMetas.map((t) => {
                     const checked = selectedTeamCodes === null || selectedTeamCodes.includes(t.code);
                     return (
                       <li key={t.code}>
-                        <label
-                          className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm ${
-                            dark ? "hover:bg-white/5" : "hover:bg-white"
-                          }`}
-                        >
+                        <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-white">
                           <input
                             type="checkbox"
                             checked={checked}
@@ -679,9 +594,7 @@ export default function Ekran2Page() {
                             className="h-4 w-4 shrink-0 rounded border-slate-400 text-teal-600 focus:ring-teal-500"
                           />
                           <span className="min-w-0 font-medium leading-snug">{t.label}</span>
-                          <span className={`shrink-0 font-mono text-[10px] ${dark ? "text-slate-500" : "text-slate-400"}`}>
-                            {t.code}
-                          </span>
+                          <span className="shrink-0 font-mono text-[10px] text-slate-400">{t.code}</span>
                         </label>
                       </li>
                     );
@@ -689,17 +602,17 @@ export default function Ekran2Page() {
                 </ul>
               )}
               {selectedTeamCodes !== null ? (
-                <p className={`mt-2 text-xs ${dark ? "text-slate-500" : "text-slate-600"}`}>
+                <p className="mt-2 text-xs text-slate-600">
                   Seçili: {selectedTeamCodes.length} bölüm
                   {selectedTeamCodes.length === 0 ? " — ekranı açmak için en az birini işaretleyin." : ""}
                 </p>
               ) : (
-                <p className={`mt-2 text-xs ${dark ? "text-slate-500" : "text-slate-600"}`}>Tüm tanımlı bölümler açık.</p>
+                <p className="mt-2 text-xs text-slate-600">Tüm tanımlı bölümler açık.</p>
               )}
             </div>
 
             {setupError ? (
-              <p className="mt-4 text-sm font-medium text-red-500 dark:text-red-400">{setupError}</p>
+              <p className="mt-4 text-sm font-medium text-red-500">{setupError}</p>
             ) : null}
 
             <div className="mt-8 flex flex-wrap gap-3">
@@ -712,9 +625,7 @@ export default function Ekran2Page() {
               </button>
               <Link
                 href="/analysis"
-                className={`rounded-xl border-2 px-6 py-3.5 text-base font-semibold ${
-                  dark ? "border-white/30 hover:bg-white/10" : "border-slate-400 hover:bg-slate-50"
-                }`}
+                className="rounded-xl border-2 border-slate-400 px-6 py-3.5 text-base font-semibold hover:bg-slate-50"
               >
                 Analiz sayfası
               </Link>
@@ -732,31 +643,23 @@ export default function Ekran2Page() {
   const mBitim = metaFor("BITIM");
 
   return (
-    <div
-      className={`fixed inset-0 flex h-dvh max-h-dvh flex-col overflow-hidden ${dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"}`}
-    >
+    <div className="fixed inset-0 flex h-dvh max-h-dvh flex-col overflow-hidden bg-slate-100 text-slate-900">
       <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col gap-1.5 px-2 py-2 sm:gap-2 sm:px-3 sm:py-2.5 lg:px-4 lg:py-3">
-        <header
-          className={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-b pb-2 sm:gap-3 sm:pb-2.5 ${
-            dark ? "border-white/10" : "border-slate-300"
-          }`}
-        >
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-300 pb-2 sm:gap-3 sm:pb-2.5">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
-              <p className={`text-xs font-medium uppercase tracking-[0.2em] sm:text-sm ${dark ? "text-teal-400/90" : "text-teal-700"}`}>
-                EKRAN2
-              </p>
-              <p className={`text-sm sm:text-base lg:text-lg ${dark ? "text-slate-300" : "text-slate-700"}`}>
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-teal-700 sm:text-sm">EKRAN2</p>
+              <p className="text-sm text-slate-700 sm:text-base lg:text-lg">
                 {formatDateTr(startDate)} — {formatDateTr(endDate)} · {hourLabel(hourFilter)}
                 {orderedKeys.length > 0 ? (
-                  <span className={`ml-1.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>· {orderedKeys.length} bölüm</span>
+                  <span className="ml-1.5 text-slate-500">· {orderedKeys.length} bölüm</span>
                 ) : null}
                 {lastUpdated ? (
-                  <span className={`ml-2 ${dark ? "text-slate-400" : "text-slate-500"}`}>· Güncelleme {lastUpdated}</span>
+                  <span className="ml-2 text-slate-500">· Güncelleme {lastUpdated}</span>
                 ) : null}
               </p>
             </div>
-            <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm ${dark ? "text-slate-400" : "text-slate-600"}`}>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 sm:text-sm">
               <span>Yenileme 30 sn</span>
               <span className="opacity-50">|</span>
               <span className="flex items-center gap-1.5">
@@ -774,9 +677,7 @@ export default function Ekran2Page() {
             <button
               type="button"
               onClick={handleEditFilters}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold sm:rounded-xl sm:px-4 sm:text-base ${
-                dark ? "border-white/30 bg-white/5 hover:bg-white/10" : "border-slate-400 bg-white hover:bg-slate-50"
-              }`}
+              className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-base"
             >
               Filtre
             </button>
@@ -786,9 +687,7 @@ export default function Ekran2Page() {
                 const el = document.documentElement;
                 if (el.requestFullscreen) void el.requestFullscreen();
               }}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold sm:rounded-xl sm:px-4 sm:text-base ${
-                dark ? "border-white/30 bg-white/5 hover:bg-white/10" : "border-slate-400 bg-white text-slate-900 hover:bg-slate-50"
-              }`}
+              className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-base"
             >
               Tam ekran
             </button>
@@ -796,19 +695,17 @@ export default function Ekran2Page() {
         </header>
 
         {error ? (
-          <p className={`shrink-0 text-center text-sm font-semibold sm:text-base ${dark ? "text-red-400" : "text-red-600"}`}>{error}</p>
+          <p className="shrink-0 text-center text-sm font-semibold text-red-600 sm:text-base">{error}</p>
         ) : null}
 
         {loading && !blocks && orderedKeys.length > 0 ? (
-          <p className={`shrink-0 text-center text-sm ${dark ? "text-slate-400" : "text-slate-500"}`}>Yükleniyor…</p>
+          <p className="shrink-0 text-center text-sm text-slate-500">Yükleniyor…</p>
         ) : null}
         {orderedKeys.length === 0 && !error && teamMetas.length === 0 ? (
-          <p className={`shrink-0 text-center text-sm ${dark ? "text-slate-400" : "text-slate-500"}`}>
-            Bölüm listesi yükleniyor…
-          </p>
+          <p className="shrink-0 text-center text-sm text-slate-500">Bölüm listesi yükleniyor…</p>
         ) : null}
         {orderedKeys.length === 0 && !error && teamMetas.length > 0 ? (
-          <p className={`shrink-0 text-center text-sm font-medium ${dark ? "text-amber-400" : "text-amber-700"}`}>
+          <p className="shrink-0 text-center text-sm font-medium text-amber-700">
             Gösterilecek bölüm yok. Filtre ile bölüm seçin.
           </p>
         ) : null}
@@ -816,18 +713,18 @@ export default function Ekran2Page() {
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
           <section className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden sm:grid-cols-2 sm:gap-3 lg:grid-cols-5 lg:gap-3">
             {mSag && orderedKeySet.has("SAG_ON") ? (
-              <Ekran2TeamPanel meta={mSag} dataMap={blockByKey} dark={dark} className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0" />
+              <Ekran2TeamPanel meta={mSag} dataMap={blockByKey} className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0" />
             ) : null}
             {mSol && orderedKeySet.has("SOL_ON") ? (
-              <Ekran2TeamPanel meta={mSol} dataMap={blockByKey} dark={dark} className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0" />
+              <Ekran2TeamPanel meta={mSol} dataMap={blockByKey} className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0" />
             ) : null}
             {(mYaka && orderedKeySet.has("YAKA_HAZIRLIK")) || (mArka && orderedKeySet.has("ARKA_HAZIRLIK")) ? (
               <div className="flex min-h-0 flex-col gap-2 sm:col-span-2 sm:min-h-[40vh] lg:col-span-1 lg:h-full lg:min-h-0">
                 {mYaka && orderedKeySet.has("YAKA_HAZIRLIK") ? (
-                  <Ekran2TeamPanel meta={mYaka} dataMap={blockByKey} dark={dark} compactChart className="min-h-0 flex-1 basis-0" />
+                  <Ekran2TeamPanel meta={mYaka} dataMap={blockByKey} compactChart className="min-h-0 flex-1 basis-0" />
                 ) : null}
                 {mArka && orderedKeySet.has("ARKA_HAZIRLIK") ? (
-                  <Ekran2TeamPanel meta={mArka} dataMap={blockByKey} dark={dark} compactChart className="min-h-0 flex-1 basis-0" />
+                  <Ekran2TeamPanel meta={mArka} dataMap={blockByKey} compactChart className="min-h-0 flex-1 basis-0" />
                 ) : null}
               </div>
             ) : null}
@@ -835,7 +732,6 @@ export default function Ekran2Page() {
               <Ekran2TeamPanel
                 meta={mBitim}
                 dataMap={blockByKey}
-                dark={dark}
                 personnelTwoCols
                 className="min-h-0 h-full max-h-full sm:col-span-2 lg:col-span-2"
               />
@@ -844,11 +740,7 @@ export default function Ekran2Page() {
 
           {extraMetas.length > 0 ? (
             <div className="mt-2 sm:mt-3">
-              <p
-                className={`mb-1.5 text-center text-[10px] font-semibold uppercase tracking-wide sm:text-xs ${
-                  dark ? "text-violet-300/90" : "text-violet-700"
-                }`}
-              >
+              <p className="mb-1.5 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-700 sm:text-xs">
                 Diğer bölümler
               </p>
               <section className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4">
@@ -857,7 +749,6 @@ export default function Ekran2Page() {
                     key={m.code}
                     meta={{ key: m.code as Team, label: m.label }}
                     dataMap={blockByKey}
-                    dark={dark}
                     variant="extra"
                     className="min-h-[28vh] sm:min-h-[32vh]"
                   />

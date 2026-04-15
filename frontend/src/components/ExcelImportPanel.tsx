@@ -121,12 +121,24 @@ type Banner = { text: string; tone: "amber" | "red" };
 type Props = {
   teamMeta: Array<{ code: string; label: string }>;
   onImported: (targetDate: string) => void;
+  /** Controlled mode — when provided, component renders no trigger button */
+  open?: boolean;
+  onOpenChange?: (v: boolean) => void;
 };
 
-export default function ExcelImportPanel({ teamMeta, onImported }: Props) {
+export default function ExcelImportPanel({ teamMeta, onImported, open: openProp, onOpenChange }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [openInternal, setOpenInternal] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openInternal;
+  function setOpen(v: boolean) {
+    if (controlled) {
+      onOpenChange?.(v);
+    } else {
+      setOpenInternal(v);
+    }
+  }
   const [targetDate, setTargetDate] = useState(todayWeekdayIso());
   const [applyMeta, setApplyMeta] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -145,6 +157,14 @@ export default function ExcelImportPanel({ teamMeta, onImported }: Props) {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (controlled && open) {
+      resetPreview();
+      setTargetDate(todayWeekdayIso());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlled, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -470,17 +490,19 @@ export default function ExcelImportPanel({ teamMeta, onImported }: Props) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          resetPreview();
-          setTargetDate(todayWeekdayIso());
-          setOpen(true);
-        }}
-        className="btn-nav"
-      >
-        Excel içe aktar
-      </button>
+      {!controlled && (
+        <button
+          type="button"
+          onClick={() => {
+            resetPreview();
+            setTargetDate(todayWeekdayIso());
+            setOpen(true);
+          }}
+          className="btn-nav"
+        >
+          Excel içe aktar
+        </button>
+      )}
       <input
         ref={fileRef}
         type="file"
