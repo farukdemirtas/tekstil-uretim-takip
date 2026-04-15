@@ -20,6 +20,10 @@ const AUTO_REFRESH_MS = 30_000;
 const WORKER_LIST_LIMIT = 9999;
 /** Analiz — Günlük Trend Çizgisi stroke */
 const ANALYSIS_TREND_STROKE = "#16a34a";
+/** Aynı anda gösterilen maksimum bölüm sayısı */
+const PANELS_PER_VIEW = 4;
+/** Bölümler arası geçiş süresi (ms) */
+const ROTATION_INTERVAL_MS = 12_000;
 
 type Phase = "setup" | "display";
 
@@ -91,6 +95,28 @@ type TeamBlockData = {
   trend: DailyTrendPoint[];
 };
 
+type ProcessGroup = {
+  processName: string;
+  workers: TopWorkerAnalytics[];
+  groupTotal: number;
+};
+
+function groupByProcess(workers: TopWorkerAnalytics[]): ProcessGroup[] {
+  const map = new Map<string, TopWorkerAnalytics[]>();
+  for (const w of workers) {
+    const key = w.process || "—";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(w);
+  }
+  return [...map.entries()]
+    .map(([processName, ws]) => ({
+      processName,
+      workers: [...ws].sort((a, b) => b.totalProduction - a.totalProduction),
+      groupTotal: ws.reduce((s, w) => s + w.totalProduction, 0),
+    }))
+    .sort((a, b) => b.groupTotal - a.groupTotal);
+}
+
 function MiniTrendChart({ points, compact }: { points: DailyTrendPoint[]; compact?: boolean }) {
   const stroke = ANALYSIS_TREND_STROKE;
   const W = 280;
@@ -132,46 +158,49 @@ function MiniTrendChart({ points, compact }: { points: DailyTrendPoint[]; compac
   );
 }
 
-function PersonnelRows({
-  rows,
-  sliceStart,
-  sliceEnd,
-  metaKey,
-  maxTop,
-  total,
-  textClass,
-  barH,
-}: {
-  rows: TopWorkerAnalytics[];
-  sliceStart: number;
-  sliceEnd: number;
-  metaKey: Team;
-  maxTop: number;
-  total: number;
-  textClass: string;
-  barH: string;
-}) {
-  const part = rows.slice(sliceStart, sliceEnd);
+function ProcessGroupedRows({ top }: { top: TopWorkerAnalytics[] }) {
+  const groups = useMemo(() => groupByProcess(top), [top]);
+  const maxTop = useMemo(() => top.reduce((m, r) => Math.max(m, r.totalProduction), 0), [top]);
+  const barH = "h-2 sm:h-2.5 lg:h-3";
+
   return (
-    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-0.5 [scrollbar-width:thin]">
-      {part.map((row, j) => {
-        const index = sliceStart + j;
-        const w = maxTop > 0 ? Math.max(8, Math.round((row.totalProduction / maxTop) * 100)) : 0;
-        const { bar: barColor, rank: rankClass } = rankTercileStyles(index, total);
-        return (
-          <div
-            key={`${metaKey}-${row.workerId}-${index}`}
-            className={`grid grid-cols-[1.1rem_minmax(0,1fr)_1fr_2rem] items-center gap-1 sm:grid-cols-[1.25rem_minmax(0,1fr)_1fr_2.25rem] ${textClass}`}
-          >
-            <span className={`tabular-nums ${rankClass}`}>{index + 1}</span>
-            <span className="truncate font-medium">{row.name}</span>
-            <div className={`${barH} overflow-hidden rounded-full bg-slate-200`}>
-              <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${w}%` }} />
-            </div>
-            <span className="text-right tabular-nums font-semibold">{row.totalProduction}</span>
+    <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden pr-0.5 [scrollbar-width:thin]">
+      {groups.map((g) => (
+        <div key={g.processName}>
+          {/* Proses başlığı */}
+          <div className="mb-1 flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1">
+            <span className="flex-1 truncate text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:text-xs lg:text-sm">
+              {g.processName}
+            </span>
+            <span className="shrink-0 tabular-nums text-[10px] text-slate-400 sm:text-xs">
+              {g.workers.length} · {g.groupTotal.toLocaleString("tr-TR")}
+            </span>
           </div>
-        );
-      })}
+          {/* Proses içi çalışanlar — tercil bu gruba göre */}
+          <div className="space-y-0.5">
+            {g.workers.map((row, j) => {
+              const { bar: barColor, rank: rankClass } = rankTercileStyles(j, g.workers.length);
+              const w = maxTop > 0 ? Math.max(6, Math.round((row.totalProduction / maxTop) * 100)) : 0;
+              return (
+                <div
+                  key={row.workerId}
+                  className="grid grid-cols-[1.25rem_minmax(0,1fr)_1fr_2.25rem] items-center gap-1 text-xs leading-snug sm:text-sm lg:text-[0.95rem]"
+                >
+                  <span className={`tabular-nums ${rankClass}`}>{j + 1}</span>
+                  <span className="truncate font-medium">{row.name}</span>
+                  <div className={`${barH} overflow-hidden rounded-full bg-slate-200`}>
+                    <div
+                      className={`h-full rounded-full ${barColor} transition-all duration-500`}
+                      style={{ width: `${w}%` }}
+                    />
+                  </div>
+                  <span className="text-right tabular-nums font-semibold">{row.totalProduction}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -181,7 +210,6 @@ function Ekran2TeamPanel({
   dataMap,
   className = "",
   compactChart = false,
-  personnelTwoCols = false,
   variant = "default",
 }: {
   meta: { key: Team; label: string };
@@ -189,22 +217,15 @@ function Ekran2TeamPanel({
   className?: string;
   /** Dar (Yaka/Arka) bloklar için daha kısa trend grafiği */
   compactChart?: boolean;
-  /** Bitim: personel listesi iki sütunda */
-  personnelTwoCols?: boolean;
   /** Ayarlardan eklenen bölümler — günlük özet / analiz ile aynı vurgu */
   variant?: "default" | "extra";
 }) {
   const data = dataMap.get(meta.key);
   const top = data?.top ?? [];
   const trend = data?.trend ?? [];
-  const maxTop = top.reduce((m, r) => Math.max(m, r.totalProduction), 0);
   const totalTrend = trend.reduce((s, p) => s + p.totalProduction, 0);
   const daysWith = trend.filter((p) => p.totalProduction > 0).length;
   const avgDay = daysWith > 0 ? Math.round(totalTrend / daysWith) : 0;
-
-  const rowText = "text-xs leading-snug sm:text-sm lg:text-[0.95rem]";
-  const barH = "h-2 sm:h-2.5 lg:h-3";
-  const mid = Math.ceil(top.length / 2);
 
   const extraRing =
     variant === "extra" ? "ring-1 ring-violet-400/50 border-violet-200" : "";
@@ -219,7 +240,7 @@ function Ekran2TeamPanel({
 
       <div className="mt-1.5 grid grid-cols-3 gap-1 text-center text-xs sm:text-sm lg:text-base">
         <div className="rounded-lg bg-slate-50 py-1 sm:py-1.5">
-          <div className="font-bold tabular-nums text-teal-700">{totalTrend}</div>
+          <div className="font-bold tabular-nums text-teal-700">{totalTrend.toLocaleString("tr-TR")}</div>
           <div className="text-[10px] text-slate-500 sm:text-xs">Toplam</div>
         </div>
         <div className="rounded-lg bg-slate-50 py-1 sm:py-1.5">
@@ -227,7 +248,7 @@ function Ekran2TeamPanel({
           <div className="text-[10px] text-slate-500 sm:text-xs">Aktif gün</div>
         </div>
         <div className="rounded-lg bg-slate-50 py-1 sm:py-1.5">
-          <div className="font-bold tabular-nums">{avgDay}</div>
+          <div className="font-bold tabular-nums">{avgDay.toLocaleString("tr-TR")}</div>
           <div className="text-[10px] text-slate-500 sm:text-xs">Ort./gün</div>
         </div>
       </div>
@@ -236,46 +257,14 @@ function Ekran2TeamPanel({
         <MiniTrendChart points={trend} compact={compactChart} />
       </div>
 
-      <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-hidden border-t border-transparent pt-1.5">
-        <p className="mb-1 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs lg:text-sm">
-          Personel ({top.length})
+      <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-hidden border-t border-slate-100 pt-1.5">
+        <p className="mb-1 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:text-xs">
+          {top.length} personel · prosese göre
         </p>
         {top.length === 0 ? (
           <p className="text-sm text-slate-500 sm:text-base">Kayıt yok</p>
-        ) : personnelTwoCols ? (
-          <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 lg:gap-3">
-            <PersonnelRows
-              rows={top}
-              sliceStart={0}
-              sliceEnd={mid}
-              metaKey={meta.key}
-              maxTop={maxTop}
-              total={top.length}
-              textClass={rowText}
-              barH={barH}
-            />
-            <PersonnelRows
-              rows={top}
-              sliceStart={mid}
-              sliceEnd={top.length}
-              metaKey={meta.key}
-              maxTop={maxTop}
-              total={top.length}
-              textClass={rowText}
-              barH={barH}
-            />
-          </div>
         ) : (
-          <PersonnelRows
-            rows={top}
-            sliceStart={0}
-            sliceEnd={top.length}
-            metaKey={meta.key}
-            maxTop={maxTop}
-            total={top.length}
-            textClass={rowText}
-            barH={barH}
-          />
+          <ProcessGroupedRows top={top} />
         )}
       </div>
     </div>
@@ -297,6 +286,7 @@ export default function Ekran2Page() {
   /** null = tüm bölümler; dizi = yalnızca bu kodlar */
   const [selectedTeamCodes, setSelectedTeamCodes] = useState<string[] | null>(null);
   const [setupError, setSetupError] = useState("");
+  const [rotPage, setRotPage] = useState(0);
 
   const fullTeamOrder = useMemo(() => {
     const codes = new Set(teamMetas.map((t) => t.code));
@@ -409,6 +399,34 @@ export default function Ekran2Page() {
     if (blocks) for (const b of blocks) m.set(b.key, b);
     return m;
   }, [blocks]);
+
+  /** Verisi olan bölümler; yüklenmeden önce tümünü göster */
+  const filteredPanelMetas = useMemo(() => {
+    return orderedKeys
+      .flatMap((k) => {
+        const meta = metaFor(k);
+        return meta ? [meta] : [];
+      })
+      .filter((meta) => {
+        if (!blocks) return true;
+        const data = blockByKey.get(meta.key);
+        return (data?.top.length ?? 0) > 0;
+      });
+  }, [orderedKeys, blocks, blockByKey, metaFor]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPanelMetas.length / PANELS_PER_VIEW));
+
+  /** Sayfa sayısı değişince başa dön */
+  useEffect(() => {
+    setRotPage(0);
+  }, [filteredPanelMetas.length]);
+
+  /** Otomatik döngü — rotPage değişince (manual dahil) süreyi sıfırla */
+  useEffect(() => {
+    if (phase !== "display" || totalPages <= 1) return;
+    const id = setTimeout(() => setRotPage((p) => (p + 1) % totalPages), ROTATION_INTERVAL_MS);
+    return () => clearTimeout(id);
+  }, [phase, totalPages, rotPage]);
 
   function persistSettings(applied: boolean) {
     writeStored({
@@ -636,128 +654,145 @@ export default function Ekran2Page() {
     );
   }
 
-  const mSag = metaFor("SAG_ON");
-  const mSol = metaFor("SOL_ON");
-  const mYaka = metaFor("YAKA_HAZIRLIK");
-  const mArka = metaFor("ARKA_HAZIRLIK");
-  const mBitim = metaFor("BITIM");
+  const currentPanels = filteredPanelMetas.slice(
+    rotPage * PANELS_PER_VIEW,
+    (rotPage + 1) * PANELS_PER_VIEW,
+  );
+
+  const gridColsClass = (
+    {
+      1: "grid-cols-1",
+      2: "grid-cols-2",
+      3: "grid-cols-3",
+    } as Record<number, string>
+  )[currentPanels.length] ?? "grid-cols-4";
 
   return (
-    <div className="fixed inset-0 flex h-dvh max-h-dvh flex-col overflow-hidden bg-slate-100 text-slate-900">
-      <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col gap-1.5 px-2 py-2 sm:gap-2 sm:px-3 sm:py-2.5 lg:px-4 lg:py-3">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-300 pb-2 sm:gap-3 sm:pb-2.5">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
-              <p className="text-xs font-medium uppercase tracking-[0.2em] text-teal-700 sm:text-sm">EKRAN2</p>
-              <p className="text-sm text-slate-700 sm:text-base lg:text-lg">
-                {formatDateTr(startDate)} — {formatDateTr(endDate)} · {hourLabel(hourFilter)}
-                {orderedKeys.length > 0 ? (
-                  <span className="ml-1.5 text-slate-500">· {orderedKeys.length} bölüm</span>
-                ) : null}
-                {lastUpdated ? (
-                  <span className="ml-2 text-slate-500">· Güncelleme {lastUpdated}</span>
-                ) : null}
-              </p>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 sm:text-sm">
-              <span>Yenileme 30 sn</span>
-              <span className="opacity-50">|</span>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-4 rounded bg-emerald-500" /> Üst ⅓
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-4 rounded bg-blue-500" /> Orta ⅓
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-4 rounded bg-red-500" /> Alt ⅓
-              </span>
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={handleEditFilters}
-              className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-base"
-            >
-              Filtre
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const el = document.documentElement;
-                if (el.requestFullscreen) void el.requestFullscreen();
-              }}
-              className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-base"
-            >
-              Tam ekran
-            </button>
-          </div>
-        </header>
+    <>
+      {/* CSS keyframe for progress bar */}
+      <style>{`@keyframes ekran2-bar{from{transform:scaleX(0)}to{transform:scaleX(1)}}`}</style>
 
-        {error ? (
-          <p className="shrink-0 text-center text-sm font-semibold text-red-600 sm:text-base">{error}</p>
-        ) : null}
+      <div className="fixed inset-0 flex h-dvh max-h-dvh flex-col overflow-hidden bg-slate-100 text-slate-900">
+        <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col px-2 py-2 sm:px-3 sm:py-2.5 lg:px-4 lg:py-3">
 
-        {loading && !blocks && orderedKeys.length > 0 ? (
-          <p className="shrink-0 text-center text-sm text-slate-500">Yükleniyor…</p>
-        ) : null}
-        {orderedKeys.length === 0 && !error && teamMetas.length === 0 ? (
-          <p className="shrink-0 text-center text-sm text-slate-500">Bölüm listesi yükleniyor…</p>
-        ) : null}
-        {orderedKeys.length === 0 && !error && teamMetas.length > 0 ? (
-          <p className="shrink-0 text-center text-sm font-medium text-amber-700">
-            Gösterilecek bölüm yok. Filtre ile bölüm seçin.
-          </p>
-        ) : null}
-
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
-          <section className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden sm:grid-cols-2 sm:gap-3 lg:grid-cols-5 lg:gap-3">
-            {mSag && orderedKeySet.has("SAG_ON") ? (
-              <Ekran2TeamPanel meta={mSag} dataMap={blockByKey} className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0" />
-            ) : null}
-            {mSol && orderedKeySet.has("SOL_ON") ? (
-              <Ekran2TeamPanel meta={mSol} dataMap={blockByKey} className="min-h-0 h-full max-h-full sm:min-h-[32vh] lg:min-h-0" />
-            ) : null}
-            {(mYaka && orderedKeySet.has("YAKA_HAZIRLIK")) || (mArka && orderedKeySet.has("ARKA_HAZIRLIK")) ? (
-              <div className="flex min-h-0 flex-col gap-2 sm:col-span-2 sm:min-h-[40vh] lg:col-span-1 lg:h-full lg:min-h-0">
-                {mYaka && orderedKeySet.has("YAKA_HAZIRLIK") ? (
-                  <Ekran2TeamPanel meta={mYaka} dataMap={blockByKey} compactChart className="min-h-0 flex-1 basis-0" />
-                ) : null}
-                {mArka && orderedKeySet.has("ARKA_HAZIRLIK") ? (
-                  <Ekran2TeamPanel meta={mArka} dataMap={blockByKey} compactChart className="min-h-0 flex-1 basis-0" />
-                ) : null}
+          {/* ── Header ── */}
+          <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-300 pb-2 sm:gap-3 sm:pb-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+                <p className="text-xs font-medium uppercase tracking-[0.2em] text-teal-700 sm:text-sm">EKRAN2</p>
+                <p className="text-sm text-slate-700 sm:text-base lg:text-lg">
+                  {formatDateTr(startDate)} — {formatDateTr(endDate)} · {hourLabel(hourFilter)}
+                  {filteredPanelMetas.length > 0 ? (
+                    <span className="ml-1.5 text-slate-500">· {filteredPanelMetas.length} bölüm</span>
+                  ) : null}
+                  {lastUpdated ? (
+                    <span className="ml-2 text-slate-500">· {lastUpdated}</span>
+                  ) : null}
+                </p>
               </div>
-            ) : null}
-            {mBitim && orderedKeySet.has("BITIM") ? (
-              <Ekran2TeamPanel
-                meta={mBitim}
-                dataMap={blockByKey}
-                personnelTwoCols
-                className="min-h-0 h-full max-h-full sm:col-span-2 lg:col-span-2"
-              />
-            ) : null}
-          </section>
-
-          {extraMetas.length > 0 ? (
-            <div className="mt-2 sm:mt-3">
-              <p className="mb-1.5 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-700 sm:text-xs">
-                Diğer bölümler
-              </p>
-              <section className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4">
-                {extraMetas.map((m) => (
-                  <Ekran2TeamPanel
-                    key={m.code}
-                    meta={{ key: m.code as Team, label: m.label }}
-                    dataMap={blockByKey}
-                    variant="extra"
-                    className="min-h-[28vh] sm:min-h-[32vh]"
-                  />
-                ))}
-              </section>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 sm:text-sm">
+                <span>Yenileme 30 sn</span>
+                <span className="opacity-40">|</span>
+                <span className="text-slate-400">Proses içi tercil:</span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2 w-3.5 rounded bg-emerald-500" /> Üst ⅓
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2 w-3.5 rounded bg-blue-500" /> Orta ⅓
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2 w-3.5 rounded bg-red-500" /> Alt ⅓
+                </span>
+              </div>
             </div>
+
+            {/* Sayfa noktaları + kontroller */}
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  {Array.from({ length: totalPages }, (_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setRotPage(i)}
+                      className={`rounded-full transition-all duration-300 ${
+                        i === rotPage
+                          ? "h-2 w-6 bg-teal-600"
+                          : "h-2 w-2 bg-slate-300 hover:bg-slate-400"
+                      }`}
+                      aria-label={`Sayfa ${i + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleEditFilters}
+                className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-base"
+              >
+                Filtre
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.documentElement;
+                  if (el.requestFullscreen) void el.requestFullscreen();
+                }}
+                className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-base"
+              >
+                Tam ekran
+              </button>
+            </div>
+          </header>
+
+          {/* Progress bar (sadece birden fazla sayfa varsa) */}
+          {totalPages > 1 && (
+            <div className="h-0.5 w-full shrink-0 overflow-hidden bg-slate-200">
+              <div
+                key={rotPage}
+                className="h-full w-full origin-left bg-teal-500"
+                style={{ animation: `ekran2-bar ${ROTATION_INTERVAL_MS}ms linear forwards` }}
+              />
+            </div>
+          )}
+
+          {/* Durum mesajları */}
+          {error ? (
+            <p className="mt-1 shrink-0 text-center text-sm font-semibold text-red-600 sm:text-base">{error}</p>
           ) : null}
+          {loading && !blocks && orderedKeys.length > 0 ? (
+            <p className="mt-1 shrink-0 text-center text-sm text-slate-500">Yükleniyor…</p>
+          ) : null}
+          {!loading && blocks && filteredPanelMetas.length === 0 ? (
+            <p className="mt-1 shrink-0 text-center text-sm font-medium text-amber-700">
+              Seçilen aralıkta hiçbir bölümde üretim verisi yok.
+            </p>
+          ) : null}
+          {orderedKeys.length === 0 && !error && teamMetas.length === 0 ? (
+            <p className="mt-1 shrink-0 text-center text-sm text-slate-500">Bölüm listesi yükleniyor…</p>
+          ) : null}
+          {orderedKeys.length === 0 && !error && teamMetas.length > 0 ? (
+            <p className="mt-1 shrink-0 text-center text-sm font-medium text-amber-700">
+              Gösterilecek bölüm yok. Filtre ile bölüm seçin.
+            </p>
+          ) : null}
+
+          {/* ── Panel grid ── */}
+          <div className={`mt-2 grid min-h-0 flex-1 gap-2 sm:gap-3 ${gridColsClass}`}>
+            {currentPanels.map((meta) => (
+              <Ekran2TeamPanel
+                key={meta.key}
+                meta={meta}
+                dataMap={blockByKey}
+                compactChart={meta.key === "YAKA_HAZIRLIK" || meta.key === "ARKA_HAZIRLIK"}
+                variant={HEDEF_SET.has(meta.key) ? "default" : "extra"}
+                className="min-h-0 h-full"
+              />
+            ))}
+          </div>
+
         </div>
       </div>
-    </div>
+    </>
   );
 }
