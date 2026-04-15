@@ -93,6 +93,11 @@ export default function HomePage() {
   const [copyRosterEndDate, setCopyRosterEndDate] = useState("");
   const [copyRosterBusy, setCopyRosterBusy] = useState(false);
   const [copyRosterSuccess, setCopyRosterSuccess] = useState<string | null>(null);
+  const [bulkExportOpen, setBulkExportOpen] = useState(false);
+  const [bulkExportStart, setBulkExportStart] = useState("");
+  const [bulkExportEnd, setBulkExportEnd] = useState("");
+  const [bulkExporting, setBulkExporting] = useState(false);
+  const [bulkExportProgress, setBulkExportProgress] = useState<{ done: number; total: number } | null>(null);
 
   const rowsRef = useRef<ProductionRow[]>(rows);
   const selectedDateRef = useRef(selectedDate);
@@ -290,6 +295,185 @@ export default function HomePage() {
     if (stages.length === 0) return 0;
     return Math.min(...stages.map((s) => v(s.total)));
   }, [hedefStageTotals]);
+
+  /** Başlangıç ve bitiş (dahil) arasındaki hafta içi günleri döner */
+  function weekdaysInRange(startIso: string, endIso: string): string[] {
+    const dates: string[] = [];
+    const [sy, sm, sd] = startIso.split("-").map(Number);
+    const [ey, em, ed] = endIso.split("-").map(Number);
+    let d = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+    while (d <= end) {
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) {
+        const y = d.getFullYear();
+        const mo = String(d.getMonth() + 1).padStart(2, "0");
+        const da = String(d.getDate()).padStart(2, "0");
+        dates.push(`${y}-${mo}-${da}`);
+      }
+      d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    }
+    return dates;
+  }
+
+  /** Verilen gün için Excel sayfasının AOA (array-of-arrays) verisini oluşturur */
+  function buildSheetAoa(
+    dateIso: string,
+    dayRows: ProductionRow[],
+    dayProductName: string,
+    dayProductModel: string
+  ): { aoa: (string | number)[][]; headerRowIndex: number; lastColIdx: number } {
+    const sorted = orderedExportRows(dayRows, teamMeta);
+    const headers = [...PRODUCTION_EXCEL_HEADERS];
+    const lastColIdx = headers.length - 1;
+    const aoa: (string | number)[][] = [];
+
+    const dayGenelTamamlanan =
+      hedefStageTotals.stages.length > 0
+        ? Math.min(...hedefStageTotals.stages.map((s) => (typeof s.total === "number" && Number.isFinite(s.total) ? s.total : 0)))
+        : 0;
+
+    aoa.push(["Yeşil İmaj Tekstil — Günlük üretim özeti"]);
+    aoa.push(["Tarih", formatExportDateLabel(dateIso)]);
+    aoa.push([PRODUCTION_EXCEL_META_PRODUCT, dayProductName.trim() || "—"]);
+    aoa.push([PRODUCTION_EXCEL_META_MODEL, dayProductModel.trim() || "—"]);
+    aoa.push(["Genel tamamlanan (adet)", dayGenelTamamlanan]);
+    aoa.push(["Dışa aktarım", new Date().toLocaleString("tr-TR")]);
+    aoa.push([]);
+    aoa.push([...headers]);
+
+    const headerRowIndex = aoa.length - 1;
+    let sum10 = 0, sum13 = 0, sum16 = 0, sum1830 = 0, sumTot = 0;
+
+    sorted.forEach((row, index) => {
+      const t10 = row.t1000, t13 = row.t1300, t16 = row.t1600, t18 = row.t1830;
+      const tot = t10 + t13 + t16 + t18;
+      sum10 += t10; sum13 += t13; sum16 += t16; sum1830 += t18; sumTot += tot;
+      aoa.push([index + 1, row.name, resolveTeamLabel(row.team), row.process, t10, t13, t16, t18, tot]);
+    });
+
+    aoa.push([]);
+    aoa.push(["TOPLAM", "", "", "", sum10, sum13, sum16, sum1830, sumTot]);
+    return { aoa, headerRowIndex, lastColIdx };
+  }
+
+  /** Tek sayfa için worksheet oluşturur */
+  function buildWorksheet(dateIso: string, dayRows: ProductionRow[], dayProductName: string, dayProductModel: string): XLSX.WorkSheet {
+    const { aoa, headerRowIndex, lastColIdx } = buildSheetAoa(dateIso, dayRows, dayProductName, dayProductModel);
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+    worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } }];
+    worksheet["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 22 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }];
+    const lastTableRowIndex = headerRowIndex + Math.max(dayRows.length, 0);
+    worksheet["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: headerRowIndex, c: 0 }, e: { r: lastTableRowIndex, c: lastColIdx } }) };
+    const rowHeights: XLSX.RowInfo[] = [];
+    rowHeights[0] = { hpt: 24 };
+    rowHeights[headerRowIndex] = { hpt: 20 };
+    worksheet["!rows"] = rowHeights;
+    return worksheet;
+  }
+
+  /** İlk sayfa: tüm günlerin tek tabloda, gün gruplarıyla toplu görünümü */
+  function buildConsolidatedSheet(
+    allDays: Array<{ date: string; rows: ProductionRow[]; productName: string; productModel: string }>
+  ): XLSX.WorkSheet {
+    const TOPLU_HEADERS = ["Tarih", "Ad Soyad", "Bölüm", "Proses", "10:00", "13:00", "16:00", "18:30", "Günlük Toplam"] as const;
+    const lastColIdx = TOPLU_HEADERS.length - 1;
+    const aoa: (string | number)[][] = [];
+
+    // Başlık meta
+    aoa.push(["Yeşil İmaj Tekstil — Toplu Üretim Raporu"]);
+    aoa.push(["Tarih aralığı", `${formatExportDateLabel(bulkExportStart)} — ${formatExportDateLabel(bulkExportEnd)}`]);
+    aoa.push(["Gün sayısı", allDays.length]);
+    aoa.push(["Dışa aktarım", new Date().toLocaleString("tr-TR")]);
+    aoa.push([]);
+    aoa.push([...TOPLU_HEADERS]);
+    const headerRowIndex = aoa.length - 1;
+
+    let grandSum10 = 0, grandSum13 = 0, grandSum16 = 0, grandSum1830 = 0, grandSumTot = 0;
+    const merges: XLSX.Range[] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } }];
+
+    for (const { date, rows: dayRows, productName: pn } of allDays) {
+      const sorted = orderedExportRows(dayRows, teamMeta);
+      if (sorted.length === 0) continue;
+
+      // Gün başlığı satırı
+      const dayLabelRow = aoa.length;
+      aoa.push([formatExportDateLabel(date) + (pn.trim() ? `  —  ${pn.trim()}` : ""), "", "", "", "", "", "", "", ""]);
+      merges.push({ s: { r: dayLabelRow, c: 0 }, e: { r: dayLabelRow, c: lastColIdx } });
+
+      let daySum10 = 0, daySum13 = 0, daySum16 = 0, daySum1830 = 0, daySumTot = 0;
+      sorted.forEach((row) => {
+        const t10 = row.t1000, t13 = row.t1300, t16 = row.t1600, t18 = row.t1830;
+        const tot = t10 + t13 + t16 + t18;
+        daySum10 += t10; daySum13 += t13; daySum16 += t16; daySum1830 += t18; daySumTot += tot;
+        aoa.push([formatExportDateLabel(date), row.name, resolveTeamLabel(row.team), row.process, t10, t13, t16, t18, tot]);
+      });
+      grandSum10 += daySum10; grandSum13 += daySum13; grandSum16 += daySum16; grandSum1830 += daySum1830; grandSumTot += daySumTot;
+      aoa.push(["Gün toplamı", "", "", "", daySum10, daySum13, daySum16, daySum1830, daySumTot]);
+      aoa.push([]);
+    }
+
+    aoa.push(["GENEL TOPLAM", "", "", "", grandSum10, grandSum13, grandSum16, grandSum1830, grandSumTot]);
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!merges"] = merges;
+    ws["!cols"] = [{ wch: 24 }, { wch: 30 }, { wch: 22 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 }];
+    ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: headerRowIndex, c: 0 }, e: { r: headerRowIndex + 1, c: lastColIdx } }) };
+    const rowHeights: XLSX.RowInfo[] = [];
+    rowHeights[0] = { hpt: 26 };
+    rowHeights[headerRowIndex] = { hpt: 20 };
+    ws["!rows"] = rowHeights;
+    return ws;
+  }
+
+  async function handleBulkExportExcel() {
+    if (!bulkExportStart || !bulkExportEnd || bulkExportStart > bulkExportEnd) return;
+    const dates = weekdaysInRange(bulkExportStart, bulkExportEnd);
+    if (dates.length === 0) {
+      alert("Seçilen aralıkta hafta içi gün yok.");
+      return;
+    }
+    if (dates.length > 90) {
+      alert("En fazla 90 iş günü seçebilirsiniz.");
+      return;
+    }
+    setBulkExporting(true);
+    setBulkExportProgress({ done: 0, total: dates.length });
+    try {
+      const workbook = XLSX.utils.book_new();
+      const allDays: Array<{ date: string; rows: ProductionRow[]; productName: string; productModel: string }> = [];
+
+      // Tüm günlerin verisini çek
+      for (let i = 0; i < dates.length; i++) {
+        const date = dates[i];
+        const [dayRows, meta] = await Promise.all([
+          getProduction(date),
+          getDayProductMeta(date),
+        ]);
+        allDays.push({ date, rows: dayRows, productName: meta.productName, productModel: meta.productModel });
+        setBulkExportProgress({ done: i + 1, total: dates.length });
+      }
+
+      // İlk sayfa: toplu özet
+      const consolidatedSheet = buildConsolidatedSheet(allDays);
+      XLSX.utils.book_append_sheet(workbook, consolidatedSheet, "Toplu");
+
+      // Gün gün sayfalar
+      for (const { date, rows: dayRows, productName, productModel } of allDays) {
+        const sheetName = date.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$3.$2");
+        const worksheet = buildWorksheet(date, dayRows, productName, productModel);
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      }
+
+      XLSX.writeFile(workbook, `üretim-${bulkExportStart}-${bulkExportEnd}.xlsx`);
+      setBulkExportOpen(false);
+    } catch {
+      alert("Excel oluşturulurken hata oluştu.");
+    } finally {
+      setBulkExporting(false);
+      setBulkExportProgress(null);
+    }
+  }
 
   function handleExportExcel() {
     const sorted = orderedExportRows(rows, teamMeta);
@@ -584,6 +768,17 @@ export default function HomePage() {
           >
             Excel Export
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setBulkExportOpen((v) => !v);
+              if (!bulkExportStart) setBulkExportStart(selectedDate);
+              if (!bulkExportEnd) setBulkExportEnd(selectedDate);
+            }}
+            className="btn-nav"
+          >
+            Toplu Export
+          </button>
           {role === "admin" ? (
             <ExcelImportPanel
               teamMeta={teamMeta}
@@ -679,6 +874,86 @@ export default function HomePage() {
       {copyRosterSuccess ? (
         <div className="rounded-xl border border-teal-200/90 bg-teal-50/90 px-4 py-3 text-sm text-teal-900 dark:border-teal-900/40 dark:bg-teal-950/30 dark:text-teal-200">
           {copyRosterSuccess}
+        </div>
+      ) : null}
+
+      {/* Toplu Excel Export paneli */}
+      {bulkExportOpen ? (
+        <div className="surface-card dark:text-slate-100">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              Toplu Excel Export
+            </h3>
+            <button
+              type="button"
+              onClick={() => setBulkExportOpen(false)}
+              className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+            Seçilen tarih aralığındaki her iş günü ayrı bir sayfa olarak tek Excel dosyasına aktarılır.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Başlangıç</label>
+              <input
+                type="date"
+                value={bulkExportStart}
+                onChange={(e) => setBulkExportStart(e.target.value)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Bitiş</label>
+              <input
+                type="date"
+                value={bulkExportEnd}
+                onChange={(e) => setBulkExportEnd(e.target.value)}
+                min={bulkExportStart}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              />
+            </div>
+            <button
+              type="button"
+              disabled={bulkExporting || !bulkExportStart || !bulkExportEnd || bulkExportStart > bulkExportEnd}
+              onClick={() => void handleBulkExportExcel()}
+              className="flex items-center gap-2 rounded-xl border border-emerald-500 bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {bulkExporting ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  {bulkExportProgress
+                    ? `${bulkExportProgress.done} / ${bulkExportProgress.total} gün…`
+                    : "Hazırlanıyor…"}
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  İndir
+                </>
+              )}
+            </button>
+          </div>
+          {bulkExporting && bulkExportProgress && (
+            <div className="mt-3">
+              <div className="mb-1 flex justify-between text-xs text-slate-500">
+                <span>{bulkExportProgress.done} / {bulkExportProgress.total} gün işlendi</span>
+                <span>{Math.round((bulkExportProgress.done / bulkExportProgress.total) * 100)}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${Math.round((bulkExportProgress.done / bulkExportProgress.total) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
 

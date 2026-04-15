@@ -498,28 +498,6 @@ export default function Ekran2Page() {
     setSelectedTeamCodes(codes.length > 0 ? [...codes] : []);
   }
 
-  const modeToggle = (
-    <div
-      className={`flex rounded-xl border p-1 text-sm font-medium md:text-base ${
-        dark ? "border-white/20 bg-white/5" : "border-slate-300 bg-white shadow-sm"
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => setMode("dark")}
-        className={`rounded-lg px-3 py-2 md:px-4 ${dark ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100"}`}
-      >
-        Koyu
-      </button>
-      <button
-        type="button"
-        onClick={() => setMode("light")}
-        className={`rounded-lg px-3 py-2 md:px-4 ${!dark ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-white/10"}`}
-      >
-        Normal
-      </button>
-    </div>
-  );
 
   if (!hasToken) {
     return (
@@ -528,7 +506,6 @@ export default function Ekran2Page() {
           dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"
         }`}
       >
-        <div className="absolute right-4 top-4">{modeToggle}</div>
         <p className="text-2xl font-semibold tracking-wide md:text-3xl">EKRAN2</p>
         <p className={`max-w-xl text-lg md:text-xl ${dark ? "text-slate-300" : "text-slate-600"}`}>
           Aşama bazlı analiz panosu için önce ana uygulamada giriş yapın. Veriler, Analiz ekranı ile aynı kaynaktan gelir
@@ -563,7 +540,6 @@ export default function Ekran2Page() {
           dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"
         }`}
       >
-        <div className="absolute right-4 top-4">{modeToggle}</div>
         <p className="text-2xl font-semibold md:text-3xl">EKRAN2</p>
         <p className={`max-w-xl text-lg md:text-xl ${dark ? "text-slate-300" : "text-slate-600"}`}>
           Bu ekran için hesabınıza Analiz veya EKRAN2 yetkisi (veya yönetici) tanımlanmalıdır.
@@ -596,7 +572,6 @@ export default function Ekran2Page() {
                 yalnızca işaretlediğiniz bölümler için yüklenir; veriler her 30 saniyede yenilenir.
               </p>
             </div>
-            {modeToggle}
           </div>
 
           <div
@@ -796,7 +771,6 @@ export default function Ekran2Page() {
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-            <div className="scale-95 origin-right sm:scale-100">{modeToggle}</div>
             <button
               type="button"
               onClick={handleEditFilters}

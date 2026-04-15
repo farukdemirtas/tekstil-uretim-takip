@@ -153,30 +153,6 @@ export default function Ekran1IcerikPage() {
           dark ? "bg-[#030712] text-white" : "bg-slate-100 text-slate-900"
         }`}
       >
-        <div
-          className={`absolute right-4 top-4 flex rounded-xl border p-1 text-sm font-medium shadow-sm md:text-base ${
-            dark ? "border-white/20 bg-white/5" : "border-slate-300 bg-white"
-          }`}
-        >
-          <button
-            type="button"
-            onClick={() => setMode("dark")}
-            className={`rounded-lg px-4 py-2 ${
-              dark ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            Koyu
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("light")}
-            className={`rounded-lg px-4 py-2 ${
-              !dark ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:bg-white/10"
-            }`}
-          >
-            Normal
-          </button>
-        </div>
         <p className="text-2xl font-semibold tracking-wide md:text-3xl">EKRAN1</p>
         <p className={`max-w-xl text-lg md:text-xl ${dark ? "text-slate-300" : "text-slate-600"}`}>
           Bu görünüm için önce ana uygulamada giriş yapın. Tarih aralığı ve hedefi{" "}
@@ -235,30 +211,6 @@ export default function Ekran1IcerikPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
-            <div
-              className={`flex rounded-xl border p-1 text-sm font-medium md:text-base ${
-                dark ? "border-white/20 bg-white/5" : "border-slate-300 bg-white shadow-sm"
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => setMode("dark")}
-                className={`rounded-lg px-3 py-2 md:px-4 ${
-                  dark ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                Koyu
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("light")}
-                className={`rounded-lg px-3 py-2 md:px-4 ${
-                  !dark ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-white/10"
-                }`}
-              >
-                Normal
-              </button>
-            </div>
             <span className={`hidden sm:inline md:text-lg ${dark ? "text-slate-500" : "text-slate-500"}`}>
               Yenileme 30 sn
             </span>

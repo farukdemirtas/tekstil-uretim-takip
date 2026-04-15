@@ -10,78 +10,113 @@ import {
   setAuthToken,
   type WorkerHourlyBreakdown,
 } from "@/lib/api";
-import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { formatIsoLocal, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import type { TopWorkerAnalytics } from "@/lib/types";
 
 const REFRESH_MS = 30_000;
 const TOP_LIMIT = 200;
+/** Geniş aralık: son kaç iş günü baz alınır */
+const WIDE_WORKING_DAYS = 30;
 
 type CardData = {
   worker: TopWorkerAnalytics | null;
   rank: number | null;
   teamLabel: string;
   hourly: WorkerHourlyBreakdown | null;
+  multiDayTotal: number;
+  multiDayActiveDays: number;
+  prevDayTotal: number;
 };
+
+/** fromIso tarihinden geriye doğru n iş günü öncesini döner */
+function nWorkdaysBack(fromIso: string, n: number): string {
+  const [y, m, d] = fromIso.split("-").map(Number);
+  let dt = new Date(y, m - 1, d);
+  let count = 0;
+  while (count < n) {
+    dt = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() - 1);
+    const day = dt.getDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return formatIsoLocal(dt);
+}
 
 export default function Ekran3Page() {
   const [hasToken, setHasToken] = useState(false);
   const [allowed, setAllowed] = useState(false);
   const [rotationTick, setRotationTick] = useState(0);
   const [cards, setCards] = useState<CardData[]>([
-    { worker: null, rank: null, teamLabel: "", hourly: null },
-    { worker: null, rank: null, teamLabel: "", hourly: null },
-    { worker: null, rank: null, teamLabel: "", hourly: null },
-    { worker: null, rank: null, teamLabel: "", hourly: null },
+    { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
+    { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
+    { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
+    { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
   ]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
   const firstFetchRef = useRef(true);
 
-  /** Vitrin: yalnızca seçili iş günü (bugün) verisi — toplamlar ve saatlik dağılım o güne ait. */
   const displayDate = todayWeekdayIso();
-  const startDate = displayDate;
-  const endDate = displayDate;
+  const wideStartDate = nWorkdaysBack(displayDate, WIDE_WORKING_DAYS);
+  const yesterdayDate = nWorkdaysBack(displayDate, 1);
 
   const fetchAll = useCallback(async () => {
     setError("");
     if (firstFetchRef.current) setLoading(true);
     try {
-      const teams = await getTeams();
+      const [teams, rawToday, rawWide, rawYesterday] = await Promise.all([
+        getTeams(),
+        getTopWorkersAnalytics({ startDate: displayDate, endDate: displayDate, limit: TOP_LIMIT }),
+        getTopWorkersAnalytics({ startDate: wideStartDate, endDate: displayDate, limit: TOP_LIMIT }),
+        getTopWorkersAnalytics({ startDate: yesterdayDate, endDate: yesterdayDate, limit: TOP_LIMIT }),
+      ]);
+
       const labelMap: Record<string, string> = Object.fromEntries(teams.map((t) => [t.code, t.label]));
 
-      const raw = await getTopWorkersAnalytics({
-        startDate,
-        endDate,
-        team: "",
-        hour: "",
-        limit: TOP_LIMIT,
-      });
-      const sorted = [...raw].sort((a, b) => b.totalProduction - a.totalProduction);
+      // Geniş aralık lookup: workerId → { total, activeDays }
+      const wideMap = new Map<number, { total: number; days: number }>();
+      for (const w of rawWide) {
+        wideMap.set(w.workerId, { total: w.totalProduction, days: w.activeDays });
+      }
+
+      // Dün lookup: workerId → total
+      const yesterdayMap = new Map<number, number>();
+      for (const w of rawYesterday) {
+        yesterdayMap.set(w.workerId, w.totalProduction);
+      }
+
+      const sorted = [...rawToday].sort((a, b) => b.totalProduction - a.totalProduction);
       const n = sorted.length;
       const start = n ? (rotationTick * 4) % n : 0;
 
+      const empty: CardData = { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 };
+
       const nextCards: CardData[] = await Promise.all(
         [0, 1, 2, 3].map(async (i) => {
-          if (!n) {
-            return { worker: null, rank: null, teamLabel: "", hourly: null };
-          }
+          if (!n) return empty;
           const idx = (start + i) % n;
           const worker = sorted[idx];
           const rank = idx + 1;
           const teamLabel = labelMap[worker.team] ?? worker.team;
+
           let hourly: WorkerHourlyBreakdown | null = null;
           try {
             hourly = await getWorkerHourlyBreakdown({
               workerId: worker.workerId,
-              startDate,
-              endDate,
+              startDate: displayDate,
+              endDate: displayDate,
             });
           } catch {
             hourly = null;
           }
-          return { worker, rank, teamLabel, hourly };
+
+          const wide = wideMap.get(worker.workerId);
+          const multiDayTotal = wide?.total ?? 0;
+          const multiDayActiveDays = wide?.days ?? 0;
+          const prevDayTotal = yesterdayMap.get(worker.workerId) ?? 0;
+
+          return { worker, rank, teamLabel, hourly, multiDayTotal, multiDayActiveDays, prevDayTotal };
         })
       );
 
@@ -90,16 +125,16 @@ export default function Ekran3Page() {
     } catch {
       setError("Veri alınamadı.");
       setCards([
-        { worker: null, rank: null, teamLabel: "", hourly: null },
-        { worker: null, rank: null, teamLabel: "", hourly: null },
-        { worker: null, rank: null, teamLabel: "", hourly: null },
-        { worker: null, rank: null, teamLabel: "", hourly: null },
+        { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
+        { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
+        { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
+        { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
       ]);
     } finally {
       firstFetchRef.current = false;
       setLoading(false);
     }
-  }, [startDate, endDate, rotationTick]);
+  }, [displayDate, wideStartDate, yesterdayDate, rotationTick]);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -184,7 +219,7 @@ export default function Ekran3Page() {
             <span className="font-medium text-slate-800">4 vitrin kartı</span>
             <span className="mx-1.5 text-slate-300">·</span>
             <span className="font-semibold text-teal-800">{displayDate}</span>
-            <span className="text-slate-500"> (o günün verisi)</span>
+            <span className="text-slate-500"> · ort. son {WIDE_WORKING_DAYS} iş günü</span>
             {lastUpdated ? (
               <>
                 <span className="mx-1.5 text-slate-300">·</span>
@@ -238,6 +273,9 @@ export default function Ekran3Page() {
             teamLabel={c.teamLabel}
             hourly={c.hourly}
             singleDayMode
+            multiDayTotal={c.multiDayTotal}
+            multiDayActiveDays={c.multiDayActiveDays}
+            prevDayTotal={c.prevDayTotal}
           />
         ))}
       </div>

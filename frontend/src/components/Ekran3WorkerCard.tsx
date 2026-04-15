@@ -9,12 +9,41 @@ const SLOTS = [
   { key: "t1830" as const, label: "18:30", fill: "from-amber-400 to-orange-600", track: "bg-amber-100" },
 ];
 
+function TrendArrow({ dir }: { dir: "up" | "down" | "neutral" }) {
+  if (dir === "up")
+    return (
+      <span
+        className="inline-flex items-center rounded-md bg-emerald-100 px-1 py-0.5 text-emerald-600 shadow-sm sm:px-1.5"
+        aria-label="yükseldi"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+          <path d="M8 2l7 10H1z" />
+        </svg>
+      </span>
+    );
+  if (dir === "down")
+    return (
+      <span
+        className="inline-flex items-center rounded-md bg-red-100 px-1 py-0.5 text-red-600 shadow-sm sm:px-1.5"
+        aria-label="düştü"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+          <path d="M8 14L1 4h14z" />
+        </svg>
+      </span>
+    );
+  return null;
+}
+
 export function Ekran3WorkerCard({
   worker,
   rank,
   teamLabel,
   hourly,
   singleDayMode = false,
+  multiDayTotal = 0,
+  multiDayActiveDays = 0,
+  prevDayTotal = 0,
 }: {
   worker: TopWorkerAnalytics | null;
   rank: number | null;
@@ -22,6 +51,12 @@ export function Ekran3WorkerCard({
   hourly: WorkerHourlyBreakdown | null;
   /** true: tek günlük vitrin — toplam = o günün üretimi; yan kutular saatlik özet. */
   singleDayMode?: boolean;
+  /** Geniş tarih aralığındaki toplam üretim (günlük ortalama hesabı için) */
+  multiDayTotal?: number;
+  /** Geniş tarih aralığındaki aktif gün sayısı */
+  multiDayActiveDays?: number;
+  /** Dünkü toplam üretim (ok yönü için) */
+  prevDayTotal?: number;
 }) {
   if (!worker || rank == null) {
     return (
@@ -40,10 +75,32 @@ export function Ekran3WorkerCard({
     );
   }
 
-  const avg = worker.activeDays > 0 ? Math.round(worker.totalProduction / worker.activeDays) : 0;
   const h = hourly ?? { t1000: 0, t1300: 0, t1600: 0, t1830: 0 };
   const maxH = Math.max(h.t1000, h.t1300, h.t1600, h.t1830, 1);
   const singleAvgs = singleDayMode ? computeShiftHourAverages(h, worker.totalProduction) : null;
+
+  // Çok günlük ortalama değerleri
+  const hasMultiDay = multiDayActiveDays > 0;
+  const multiDayDailyAvg = hasMultiDay
+    ? Math.round(multiDayTotal / multiDayActiveDays)
+    : (singleDayMode ? worker.totalProduction : Math.round(worker.totalProduction / Math.max(worker.activeDays, 1)));
+
+  const multiDayPerHour = hasMultiDay
+    ? Math.round(multiDayTotal / (multiDayActiveDays * SHIFT_NOMINAL_HOURS))
+    : (singleAvgs?.perHourInWindow ?? 0);
+
+  // Ok yönleri: bugünkü değer vs dünkü değer
+  const todayTotal = worker.totalProduction;
+  const todayPerHour = singleAvgs?.perHourInWindow ?? 0;
+  const prevPerHour = prevDayTotal > 0 ? Math.round(prevDayTotal / SHIFT_NOMINAL_HOURS) : 0;
+
+  function dirFor(today: number, prev: number): "up" | "down" | "neutral" {
+    if (prev <= 0 || today === prev) return "neutral";
+    return today > prev ? "up" : "down";
+  }
+
+  const dailyAvgArrow = dirFor(todayTotal, prevDayTotal);
+  const hourlyArrow = dirFor(todayPerHour, prevPerHour);
 
   const title = worker.name.toLocaleUpperCase("tr-TR");
   const meta = [teamLabel || worker.team, worker.process].filter(Boolean).join("  ·  ");
@@ -68,54 +125,73 @@ export function Ekran3WorkerCard({
       </header>
 
       <div className="shrink-0 grid grid-cols-3 gap-2.5 px-3 pb-3 sm:gap-4 sm:px-4 sm:pb-5">
+        {/* Bugün toplam */}
         <div className="flex min-h-[5.25rem] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-slate-100/70 to-white px-2 py-3 text-center shadow-sm sm:min-h-[5.75rem] sm:gap-2 sm:rounded-3xl sm:px-3 sm:py-4">
           <div className="w-full text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-600 sm:text-xs">
             {singleDayMode ? "Bugün toplam" : "Toplam"}
           </div>
           <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">{worker.totalProduction}</div>
         </div>
+
+        {/* Ortalama / saat — çok günlük baz + ok */}
         <div
           className="flex min-h-[5.25rem] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-sky-50/80 to-white px-2 py-3 text-center shadow-sm sm:min-h-[5.75rem] sm:gap-2 sm:rounded-3xl sm:px-3 sm:py-4"
           title={
-            singleDayMode
-              ? "08:00 ile son üretim girilen saat dilimi başlangıcı arasındaki süre; toplam bu süreye bölünür (ör. 10:00’da 100 adet → 2 saatte 50/saat)."
-              : undefined
+            hasMultiDay
+              ? `Son ${multiDayActiveDays} günün toplam üretimi ÷ (gün × ${SHIFT_NOMINAL_HOURS} saat)`
+              : "08:00 ile son üretim girilen saat dilimi başlangıcı arasındaki süre"
           }
         >
           <div className="w-full text-[8px] font-bold uppercase leading-snug tracking-wide text-slate-600 sm:text-[10px]">
-            {singleDayMode ? "Ortalama / saat" : "Çalışılan gün"}
+            {singleDayMode ? "Saatlik ortalama" : "Çalışılan gün"}
           </div>
-          {singleDayMode && singleAvgs ? (
+          {singleDayMode ? (
             <div className="flex w-full min-w-0 flex-col items-center gap-0.5">
-              <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">
-                {singleAvgs.perHourInWindow}
+              <div className="flex items-center gap-1 text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">
+                {multiDayPerHour}
+                <TrendArrow dir={hourlyArrow} />
               </div>
-              <div className="line-clamp-2 px-0.5 text-[9px] font-medium leading-tight text-slate-500 sm:text-[10px]">
-                {singleAvgs.windowHint}
-              </div>
+              {hasMultiDay ? (
+                <div className="line-clamp-2 px-0.5 text-[9px] font-medium leading-tight text-slate-500 sm:text-[10px]">
+                  {multiDayActiveDays} gün ort.
+                </div>
+              ) : singleAvgs ? (
+                <div className="line-clamp-2 px-0.5 text-[9px] font-medium leading-tight text-slate-500 sm:text-[10px]">
+                  {singleAvgs.windowHint}
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">{worker.activeDays}</div>
           )}
         </div>
+
+        {/* Günlük ortalama — çok günlük baz + ok */}
         <div
           className="flex min-h-[5.25rem] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-violet-50/70 to-white px-1.5 py-3 text-center shadow-sm sm:min-h-[5.75rem] sm:gap-2 sm:rounded-3xl sm:px-2.5 sm:py-4"
-          title={singleDayMode ? `Gün toplamı ÷ ${SHIFT_NOMINAL_HOURS} saat (ör. 900 ÷ 9 = 100).` : undefined}
+          title={
+            hasMultiDay
+              ? `Son ${multiDayActiveDays} günün toplam üretimi ÷ aktif gün sayısı`
+              : `Gün toplamı ÷ ${SHIFT_NOMINAL_HOURS} saat`
+          }
         >
           <div className="w-full text-[8px] font-bold uppercase leading-snug tracking-[0.05em] text-slate-600 sm:text-[10px] sm:leading-tight">
             {singleDayMode ? "Günlük ortalama" : "GÜNLÜK ORTALAMA"}
           </div>
-          {singleDayMode && singleAvgs ? (
+          {singleDayMode ? (
             <div className="flex w-full min-w-0 flex-col items-center gap-0.5">
-              <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">
-                {singleAvgs.perHourEightHourDay}
+              <div className="flex items-center gap-1 text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">
+                {multiDayDailyAvg}
+                <TrendArrow dir={dailyAvgArrow} />
               </div>
               <div className="text-[9px] font-semibold tabular-nums text-slate-500 sm:text-[10px]">
-                {SHIFT_NOMINAL_HOURS} saat üzerinden
+                {hasMultiDay ? `${multiDayActiveDays} gün` : `${SHIFT_NOMINAL_HOURS} saat üzerinden`}
               </div>
             </div>
           ) : (
-            <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">{avg}</div>
+            <div className="text-2xl font-bold leading-none tabular-nums text-slate-900 sm:text-3xl">
+              {multiDayDailyAvg}
+            </div>
           )}
         </div>
       </div>
