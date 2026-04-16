@@ -23,7 +23,7 @@ const ANALYSIS_TREND_STROKE = "#16a34a";
 /** Aynı anda gösterilen maksimum bölüm sayısı */
 const PANELS_PER_VIEW = 4;
 /** Bölümler arası geçiş süresi (ms) */
-const ROTATION_INTERVAL_MS = 12_000;
+const ROTATION_INTERVAL_MS = 25_000;
 
 type Phase = "setup" | "display";
 
@@ -162,45 +162,49 @@ function ProcessGroupedRows({ top }: { top: TopWorkerAnalytics[] }) {
   const groups = useMemo(() => groupByProcess(top), [top]);
   const maxTop = useMemo(() => top.reduce((m, r) => Math.max(m, r.totalProduction), 0), [top]);
   const barH = "h-2 sm:h-2.5 lg:h-3";
+  const duration = Math.max(30, top.length * 3);
+
+  const groupNodes = groups.map((g) => (
+    <div key={g.processName}>
+      <div className="mb-1 flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1">
+        <span className="flex-1 truncate text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:text-xs lg:text-sm">
+          {g.processName}
+        </span>
+        <span className="shrink-0 tabular-nums text-[10px] text-slate-400 sm:text-xs">
+          {g.workers.length} · {g.groupTotal.toLocaleString("tr-TR")}
+        </span>
+      </div>
+      <div className="space-y-0.5">
+        {g.workers.map((row, j) => {
+          const { bar: barColor, rank: rankClass } = rankTercileStyles(j, g.workers.length);
+          const w = maxTop > 0 ? Math.max(6, Math.round((row.totalProduction / maxTop) * 100)) : 0;
+          return (
+            <div
+              key={row.workerId}
+              className="grid grid-cols-[1.25rem_minmax(0,1fr)_1fr_2.25rem] items-center gap-1 text-xs leading-snug sm:text-sm lg:text-[0.95rem]"
+            >
+              <span className={`tabular-nums ${rankClass}`}>{j + 1}</span>
+              <span className="truncate font-medium">{row.name}</span>
+              <div className={`${barH} overflow-hidden rounded-full bg-slate-200`}>
+                <div
+                  className={`h-full rounded-full ${barColor} transition-all duration-500`}
+                  style={{ width: `${w}%` }}
+                />
+              </div>
+              <span className="text-right tabular-nums font-semibold">{row.totalProduction}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ));
 
   return (
-    <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden pr-0.5 [scrollbar-width:thin]">
-      {groups.map((g) => (
-        <div key={g.processName}>
-          {/* Proses başlığı */}
-          <div className="mb-1 flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1">
-            <span className="flex-1 truncate text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:text-xs lg:text-sm">
-              {g.processName}
-            </span>
-            <span className="shrink-0 tabular-nums text-[10px] text-slate-400 sm:text-xs">
-              {g.workers.length} · {g.groupTotal.toLocaleString("tr-TR")}
-            </span>
-          </div>
-          {/* Proses içi çalışanlar — tercil bu gruba göre */}
-          <div className="space-y-0.5">
-            {g.workers.map((row, j) => {
-              const { bar: barColor, rank: rankClass } = rankTercileStyles(j, g.workers.length);
-              const w = maxTop > 0 ? Math.max(6, Math.round((row.totalProduction / maxTop) * 100)) : 0;
-              return (
-                <div
-                  key={row.workerId}
-                  className="grid grid-cols-[1.25rem_minmax(0,1fr)_1fr_2.25rem] items-center gap-1 text-xs leading-snug sm:text-sm lg:text-[0.95rem]"
-                >
-                  <span className={`tabular-nums ${rankClass}`}>{j + 1}</span>
-                  <span className="truncate font-medium">{row.name}</span>
-                  <div className={`${barH} overflow-hidden rounded-full bg-slate-200`}>
-                    <div
-                      className={`h-full rounded-full ${barColor} transition-all duration-500`}
-                      style={{ width: `${w}%` }}
-                    />
-                  </div>
-                  <span className="text-right tabular-nums font-semibold">{row.totalProduction}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+    <div className="min-h-0 flex-1 overflow-hidden">
+      <div style={{ animation: `tv-scroll-up ${duration}s linear infinite` }}>
+        <div className="space-y-2.5">{groupNodes}</div>
+        <div className="space-y-2.5 pt-2.5" aria-hidden="true">{groupNodes}</div>
+      </div>
     </div>
   );
 }
@@ -670,7 +674,7 @@ export default function Ekran2Page() {
   return (
     <>
       {/* CSS keyframe for progress bar */}
-      <style>{`@keyframes ekran2-bar{from{transform:scaleX(0)}to{transform:scaleX(1)}}`}</style>
+      <style>{`@keyframes ekran2-bar{from{transform:scaleX(0)}to{transform:scaleX(1)}}@keyframes tv-scroll-up{0%{transform:translateY(0)}100%{transform:translateY(-50%)}}`}</style>
 
       <div className="fixed inset-0 flex h-dvh max-h-dvh flex-col overflow-hidden bg-slate-100 text-slate-900">
         <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col px-2 py-2 sm:px-3 sm:py-2.5 lg:px-4 lg:py-3">

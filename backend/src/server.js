@@ -65,6 +65,7 @@ import {
   getRepairEntries,
   upsertRepairEntries,
   getRepairHistory,
+  deleteRepairEntries,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 
@@ -1103,6 +1104,18 @@ app.put("/api/repairs", requireAuth, async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: "Tamir verisi kaydedilemedi", error: String(err) });
+  }
+});
+
+app.delete("/api/repairs", requireAuth, async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    const result = await deleteRepairEntries(String(date));
+    logActivity(req, "tamir_sil", "repair_entries", { date: String(date) });
+    return res.json({ ok: true, deleted: result.deleted });
+  } catch (err) {
+    return res.status(500).json({ message: "Tamir verisi silinemedi", error: String(err) });
   }
 });
 

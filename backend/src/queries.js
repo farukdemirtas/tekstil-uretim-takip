@@ -1691,6 +1691,15 @@ export function upsertRepairEntries(date, entries) {
   });
 }
 
+export function deleteRepairEntries(date) {
+  return new Promise((resolve, reject) => {
+    db.run(`DELETE FROM repair_entries WHERE repair_date = ?`, [date], function (err) {
+      if (err) return reject(err);
+      resolve({ deleted: this.changes });
+    });
+  });
+}
+
 export async function getRepairHistory(startDate, endDate) {
   // 1. Tamir kayıtlarını çek (tarih + toplam tamir adedi)
   const repairRows = await new Promise((resolve, reject) => {

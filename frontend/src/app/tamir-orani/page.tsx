@@ -17,6 +17,7 @@ import {
   getRepairsHistory,
   getProcesses,
   saveRepairs,
+  deleteRepairs,
 } from "@/lib/api";
 import type { RepairEntry, RepairHistoryPoint } from "@/lib/api";
 import { isAdminRole, hasPermission } from "@/lib/permissions";
@@ -101,6 +102,10 @@ export default function TamirOraniPage() {
   const [histLoading, setHistLoading] = useState(false);
 
   const canEdit = isAdminRole() || hasPermission("tamirOrani");
+
+  // Silme onay durumu
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // date bekliyor
+  const [deleting, setDeleting] = useState(false);
 
   // ── load processes once ───────────────────────────────────────────────────
   useEffect(() => {
@@ -231,6 +236,24 @@ export default function TamirOraniPage() {
   function setCount(i: number, val: string) {
     const n = Math.max(0, parseInt(val, 10) || 0);
     setEntries((prev) => prev.map((e, idx) => (idx === i ? { ...e, repairCount: n } : e)));
+  }
+
+  // ── delete ────────────────────────────────────────────────────────────────
+  async function handleDelete(date: string) {
+    setDeleting(true);
+    try {
+      await deleteRepairs(date);
+      setDeleteConfirm(null);
+      // Seçili tarihse formu temizle
+      if (date === selectedDate) {
+        setEntries([{ processName: "", repairCount: 0 }]);
+      }
+      void loadHistory();
+    } catch (err) {
+      alert(String(err));
+    } finally {
+      setDeleting(false);
+    }
   }
 
   // ── save ──────────────────────────────────────────────────────────────────
@@ -627,6 +650,11 @@ export default function TamirOraniPage() {
                     <th className="pb-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                       Durum
                     </th>
+                    {canEdit && (
+                      <th className="pb-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        İşlem
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -675,6 +703,34 @@ export default function TamirOraniPage() {
                             <TrendArrow direction={dir} size="sm" />
                           </span>
                         </td>
+                        {canEdit && (
+                          <td className="py-2.5">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* Düzenle */}
+                              <button
+                                type="button"
+                                title="Bu günü düzenle"
+                                onClick={() => setSelectedDate(row.repairDate)}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-teal-50 hover:text-teal-600 dark:hover:bg-teal-950/30 dark:hover:text-teal-400"
+                              >
+                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                                </svg>
+                              </button>
+                              {/* Sil */}
+                              <button
+                                type="button"
+                                title="Bu günün tamir kaydını sil"
+                                onClick={() => setDeleteConfirm(row.repairDate)}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                              >
+                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -684,6 +740,51 @@ export default function TamirOraniPage() {
           )}
         </div>
       </div>
+
+      {/* Silme onay modalı */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/40">
+                <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Tamir kaydını sil</h3>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  {formatDateLabel(deleteConfirm)} tarihli tüm tamir girişleri silinecek.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleting}
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete(deleteConfirm)}
+                disabled={deleting}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleting && (
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                )}
+                Sil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -930,6 +930,17 @@ export async function saveRepairs(payload: { date: string; entries: RepairEntry[
   }
 }
 
+export async function deleteRepairs(date: string): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/repairs?date=${encodeURIComponent(date)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Tamir verisi silinemedi");
+  }
+}
+
 export async function getRepairsHistory(params: {
   startDate: string;
   endDate: string;
