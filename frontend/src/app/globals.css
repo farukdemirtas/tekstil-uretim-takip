@@ -114,3 +114,17 @@
 .rdp-tone-dark .rdp-outside {
   opacity: 0.35;
 }
+
+/* Verimlilik ticker: yukarı kayan sonsuz döngü */
+@keyframes tickerUp {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+.ticker-scroll {
+  animation: tickerUp var(--ticker-duration, 30s) linear infinite;
+}
+
+.ticker-scroll:hover {
+  animation-play-state: paused;
+}

@@ -6,56 +6,32 @@ const SLOTS = [
   {
     key: "t1000" as const,
     label: "10:00",
-    gradient: "from-violet-500 to-purple-600",
-    glow: "shadow-[0_0_12px_2px_rgba(139,92,246,0.35)]",
+    gradient: "from-violet-500 to-purple-400",
+    textColor: "text-violet-700",
     dot: "bg-violet-500",
-    track: "bg-violet-100/60",
   },
   {
     key: "t1300" as const,
     label: "13:00",
-    gradient: "from-sky-400 to-blue-600",
-    glow: "shadow-[0_0_12px_2px_rgba(56,189,248,0.35)]",
+    gradient: "from-sky-500 to-blue-400",
+    textColor: "text-sky-700",
     dot: "bg-sky-500",
-    track: "bg-sky-100/60",
   },
   {
     key: "t1600" as const,
     label: "16:00",
-    gradient: "from-emerald-400 to-teal-600",
-    glow: "shadow-[0_0_12px_2px_rgba(52,211,153,0.35)]",
+    gradient: "from-emerald-500 to-teal-400",
+    textColor: "text-emerald-700",
     dot: "bg-emerald-500",
-    track: "bg-emerald-100/60",
   },
   {
     key: "t1830" as const,
     label: "18:30",
-    gradient: "from-amber-400 to-orange-500",
-    glow: "shadow-[0_0_12px_2px_rgba(251,191,36,0.35)]",
+    gradient: "from-amber-500 to-orange-400",
+    textColor: "text-amber-700",
     dot: "bg-amber-500",
-    track: "bg-amber-100/60",
   },
 ];
-
-function TrendArrow({ dir }: { dir: "up" | "down" | "neutral" }) {
-  if (dir === "up")
-    return (
-      <span className="inline-flex items-center rounded-lg bg-emerald-100 px-1.5 py-0.5 text-emerald-600 shadow-sm">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-          <path d="M8 2l7 10H1z" />
-        </svg>
-      </span>
-    );
-  if (dir === "down")
-    return (
-      <span className="inline-flex items-center rounded-lg bg-red-100 px-1.5 py-0.5 text-red-600 shadow-sm">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-          <path d="M8 14L1 4h14z" />
-        </svg>
-      </span>
-    );
-  return null;
-}
 
 export function Ekran3WorkerCard({
   worker,
@@ -78,19 +54,19 @@ export function Ekran3WorkerCard({
 }) {
   if (!worker || rank == null) {
     return (
-      <div className="relative flex min-h-0 flex-col items-center justify-center overflow-hidden rounded-3xl border border-dashed border-slate-200/80 bg-gradient-to-b from-white to-slate-50/80 p-8 text-center shadow-inner">
-        <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-          <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <div className="flex min-h-0 flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+          <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
           </svg>
         </div>
-        <p className="text-sm font-medium text-slate-500">Personel verisi yok</p>
+        <p className="text-sm font-semibold text-slate-400">Personel bekleniyor…</p>
       </div>
     );
   }
 
+  const noTodayData = singleDayMode && worker.totalProduction === 0;
   const h = hourly ?? { t1000: 0, t1300: 0, t1600: 0, t1830: 0 };
-  const maxH = Math.max(h.t1000, h.t1300, h.t1600, h.t1830, 1);
   const singleAvgs = singleDayMode ? computeShiftHourAverages(h, worker.totalProduction) : null;
 
   const hasMultiDay = multiDayActiveDays > 0;
@@ -107,137 +83,150 @@ export function Ekran3WorkerCard({
   const todayPerHour = singleAvgs?.perHourInWindow ?? 0;
   const prevPerHour = prevDayTotal > 0 ? Math.round(prevDayTotal / SHIFT_NOMINAL_HOURS) : 0;
 
-  function dirFor(today: number, prev: number): "up" | "down" | "neutral" {
-    if (prev <= 0 || today === prev) return "neutral";
-    return today > prev ? "up" : "down";
-  }
+  const hourlyArrow =
+    noTodayData || prevPerHour <= 0 || todayPerHour === prevPerHour
+      ? "neutral"
+      : todayPerHour > prevPerHour
+      ? "up"
+      : "down";
 
-  const hourlyArrow = dirFor(todayPerHour, prevPerHour);
-  const title = worker.name.toLocaleUpperCase("tr-TR");
-  const meta = [teamLabel || worker.team, worker.process].filter(Boolean).join("  ·  ");
+  const name = worker.name.toLocaleUpperCase("tr-TR");
+  const process = worker.process || "—";
+  const team = teamLabel || worker.team || "";
 
   return (
-    <article className="group relative flex min-h-0 flex-col overflow-hidden rounded-3xl bg-white shadow-[0_8px_32px_-6px_rgba(15,23,42,0.12),0_2px_8px_-2px_rgba(15,23,42,0.06)] ring-1 ring-slate-900/[0.06] transition-shadow duration-300">
+    <article className="relative flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-md">
 
+      {/* ── HEADER ── gradient arka plan */}
+      <header className="relative shrink-0 overflow-hidden bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4">
+        {/* Dekoratif halka */}
+        <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/5" />
+        <div className="pointer-events-none absolute -bottom-4 -right-2 h-16 w-16 rounded-full bg-white/5" />
 
-      {/* Header */}
-      <header className="relative shrink-0 px-4 pb-2.5 pt-5 sm:px-5 sm:pt-6">
-        <div className="flex items-start justify-between gap-3">
+        <div className="relative flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[1.25rem] font-black leading-tight tracking-wide text-slate-900 sm:text-[1.5rem]">
-              {title}
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+              {team}{team && process !== "—" ? "  ·  " : ""}{process}
+            </p>
+            <h2 className="mt-0.5 truncate text-xl font-black leading-tight tracking-wide text-white sm:text-2xl">
+              {name}
             </h2>
-            <p className="mt-1 truncate text-[12px] font-medium text-slate-400 sm:text-sm">{meta}</p>
           </div>
           {/* Sıralama rozeti */}
-          <span className="shrink-0 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 px-2.5 py-1 text-xs font-black tabular-nums text-white shadow-md sm:px-3 sm:text-sm">
-            #{rank}
-          </span>
+          <div className="shrink-0 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm sm:h-12 sm:w-12">
+            <span className="text-base font-black text-white sm:text-lg">#{rank}</span>
+          </div>
         </div>
       </header>
 
-      {/* Stat kutuları */}
-      <div className="shrink-0 grid grid-cols-3 gap-2 px-3 pb-2 sm:gap-3 sm:px-4 sm:pb-3">
+      {/* ── STATS BAR ── bugün / saat ort / günlük ort */}
+      <div className="shrink-0 grid grid-cols-3 gap-2.5 border-b border-slate-100 bg-slate-50 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
         {/* Bugün toplam */}
-        <div className="flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-2xl bg-gradient-to-b from-slate-50 to-white px-2 py-3 text-center ring-1 ring-slate-200/80 sm:min-h-[6rem] sm:rounded-2xl">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 sm:text-[10px]">
+        <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-slate-200 bg-white py-3 text-center shadow-sm sm:py-4">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 sm:text-[10px]">
             {singleDayMode ? "Bugün" : "Toplam"}
           </span>
-          <span className="text-[1.6rem] font-black leading-none tabular-nums text-slate-900 sm:text-4xl">
-            {worker.totalProduction}
+          <span className="text-2xl font-black tabular-nums text-slate-900 sm:text-3xl">
+            {worker.totalProduction.toLocaleString("tr-TR")}
           </span>
-          <span className="text-[8px] text-slate-400 sm:text-[9px]">adet</span>
+          <span className="text-[9px] font-semibold text-slate-400 sm:text-[10px]">adet</span>
         </div>
 
-        {/* Saatlik ortalama */}
-        <div className="flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-2xl bg-gradient-to-b from-slate-50 to-white px-2 py-3 text-center ring-1 ring-slate-200/80 sm:min-h-[6rem]">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 sm:text-[10px]">
-            {singleDayMode ? "Saat/ort" : "Çalışılan"}
+        {/* Saat/ort */}
+        <div className={`flex flex-col items-center justify-center gap-0.5 rounded-2xl border py-3 text-center shadow-sm sm:py-4 ${
+          hourlyArrow === "up"
+            ? "border-emerald-200 bg-emerald-50"
+            : hourlyArrow === "down"
+            ? "border-red-200 bg-red-50"
+            : "border-slate-200 bg-white"
+        }`}>
+          <span className={`text-[9px] font-black uppercase tracking-widest sm:text-[10px] ${
+            hourlyArrow === "up" ? "text-emerald-500" :
+            hourlyArrow === "down" ? "text-red-500" :
+            "text-slate-400"
+          }`}>
+            Saat/ort
           </span>
-          {singleDayMode ? (
-            <>
-              <span className="flex items-center gap-1 text-[1.6rem] font-black leading-none tabular-nums text-slate-900 sm:text-4xl">
-                {multiDayPerHour}
-                <TrendArrow dir={hourlyArrow} />
-              </span>
-              <span className="text-[8px] text-slate-400 sm:text-[9px]">
-                {hasMultiDay ? `${multiDayActiveDays}g ort.` : singleAvgs?.windowHint ?? ""}
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="text-[1.6rem] font-black leading-none tabular-nums text-slate-900 sm:text-4xl">
-                {worker.activeDays}
-              </span>
-              <span className="text-[8px] text-slate-400 sm:text-[9px]">gün</span>
-            </>
-          )}
+          <div className="flex items-center gap-1">
+            <span className={`text-2xl font-black tabular-nums sm:text-3xl ${
+              hourlyArrow === "up" ? "text-emerald-700" :
+              hourlyArrow === "down" ? "text-red-700" :
+              "text-slate-900"
+            }`}>
+              {multiDayPerHour}
+            </span>
+            {hourlyArrow === "up" && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="#15803d" aria-hidden><path d="M8 3l6 9H2z" /></svg>
+            )}
+            {hourlyArrow === "down" && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="#b91c1c" aria-hidden><path d="M8 13L2 4h12z" /></svg>
+            )}
+          </div>
+          <span className={`text-[9px] font-semibold sm:text-[10px] ${
+            hourlyArrow === "up" ? "text-emerald-500" :
+            hourlyArrow === "down" ? "text-red-500" :
+            "text-slate-400"
+          }`}>
+            {hasMultiDay ? `${multiDayActiveDays}g ort.` : (singleAvgs?.windowHint ?? "ort.")}
+          </span>
         </div>
 
-        {/* Günlük ortalama */}
-        <div className="flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-2xl bg-gradient-to-b from-slate-50 to-white px-2 py-3 text-center ring-1 ring-slate-200/80 sm:min-h-[6rem]">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 sm:text-[10px]">
+        {/* Günlük ort */}
+        <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-slate-200 bg-white py-3 text-center shadow-sm sm:py-4">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 sm:text-[10px]">
             Günlük ort.
           </span>
-          <span className="text-[1.6rem] font-black leading-none tabular-nums text-slate-900 sm:text-4xl">
-            {multiDayDailyAvg}
+          <span className="text-2xl font-black tabular-nums text-slate-900 sm:text-3xl">
+            {multiDayDailyAvg.toLocaleString("tr-TR")}
           </span>
-          <span className="text-[8px] text-slate-400 sm:text-[9px]">
+          <span className="text-[9px] font-semibold text-slate-400 sm:text-[10px]">
             {hasMultiDay ? `${multiDayActiveDays} gün` : "adet"}
           </span>
         </div>
       </div>
 
-      {/* Barlar */}
-      <div className="min-h-0 flex-1 px-3 pb-4 sm:px-4 sm:pb-5">
-        <p className="mb-3 text-[9px] font-bold uppercase tracking-widest text-slate-400 sm:text-[10px]">
-          Saatlik üretim
-        </p>
+      {/* ── SAATLİK ÜRETİM 2×2 ── */}
+      <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-0 divide-x divide-y divide-slate-100">
+        {SLOTS.map(({ key, label, textColor, dot, gradient }) => {
+          const val = noTodayData ? 0 : h[key];
+          const active = val > 0;
 
-        <ul className="space-y-2.5 sm:space-y-3">
-          {SLOTS.map(({ key, label, gradient, glow, dot, track }) => {
-            const val = h[key];
-            const pct = Math.round((val / maxH) * 100);
-            const active = val > 0;
-
-            return (
-              <li key={key} className="flex items-center gap-2 sm:gap-3">
-                {/* Saat etiketi */}
-                <div className="flex w-12 shrink-0 items-center gap-1.5 sm:w-14">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${active ? dot : "bg-slate-300"}`} />
-                  <span className={`text-[11px] font-bold tabular-nums sm:text-xs ${active ? "text-slate-700" : "text-slate-400"}`}>
-                    {label}
-                  </span>
-                </div>
-
-                {/* Bar track */}
-                <div className={`relative min-w-0 flex-1 overflow-hidden rounded-full ${track} h-5 sm:h-6`}>
-                  {/* Dolgu */}
-                  {active && (
-                    <div
-                      className={`absolute inset-y-0 left-0 rounded-full bg-gradient-to-r ${gradient} ${glow} transition-all duration-700 ease-out`}
-                      style={{ width: `${Math.max(pct, 4)}%` }}
-                    >
-                      {/* İnce parlama çizgisi */}
-                      <div className="absolute inset-x-0 top-0 h-[40%] rounded-full bg-white/30" />
-                    </div>
-                  )}
-                  {/* Boş durum */}
-                  {!active && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-[9px] text-slate-400">—</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Değer */}
-                <span className={`w-9 shrink-0 text-right text-sm font-black tabular-nums sm:w-10 sm:text-base ${active ? "text-slate-800" : "text-slate-300"}`}>
-                  {active ? val : ""}
+          return (
+            <div
+              key={key}
+              className="relative flex min-h-0 flex-col justify-between bg-white p-3 sm:p-4"
+            >
+              {/* Sol-üst renk noktası + saat */}
+              <div className="flex items-center gap-1.5">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? dot : "bg-slate-200"}`} />
+                <span className={`text-xs font-black tabular-nums sm:text-sm ${
+                  active ? "text-slate-600" : "text-slate-300"
+                }`}>
+                  {label}
                 </span>
-              </li>
-            );
-          })}
-        </ul>
+              </div>
+
+              {/* Adet — büyük */}
+              <div className="mt-1">
+                <span className={`block text-[2rem] font-black tabular-nums leading-none sm:text-[2.5rem] ${
+                  active ? textColor : "text-slate-200"
+                }`}>
+                  {active ? val.toLocaleString("tr-TR") : "—"}
+                </span>
+                {active && (
+                  <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-widest text-slate-400 sm:text-[10px]">
+                    adet
+                  </span>
+                )}
+              </div>
+
+              {/* Alt renkli şerit */}
+              {active && (
+                <div className={`absolute inset-x-0 bottom-0 h-[3px] bg-gradient-to-r ${gradient}`} />
+              )}
+            </div>
+          );
+        })}
       </div>
     </article>
   );

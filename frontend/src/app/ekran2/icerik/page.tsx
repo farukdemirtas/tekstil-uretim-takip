@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getDailyTrendAnalytics,
   getTeams,
@@ -24,6 +24,10 @@ const ANALYSIS_TREND_STROKE = "#16a34a";
 const PANELS_PER_VIEW = 4;
 /** Bölümler arası geçiş süresi (ms) */
 const ROTATION_INTERVAL_MS = 25_000;
+/** Personel listesi: sayfada kaç satır gösterilir */
+const ROWS_PER_PAGE = 9;
+/** Personel listesi sayfa geçiş aralığı (ms) */
+const LIST_PAGE_MS = 7_000;
 
 type Phase = "setup" | "display";
 
@@ -158,52 +162,111 @@ function MiniTrendChart({ points, compact }: { points: DailyTrendPoint[]; compac
   );
 }
 
+type FlatItem =
+  | { type: "header"; processName: string; count: number; total: number }
+  | { type: "row"; worker: TopWorkerAnalytics; rankInGroup: number; groupLen: number };
+
 function ProcessGroupedRows({ top }: { top: TopWorkerAnalytics[] }) {
   const groups = useMemo(() => groupByProcess(top), [top]);
   const maxTop = useMemo(() => top.reduce((m, r) => Math.max(m, r.totalProduction), 0), [top]);
   const barH = "h-2 sm:h-2.5 lg:h-3";
-  const duration = Math.max(30, top.length * 3);
 
-  const groupNodes = groups.map((g) => (
-    <div key={g.processName}>
-      <div className="mb-1 flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1">
-        <span className="flex-1 truncate text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:text-xs lg:text-sm">
-          {g.processName}
-        </span>
-        <span className="shrink-0 tabular-nums text-[10px] text-slate-400 sm:text-xs">
-          {g.workers.length} · {g.groupTotal.toLocaleString("tr-TR")}
-        </span>
-      </div>
-      <div className="space-y-0.5">
-        {g.workers.map((row, j) => {
-          const { bar: barColor, rank: rankClass } = rankTercileStyles(j, g.workers.length);
-          const w = maxTop > 0 ? Math.max(6, Math.round((row.totalProduction / maxTop) * 100)) : 0;
+  // Tüm satırları düzleştir (başlık + kişi satırları)
+  const flatItems = useMemo<FlatItem[]>(() => {
+    const items: FlatItem[] = [];
+    for (const g of groups) {
+      items.push({ type: "header", processName: g.processName, count: g.workers.length, total: g.groupTotal });
+      for (let j = 0; j < g.workers.length; j++) {
+        items.push({ type: "row", worker: g.workers[j], rankInGroup: j, groupLen: g.workers.length });
+      }
+    }
+    return items;
+  }, [groups]);
+
+  const totalPages = Math.max(1, Math.ceil(flatItems.length / ROWS_PER_PAGE));
+  const [pageIdx, setPageIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+  const pageRef = useRef(pageIdx);
+  pageRef.current = pageIdx;
+
+  // top değişince başa dön
+  useEffect(() => {
+    setPageIdx(0);
+    setVisible(true);
+  }, [top.length]);
+
+  // Otomatik geçiş
+  useEffect(() => {
+    if (totalPages <= 1) return;
+    const id = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setPageIdx((p) => (p + 1) % totalPages);
+        setVisible(true);
+      }, 300);
+    }, LIST_PAGE_MS);
+    return () => clearInterval(id);
+  }, [totalPages]);
+
+  const pageItems = flatItems.slice(pageIdx * ROWS_PER_PAGE, (pageIdx + 1) * ROWS_PER_PAGE);
+
+  return (
+    <div className="min-h-0 flex-1 overflow-hidden">
+      {/* Sayfa noktaları */}
+      {totalPages > 1 && (
+        <div className="mb-1.5 flex justify-center gap-1">
+          {Array.from({ length: totalPages }).map((_, i) => (
+            <span
+              key={i}
+              className={`block rounded-full transition-all duration-300 ${
+                i === pageIdx ? "h-1.5 w-4 bg-teal-500" : "h-1.5 w-1.5 bg-slate-300"
+              }`}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* İçerik — fade + slide geçiş */}
+      <div
+        className="space-y-0.5"
+        style={{
+          opacity: visible ? 1 : 0,
+          transform: visible ? "translateY(0)" : "translateY(6px)",
+          transition: "opacity 0.3s ease, transform 0.3s ease",
+        }}
+      >
+        {pageItems.map((item, i) => {
+          if (item.type === "header") {
+            return (
+              <div key={`h-${item.processName}-${i}`} className="flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1">
+                <span className="flex-1 truncate text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:text-xs lg:text-sm">
+                  {item.processName}
+                </span>
+                <span className="shrink-0 tabular-nums text-[10px] text-slate-400 sm:text-xs">
+                  {item.count} · {item.total.toLocaleString("tr-TR")}
+                </span>
+              </div>
+            );
+          }
+          const { bar: barColor, rank: rankClass } = rankTercileStyles(item.rankInGroup, item.groupLen);
+          const w = maxTop > 0 ? Math.max(6, Math.round((item.worker.totalProduction / maxTop) * 100)) : 0;
           return (
             <div
-              key={row.workerId}
+              key={item.worker.workerId}
               className="grid grid-cols-[1.25rem_minmax(0,1fr)_1fr_2.25rem] items-center gap-1 text-xs leading-snug sm:text-sm lg:text-[0.95rem]"
             >
-              <span className={`tabular-nums ${rankClass}`}>{j + 1}</span>
-              <span className="truncate font-medium">{row.name}</span>
+              <span className={`tabular-nums ${rankClass}`}>{item.rankInGroup + 1}</span>
+              <span className="truncate font-medium">{item.worker.name}</span>
               <div className={`${barH} overflow-hidden rounded-full bg-slate-200`}>
                 <div
                   className={`h-full rounded-full ${barColor} transition-all duration-500`}
                   style={{ width: `${w}%` }}
                 />
               </div>
-              <span className="text-right tabular-nums font-semibold">{row.totalProduction}</span>
+              <span className="text-right tabular-nums font-semibold">{item.worker.totalProduction}</span>
             </div>
           );
         })}
-      </div>
-    </div>
-  ));
-
-  return (
-    <div className="min-h-0 flex-1 overflow-hidden">
-      <div style={{ animation: `tv-scroll-up ${duration}s linear infinite` }}>
-        <div className="space-y-2.5">{groupNodes}</div>
-        <div className="space-y-2.5 pt-2.5" aria-hidden="true">{groupNodes}</div>
       </div>
     </div>
   );
@@ -674,7 +737,7 @@ export default function Ekran2Page() {
   return (
     <>
       {/* CSS keyframe for progress bar */}
-      <style>{`@keyframes ekran2-bar{from{transform:scaleX(0)}to{transform:scaleX(1)}}@keyframes tv-scroll-up{0%{transform:translateY(0)}100%{transform:translateY(-50%)}}`}</style>
+      <style>{`@keyframes ekran2-bar{from{transform:scaleX(0)}to{transform:scaleX(1)}}`}</style>
 
       <div className="fixed inset-0 flex h-dvh max-h-dvh flex-col overflow-hidden bg-slate-100 text-slate-900">
         <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-1 flex-col px-2 py-2 sm:px-3 sm:py-2.5 lg:px-4 lg:py-3">
@@ -739,8 +802,11 @@ export default function Ekran2Page() {
               <button
                 type="button"
                 onClick={() => {
-                  const el = document.documentElement;
-                  if (el.requestFullscreen) void el.requestFullscreen();
+                  if (document.fullscreenElement) {
+                    void document.exitFullscreen();
+                  } else {
+                    void document.documentElement.requestFullscreen();
+                  }
                 }}
                 className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-base"
               >

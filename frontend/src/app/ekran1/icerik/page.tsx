@@ -2,12 +2,40 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { getHedefTakipStageTotals, setAuthToken, type HedefStageLineDto } from "@/lib/api";
+import {
+  getHedefTakipStageTotals,
+  getTopWorkersAnalytics,
+  getWorkerDailyAnalytics,
+  setAuthToken,
+  type HedefStageLineDto,
+} from "@/lib/api";
 import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
+import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
 const AUTO_REFRESH_MS = 30_000;
+
+function nWorkdaysBack(fromIso: string, n: number): string {
+  const [y, m, d] = fromIso.split("-").map(Number);
+  let dt = new Date(y, m - 1, d);
+  let count = 0;
+  while (count < n) {
+    dt = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() - 1);
+    if (dt.getDay() !== 0 && dt.getDay() !== 6) count++;
+  }
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+/** startDate ile endDate arasındaki takvim günü sayısı */
+function daysBetween(a: string, b: string): number {
+  return Math.max(
+    1,
+    Math.round(
+      (new Date(b).getTime() - new Date(a).getTime()) / 86_400_000
+    ) + 1
+  );
+}
 
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 0;
@@ -25,6 +53,39 @@ function formatDateTr(dateStr: string) {
   return `${d}.${m}.${y}`;
 }
 
+const STAGE_GRADIENTS = [
+  "from-emerald-500 to-teal-400",
+  "from-sky-500 to-blue-400",
+  "from-violet-500 to-purple-400",
+  "from-amber-500 to-orange-400",
+  "from-rose-500 to-pink-400",
+  "from-cyan-500 to-sky-400",
+  "from-fuchsia-500 to-pink-400",
+  "from-lime-500 to-green-400",
+] as const;
+
+const STAGE_GLOWS = [
+  "shadow-emerald-500/30",
+  "shadow-sky-500/30",
+  "shadow-violet-500/30",
+  "shadow-amber-500/30",
+  "shadow-rose-500/30",
+  "shadow-cyan-500/30",
+  "shadow-fuchsia-500/30",
+  "shadow-lime-500/30",
+] as const;
+
+const STAGE_TEXT = [
+  "text-emerald-400",
+  "text-sky-400",
+  "text-violet-400",
+  "text-amber-400",
+  "text-rose-400",
+  "text-cyan-400",
+  "text-fuchsia-400",
+  "text-lime-400",
+] as const;
+
 export default function Ekran1IcerikPage() {
   const [target, setTarget] = useState(5000);
   const [stages, setStages] = useState<HedefStageLineDto[]>([]);
@@ -35,6 +96,7 @@ export default function Ekran1IcerikPage() {
   const [lastUpdated, setLastUpdated] = useState("");
   const [hasToken, setHasToken] = useState(false);
   const [modelId, setModelId] = useState<number | null>(null);
+  const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const genelTamamlanan = useMemo(() => {
@@ -50,8 +112,79 @@ export default function Ekran1IcerikPage() {
     if (!silent) setLoading(true);
     setError("");
     try {
-      const totals = await getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined);
+      // Filtreli dönemden geriye doğru geniş referans ve önceki dönem
+      const rangeDays = daysBetween(startDate, endDate);
+      const prevEndDate = nWorkdaysBack(startDate, 1);
+      const prevStartDate = nWorkdaysBack(startDate, rangeDays);
+
+      const [totals, rawCurrent, rawPrev, rawDaily] = await Promise.all([
+        getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined),
+        getTopWorkersAnalytics({ startDate, endDate, limit: 200 }),
+        getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }),
+        // Günlük detay: her kişinin en yüksek gününü bulmak için
+        getWorkerDailyAnalytics({ startDate, endDate }),
+      ]);
       setStages(totals.stages ?? []);
+
+      // Filtreli dönemdeki personel günlük ortalaması
+      const currentAvgMap = new Map<number, number>();
+      for (const w of rawCurrent) {
+        currentAvgMap.set(w.workerId, w.totalProduction / Math.max(w.activeDays, 1));
+      }
+
+      // Her kişinin filtreli dönemdeki en yüksek tek gün üretimi
+      const bestDayMap = new Map<number, number>();
+      for (const row of rawDaily) {
+        const cur = bestDayMap.get(row.workerId) ?? 0;
+        if (row.production > cur) bestDayMap.set(row.workerId, row.production);
+      }
+
+      // Proses içindeki en yüksek "best day" = o prosesin %100 tavanı
+      const processBestDayRef = new Map<string, number>();
+      for (const w of rawCurrent) {
+        const key = w.process || "—";
+        const wBest = bestDayMap.get(w.workerId) ?? 0;
+        const cur = processBestDayRef.get(key) ?? 0;
+        if (wBest > cur) processBestDayRef.set(key, wBest);
+      }
+
+      // Önceki dönem lookup: workerId → toplam üretim
+      const prevMap = new Map<number, number>(
+        rawPrev.map((w) => [w.workerId, w.totalProduction])
+      );
+
+      const items: TickerItem[] = rawCurrent.map((w) => {
+        const processKey = w.process || "—";
+        const workerDaily = currentAvgMap.get(w.workerId) ?? 0;
+        // Prosesin en iyisinin en yüksek günü = %100 tavanı
+        const refBestDay = processBestDayRef.get(processKey) ?? 0;
+
+        // Verimlilik = kişi günlük ort / proses tavanı × 100, max %100
+        const effPct =
+          refBestDay > 0 ? Math.min(Math.round((workerDaily / refBestDay) * 100), 100) : 0;
+
+        // Trend: filtreli dönem vs önceki eş dönem
+        const prevProd = prevMap.get(w.workerId) ?? 0;
+        const curProd = w.totalProduction;
+        const trend: "up" | "down" | "neutral" =
+          prevProd <= 0 || curProd === prevProd
+            ? "neutral"
+            : curProd > prevProd
+            ? "up"
+            : "down";
+
+        return {
+          workerId: w.workerId,
+          name: w.name,
+          process: processKey,
+          team: w.team,
+          efficiencyPct: effPct,
+          trend,
+        };
+      });
+
+      items.sort((a, b) => b.efficiencyPct - a.efficiencyPct);
+      setTickerItems(items.filter((item) => item.efficiencyPct >= 50));
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
     } catch {
       setError("Veri alınamadı. Oturum veya bağlantıyı kontrol edin.");
@@ -68,7 +201,6 @@ export default function Ekran1IcerikPage() {
     }
     setHasToken(true);
     setAuthToken(token);
-
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -85,16 +217,11 @@ export default function Ekran1IcerikPage() {
           setModelId(Number(saved.modelId));
         }
       }
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
-    if (!hasToken) {
-      setLoading(false);
-      return;
-    }
+    if (!hasToken) { setLoading(false); return; }
     void fetchData(false);
   }, [hasToken, startDate, endDate, fetchData]);
 
@@ -104,23 +231,27 @@ export default function Ekran1IcerikPage() {
     return () => clearInterval(id);
   }, [hasToken, fetchData]);
 
-  function requestFullscreen() {
-    const el = containerRef.current ?? document.documentElement;
-    if (el.requestFullscreen) void el.requestFullscreen();
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      const el = containerRef.current ?? document.documentElement;
+      if (el.requestFullscreen) void el.requestFullscreen();
+    }
   }
-
-  const BAR_COLORS = ["bg-emerald-400", "bg-sky-400", "bg-violet-400", "bg-amber-400", "bg-rose-400", "bg-cyan-400", "bg-fuchsia-400", "bg-lime-400"] as const;
 
   const stageRows = useMemo(() => {
     return stages.map((s, i) => {
-      const shortP = s.processName.length > 16 ? `${s.processName.slice(0, 14)}…` : s.processName;
+      const shortP = s.processName.length > 18 ? `${s.processName.slice(0, 16)}…` : s.processName;
       const label = s.processName ? `${s.teamLabel} · ${shortP}` : s.teamLabel;
       const value = Number.isFinite(s.total) ? s.total : 0;
       return {
         label,
         value,
         pct: calcPercent(value, target),
-        bar: BAR_COLORS[i % BAR_COLORS.length],
+        gradient: STAGE_GRADIENTS[i % STAGE_GRADIENTS.length],
+        glow: STAGE_GLOWS[i % STAGE_GLOWS.length],
+        textColor: STAGE_TEXT[i % STAGE_TEXT.length],
       };
     });
   }, [stages, target]);
@@ -134,16 +265,10 @@ export default function Ekran1IcerikPage() {
           <span className="font-semibold text-slate-900">Hedef Takip</span> ekranından kaydedin.
         </p>
         <div className="flex flex-wrap justify-center gap-4">
-          <Link
-            href="/"
-            className="rounded-xl border-2 border-slate-800 px-8 py-4 text-lg font-semibold text-slate-900 hover:bg-slate-800 hover:text-white"
-          >
+          <Link href="/" className="rounded-xl border-2 border-slate-800 px-8 py-4 text-lg font-semibold text-slate-900 hover:bg-slate-800 hover:text-white">
             Giriş
           </Link>
-          <Link
-            href="/hedef-takip"
-            className="rounded-xl bg-emerald-600 px-8 py-4 text-lg font-semibold text-white hover:bg-emerald-500"
-          >
+          <Link href="/hedef-takip" className="rounded-xl bg-emerald-600 px-8 py-4 text-lg font-semibold text-white hover:bg-emerald-500">
             Hedef Takip
           </Link>
         </div>
@@ -151,109 +276,188 @@ export default function Ekran1IcerikPage() {
     );
   }
 
+  const leftItems = tickerItems.filter((_, i) => i % 2 === 0);
+  const rightItems = tickerItems.filter((_, i) => i % 2 === 1);
+
+  const isSingleDay = startDate === endDate;
+
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 flex flex-col overflow-auto bg-slate-100 text-slate-900"
-      style={{ minHeight: "100dvh" }}
+      className="fixed inset-0 flex flex-row overflow-hidden bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900"
     >
-      <div className="mx-auto flex min-h-full w-full max-w-[1920px] flex-1 flex-col gap-6 px-6 py-6 md:gap-10 md:px-12 md:py-10">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-300 pb-4 md:pb-6">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-[0.35em] text-emerald-700 md:text-base">
-              EKRAN1
-            </p>
-            <p className="mt-1 text-lg text-slate-600 md:text-xl">
-              {formatDateTr(startDate)} — {formatDateTr(endDate)}
-              {lastUpdated ? (
-                <span className="ml-3 text-slate-500">· Son güncelleme {lastUpdated}</span>
-              ) : null}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
-            <span className="hidden text-slate-500 sm:inline md:text-lg">Yenileme 30 sn</span>
+      {/* Arka plan efekti */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(16,185,129,0.08),transparent)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_40%_at_100%_100%,rgba(56,189,248,0.05),transparent)]" />
+
+      {/* Sol ticker */}
+      <div className="hidden w-52 shrink-0 border-r border-slate-200 bg-white/90 py-3 lg:flex lg:flex-col xl:w-60">
+        <EfficiencyTicker items={leftItems} />
+      </div>
+
+      {/* Ana içerik */}
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-auto">
+        <div className="mx-auto flex min-h-full w-full max-w-[1920px] flex-1 flex-col gap-5 px-6 py-5 md:gap-8 md:px-10 md:py-8">
+
+          {/* Header */}
+          <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 px-3 py-1 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-emerald-500/20">
+                EKRAN1
+              </span>
+              <div>
+                <p className="text-base font-bold text-slate-900 md:text-lg">
+                  {isSingleDay ? formatDateTr(startDate) : `${formatDateTr(startDate)} — ${formatDateTr(endDate)}`}
+                </p>
+                {lastUpdated && (
+                  <p className="text-[11px] text-slate-400">Son güncelleme {lastUpdated} · 30 sn yenileme</p>
+                )}
+              </div>
+            </div>
             <button
               type="button"
-              onClick={() => void requestFullscreen()}
-              className="rounded-xl border-2 border-slate-400 bg-white px-5 py-3 text-base font-semibold text-slate-900 hover:bg-slate-50 md:px-6 md:text-lg"
+              onClick={() => void toggleFullscreen()}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
             >
               Tam ekran
             </button>
-          </div>
-        </header>
+          </header>
 
-        {error ? (
-          <p className="text-center text-2xl font-semibold text-red-600 md:text-3xl">{error}</p>
-        ) : null}
+          {error && (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-base font-semibold text-red-600">
+              {error}
+            </p>
+          )}
+          {loading && !lastUpdated && (
+            <div className="flex items-center justify-center gap-2 py-4 text-slate-500">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+              Yükleniyor…
+            </div>
+          )}
 
-        {loading && !lastUpdated ? (
-          <p className="text-center text-2xl text-slate-500">Yükleniyor…</p>
-        ) : null}
-
-        <section className="flex flex-1 flex-col justify-center gap-6 md:gap-10">
-          <h1 className="text-center text-4xl font-black uppercase tracking-tight text-slate-900 md:text-6xl lg:text-7xl xl:text-8xl">
-            Genel İlerleme
-          </h1>
-
-          <div className="relative mx-auto w-full max-w-6xl">
-            <div
-              className="relative h-24 overflow-hidden rounded-2xl border-2 border-slate-300 bg-slate-200 shadow-[0_4px_40px_rgba(16,185,129,0.12)] md:h-32 lg:h-40"
-              role="progressbar"
-              aria-valuenow={Math.round(genelPercent)}
-              aria-valuemin={0}
-              aria-valuemax={100}
+          {/* Genel ilerleme */}
+          <section className="flex flex-1 flex-col justify-center gap-5 md:gap-8">
+            <h1
+              className="text-center font-black uppercase tracking-tight text-slate-900"
+              style={{ fontSize: "clamp(2rem, 6vw, 5.5rem)" }}
             >
+              Genel İlerleme
+            </h1>
+
+            {/* Ana progress bar */}
+            <div className="relative mx-auto w-full max-w-5xl">
               <div
-                className="absolute inset-y-0 left-0 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 transition-[width] duration-1000 ease-out"
-                style={{ width: `${genelPercent}%` }}
-              />
-              <div className="absolute inset-0 flex items-center justify-center px-4">
-                <span
-                  className="font-black tabular-nums text-slate-900 drop-shadow-[0_1px_0_rgba(255,255,255,0.9)]"
-                  style={{
-                    fontSize: "clamp(2.5rem, 8vw, 6rem)",
-                    textShadow: "0 0 8px rgba(255,255,255,0.95), 0 2px 4px rgba(0,0,0,0.25)",
-                  }}
-                >
-                  %{genelPercent.toFixed(0)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <p className="text-center text-xl font-medium text-slate-700 md:text-3xl lg:text-4xl">
-            <span className="text-slate-500">Toplam hedef</span>{" "}
-            <span className="font-bold text-slate-900">{target.toLocaleString("tr-TR")}</span>
-            <span className="mx-3 text-slate-400 md:mx-6">/</span>
-            <span className="text-slate-500">Gerçekleşen</span>{" "}
-            <span className="font-bold text-emerald-600">{genelTamamlanan.toLocaleString("tr-TR")}</span>
-          </p>
-        </section>
-
-        <section className="mt-auto grid grid-cols-2 gap-4 border-t border-slate-300 pt-6 sm:grid-cols-3 md:grid-cols-4 md:gap-5 md:pt-8 lg:grid-cols-5">
-          {stageRows.map((row, idx) => (
-            <div
-              key={`${row.label}-${idx}`}
-              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:p-4"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-sm font-semibold text-slate-700 md:text-lg">{row.label}</span>
-                <span className="tabular-nums text-lg font-bold text-slate-900 md:text-xl">
-                  {row.pct.toFixed(0)}%
-                </span>
-              </div>
-              <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-200 md:h-4">
+                className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-inner"
+                style={{ height: "clamp(5rem, 12vh, 9rem)" }}
+                role="progressbar"
+                aria-valuenow={Math.round(genelPercent)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                {/* Dolgu */}
                 <div
-                  className={`h-full rounded-full ${row.bar} transition-[width] duration-1000 ease-out`}
-                  style={{ width: `${row.pct}%` }}
-                />
+                  className="absolute inset-y-0 left-0 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 transition-[width] duration-1000 ease-out"
+                  style={{ width: `${genelPercent}%` }}
+                >
+                  <div className="absolute inset-x-0 top-0 h-1/3 rounded-t-2xl bg-white/25" />
+                </div>
+                {/* Yüzde */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span
+                    className="font-black tabular-nums text-slate-900 drop-shadow"
+                    style={{
+                      fontSize: "clamp(2.2rem, 7vw, 5.5rem)",
+                      textShadow: "0 1px 0 rgba(255,255,255,0.9), 0 2px 6px rgba(0,0,0,0.15)",
+                    }}
+                  >
+                    %{genelPercent.toFixed(0)}
+                  </span>
+                </div>
               </div>
-              <p className="mt-2 text-xs text-slate-500 md:text-sm">
-                {row.value.toLocaleString("tr-TR")} / {target.toLocaleString("tr-TR")}
-              </p>
+
+              {/* Hedef / gerçekleşen / kalan */}
+              <div className="mt-5 grid grid-cols-3 gap-3 md:gap-5">
+                {/* Hedef */}
+                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 md:text-xs">
+                    Hedef
+                  </p>
+                  <p
+                    className="font-black tabular-nums text-slate-800"
+                    style={{ fontSize: "clamp(2.2rem, 5.5vw, 5rem)" }}
+                  >
+                    {target.toLocaleString("tr-TR")}
+                  </p>
+                </div>
+                {/* Gerçekleşen */}
+                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 shadow-sm">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 md:text-xs">
+                    Gerçekleşen
+                  </p>
+                  <p
+                    className="font-black tabular-nums text-emerald-700"
+                    style={{ fontSize: "clamp(2.2rem, 5.5vw, 5rem)" }}
+                  >
+                    {genelTamamlanan.toLocaleString("tr-TR")}
+                  </p>
+                </div>
+                {/* Kalan */}
+                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-5 shadow-sm">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 md:text-xs">
+                    Kalan
+                  </p>
+                  <p
+                    className="font-black tabular-nums text-amber-700"
+                    style={{ fontSize: "clamp(2.2rem, 5.5vw, 5rem)" }}
+                  >
+                    {Math.max(0, target - genelTamamlanan).toLocaleString("tr-TR")}
+                  </p>
+                </div>
+              </div>
             </div>
-          ))}
-        </section>
+          </section>
+
+          {/* Aşama kartları */}
+          {stageRows.length > 0 && (
+            <section className="mt-auto grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 md:gap-4 lg:grid-cols-5">
+              {stageRows.map((row, idx) => (
+                <div
+                  key={`${row.label}-${idx}`}
+                  className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:p-4"
+                >
+                  {/* Üst renk şeridi */}
+                  <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${row.gradient}`} />
+
+                  <div className="flex items-start justify-between gap-1 pt-1">
+                    <span className="text-xs font-semibold leading-tight text-slate-600 md:text-sm">
+                      {row.label}
+                    </span>
+                    <span className={`shrink-0 text-lg font-black tabular-nums md:text-2xl ${row.textColor}`}>
+                      {row.pct.toFixed(0)}%
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-slate-100 md:h-2.5">
+                    <div
+                      className={`h-full rounded-full bg-gradient-to-r ${row.gradient} transition-[width] duration-1000 ease-out`}
+                      style={{ width: `${row.pct}%` }}
+                    />
+                  </div>
+
+                  <p className="mt-1.5 text-xs font-semibold tabular-nums text-slate-500 md:text-sm">
+                    {row.value.toLocaleString("tr-TR")} / {target.toLocaleString("tr-TR")}
+                  </p>
+                </div>
+              ))}
+            </section>
+          )}
+        </div>
+      </div>
+
+      {/* Sağ ticker */}
+      <div className="hidden w-52 shrink-0 border-l border-slate-200 bg-white/90 py-3 lg:flex lg:flex-col xl:w-60">
+        <EfficiencyTicker items={rightItems} />
       </div>
     </div>
   );

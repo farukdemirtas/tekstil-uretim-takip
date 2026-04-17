@@ -55,6 +55,7 @@ export default function Ekran3Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
+  const [isFallbackMode, setIsFallbackMode] = useState(false);
   const firstFetchRef = useRef(true);
 
   const displayDate = todayWeekdayIso();
@@ -86,7 +87,20 @@ export default function Ekran3Page() {
         yesterdayMap.set(w.workerId, w.totalProduction);
       }
 
-      const sorted = [...rawToday].sort((a, b) => b.totalProduction - a.totalProduction);
+      // Bugün veri yoksa son 30 iş günü listesini fallback olarak kullan
+      const noTodayEntries = rawToday.length === 0;
+      const sourceList = noTodayEntries
+        ? rawWide.map((w) => ({ ...w, totalProduction: 0 }))
+        : rawToday;
+
+      const sorted = [...sourceList].sort((a, b) => {
+        if (noTodayEntries) {
+          const aW = wideMap.get(a.workerId)?.total ?? 0;
+          const bW = wideMap.get(b.workerId)?.total ?? 0;
+          return bW - aW;
+        }
+        return b.totalProduction - a.totalProduction;
+      });
       const n = sorted.length;
       const start = n ? (rotationTick * 4) % n : 0;
 
@@ -100,15 +114,18 @@ export default function Ekran3Page() {
           const rank = idx + 1;
           const teamLabel = labelMap[worker.team] ?? worker.team;
 
+          // Fallback modunda saatlik breakdown sorgulamaya gerek yok (hepsi 0 gelir)
           let hourly: WorkerHourlyBreakdown | null = null;
-          try {
-            hourly = await getWorkerHourlyBreakdown({
-              workerId: worker.workerId,
-              startDate: displayDate,
-              endDate: displayDate,
-            });
-          } catch {
-            hourly = null;
+          if (!noTodayEntries) {
+            try {
+              hourly = await getWorkerHourlyBreakdown({
+                workerId: worker.workerId,
+                startDate: displayDate,
+                endDate: displayDate,
+              });
+            } catch {
+              hourly = null;
+            }
           }
 
           const wide = wideMap.get(worker.workerId);
@@ -121,6 +138,7 @@ export default function Ekran3Page() {
       );
 
       setCards(nextCards);
+      setIsFallbackMode(noTodayEntries);
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
     } catch {
       setError("Veri alınamadı.");
@@ -214,6 +232,11 @@ export default function Ekran3Page() {
             <span className="rounded-full bg-emerald-100/80 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-800 sm:text-xs">
               Tur {rotationTick + 1}
             </span>
+            {isFallbackMode && (
+              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700 sm:text-xs">
+                ⏳ Bugün veri yok — tarihsel sıralama
+              </span>
+            )}
           </div>
           <p className="mt-2 truncate text-xs text-slate-600 sm:text-sm">
             <span className="font-medium text-slate-800">4 vitrin kartı</span>
@@ -238,8 +261,11 @@ export default function Ekran3Page() {
           <button
             type="button"
             onClick={() => {
-              const el = document.documentElement;
-              if (el.requestFullscreen) void el.requestFullscreen();
+              if (document.fullscreenElement) {
+                void document.exitFullscreen();
+              } else {
+                void document.documentElement.requestFullscreen();
+              }
             }}
             className="rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-md transition hover:from-slate-700 hover:to-slate-800 sm:text-sm"
           >
