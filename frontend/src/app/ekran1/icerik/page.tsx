@@ -117,53 +117,110 @@ export default function Ekran1IcerikPage() {
       const prevEndDate = nWorkdaysBack(startDate, 1);
       const prevStartDate = nWorkdaysBack(startDate, rangeDays);
 
-      const [totals, rawCurrent, rawPrev, rawDaily] = await Promise.all([
+      const isSingleDay = startDate === endDate;
+
+      // Tek gün: son 5 iş günü referans penceresi (seçili günü kapsamaz)
+      const ref5End = nWorkdaysBack(startDate, 1);
+      const ref5Start = nWorkdaysBack(startDate, 5);
+
+      const requests: [
+        ReturnType<typeof getHedefTakipStageTotals>,
+        ReturnType<typeof getTopWorkersAnalytics>,
+        ReturnType<typeof getTopWorkersAnalytics>,
+        Promise<Awaited<ReturnType<typeof getWorkerDailyAnalytics>> | null>,
+        Promise<Awaited<ReturnType<typeof getTopWorkersAnalytics>> | null>,
+      ] = [
         getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined),
         getTopWorkersAnalytics({ startDate, endDate, limit: 200 }),
         getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }),
-        // Günlük detay: her kişinin en yüksek gününü bulmak için
-        getWorkerDailyAnalytics({ startDate, endDate }),
-      ]);
+        // Çok gün: en iyi gün için detay
+        isSingleDay ? Promise.resolve(null) : getWorkerDailyAnalytics({ startDate, endDate }),
+        // Tek gün: son 5 gün referansı
+        isSingleDay
+          ? getTopWorkersAnalytics({ startDate: ref5Start, endDate: ref5End, limit: 200 })
+          : Promise.resolve(null),
+      ];
+
+      const [totals, rawCurrent, rawPrev, rawDailyOrNull, rawRef5OrNull] = await Promise.all(requests);
       setStages(totals.stages ?? []);
 
-      // Filtreli dönemdeki personel günlük ortalaması
-      const currentAvgMap = new Map<number, number>();
-      for (const w of rawCurrent) {
-        currentAvgMap.set(w.workerId, w.totalProduction / Math.max(w.activeDays, 1));
+      // ── Tek gün: bugün tam mı girildi? ──────────────────────────────────
+      // Bugünkü aktif personel sayısı dünkünün %75'ine ulaşmadıysa
+      // gün henüz tam girilmemiş sayılır → verimlilik dünün verisinden gösterilir.
+      const todayActiveCount = isSingleDay
+        ? rawCurrent.filter((w) => w.totalProduction > 0).length
+        : 0;
+      const yesterdayActiveCount = isSingleDay
+        ? rawPrev.filter((w) => w.totalProduction > 0).length
+        : 0;
+      const isTodayComplete =
+        !isSingleDay ||
+        todayActiveCount === 0
+          ? true  // single-day değilse veya bugün hiç veri yoksa rawCurrent'ı aynen kullan
+          : todayActiveCount >= yesterdayActiveCount * 0.75;
+
+      // Verimlilik kaynağı: tamamlanmadıysa dün, tamamlandıysa bugün
+      const effSource = isSingleDay && !isTodayComplete ? rawPrev : rawCurrent;
+
+      // Kaynak verinin günlük ortalaması
+      const effAvgMap = new Map<number, number>();
+      for (const w of effSource) {
+        effAvgMap.set(w.workerId, w.totalProduction / Math.max(w.activeDays, 1));
       }
 
-      // Her kişinin filtreli dönemdeki en yüksek tek gün üretimi
-      const bestDayMap = new Map<number, number>();
-      for (const row of rawDaily) {
-        const cur = bestDayMap.get(row.workerId) ?? 0;
-        if (row.production > cur) bestDayMap.set(row.workerId, row.production);
+      // Proses referansı: %100 tavanı
+      const processRefMap = new Map<string, number>();
+
+      if (isSingleDay) {
+        // Son 5 gün referansı (seçili günü kapsamaz)
+        const ref5AvgMap = new Map<number, number>();
+        for (const w of rawRef5OrNull ?? []) {
+          ref5AvgMap.set(w.workerId, w.totalProduction / Math.max(w.activeDays, 1));
+        }
+        // Proses tavanı: o prosesteki kişilerin 5 günlük ortalamalarının maksimumu
+        for (const w of effSource) {
+          const key = w.process || "—";
+          const ref = ref5AvgMap.get(w.workerId) ?? 0;
+          const cur = processRefMap.get(key) ?? 0;
+          if (ref > cur) processRefMap.set(key, ref);
+        }
+        // Referans verisi yoksa effSource'un max üretimi (fallback)
+        for (const w of effSource) {
+          const key = w.process || "—";
+          if (!processRefMap.get(key)) {
+            const cur = processRefMap.get(key) ?? 0;
+            if (w.totalProduction > cur) processRefMap.set(key, w.totalProduction);
+          }
+        }
+      } else {
+        // Çok gün: her kişinin en iyi günü → proses içi max = tavan
+        const bestDayMap = new Map<number, number>();
+        for (const row of rawDailyOrNull ?? []) {
+          const cur = bestDayMap.get(row.workerId) ?? 0;
+          if (row.production > cur) bestDayMap.set(row.workerId, row.production);
+        }
+        for (const w of rawCurrent) {
+          const key = w.process || "—";
+          const wBest = bestDayMap.get(w.workerId) ?? 0;
+          const cur = processRefMap.get(key) ?? 0;
+          if (wBest > cur) processRefMap.set(key, wBest);
+        }
       }
 
-      // Proses içindeki en yüksek "best day" = o prosesin %100 tavanı
-      const processBestDayRef = new Map<string, number>();
-      for (const w of rawCurrent) {
-        const key = w.process || "—";
-        const wBest = bestDayMap.get(w.workerId) ?? 0;
-        const cur = processBestDayRef.get(key) ?? 0;
-        if (wBest > cur) processBestDayRef.set(key, wBest);
-      }
-
-      // Önceki dönem lookup: workerId → toplam üretim
+      // Önceki dönem lookup: workerId → toplam üretim (trend için)
       const prevMap = new Map<number, number>(
         rawPrev.map((w) => [w.workerId, w.totalProduction])
       );
 
-      const items: TickerItem[] = rawCurrent.map((w) => {
+      const items: TickerItem[] = effSource.map((w) => {
         const processKey = w.process || "—";
-        const workerDaily = currentAvgMap.get(w.workerId) ?? 0;
-        // Prosesin en iyisinin en yüksek günü = %100 tavanı
-        const refBestDay = processBestDayRef.get(processKey) ?? 0;
+        const workerDaily = effAvgMap.get(w.workerId) ?? 0;
+        const refVal = processRefMap.get(processKey) ?? 0;
 
-        // Verimlilik = kişi günlük ort / proses tavanı × 100, max %100
         const effPct =
-          refBestDay > 0 ? Math.min(Math.round((workerDaily / refBestDay) * 100), 100) : 0;
+          refVal > 0 ? Math.min(Math.round((workerDaily / refVal) * 100), 100) : 0;
 
-        // Trend: filtreli dönem vs önceki eş dönem
+        // Trend: bugün girilmişse bugün vs dün, dünden gösteriliyorsa dün vs önceki gün
         const prevProd = prevMap.get(w.workerId) ?? 0;
         const curProd = w.totalProduction;
         const trend: "up" | "down" | "neutral" =
