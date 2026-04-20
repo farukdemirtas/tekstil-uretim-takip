@@ -267,7 +267,7 @@ export default function ProsesKontrolPage() {
   /* ══ Render ════════════════════════════════════════════════ */
   if (!authorized) return null;
 
-  const teamLabel = (code: string) => teams.find((t) => t.code === code)?.name ?? code;
+  const teamLabel = (code: string) => teams.find((t) => t.code === code)?.label ?? code;
 
   return (
     <div className="min-h-screen bg-slate-50 p-3 sm:p-5">
