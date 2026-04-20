@@ -1,8 +1,14 @@
-/** Proses adı → dakikalık adet haritasını localStorage'da saklar */
+/** Bölüm+Proses → dakikalık adet haritasını localStorage'da saklar.
+ *  Anahtar formatı: "teamCode|processName"
+ */
 
 const STORAGE_KEY = "proses_dk_adet_v1";
 
-export type ProsesMap = Record<string, string>;
+export type ProsesMap = Record<string, string>; // key: "teamCode|processName"
+
+export function makeProsesKey(teamCode: string, processName: string): string {
+  return `${teamCode}|${processName}`;
+}
 
 export function getProsesMap(): ProsesMap {
   if (typeof window === "undefined") return {};
@@ -22,26 +28,29 @@ export function setProsesMap(map: ProsesMap): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
 }
 
-export function setProcessDk(processName: string, dkAdet: string): void {
+export function setProcessDk(teamCode: string, processName: string, dkAdet: string): void {
   const map = getProsesMap();
+  const key = makeProsesKey(teamCode, processName);
   if (dkAdet === "" || Number(dkAdet) <= 0) {
-    delete map[processName];
+    delete map[key];
   } else {
-    map[processName] = dkAdet;
+    map[key] = dkAdet;
   }
   setProsesMap(map);
 }
 
 /** Hem dk haritasını hem Proses Veri Sayfası satır listesini günceller */
-export function setProcessDkAndSyncRows(processName: string, dkAdet: string): void {
-  setProcessDk(processName, dkAdet);
+export function setProcessDkAndSyncRows(teamCode: string, processName: string, dkAdet: string): void {
+  setProcessDk(teamCode, processName, dkAdet);
   try {
     const raw = window.localStorage.getItem("proses_veri_rows_v1");
     if (!raw) return;
     const rows = JSON.parse(raw) as Array<Record<string, unknown>>;
     if (!Array.isArray(rows)) return;
     const updated = rows.map((r) =>
-      r["processName"] === processName ? { ...r, dkAdet } : r
+      r["teamCode"] === teamCode && r["processName"] === processName
+        ? { ...r, dkAdet }
+        : r
     );
     window.localStorage.setItem("proses_veri_rows_v1", JSON.stringify(updated));
   } catch { /* quota / parse hatası */ }

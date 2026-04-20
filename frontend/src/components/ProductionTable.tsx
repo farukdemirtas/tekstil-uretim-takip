@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getProcesses, getTeams } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
-import { calcFromDk, getProsesMap, setProcessDkAndSyncRows, type ProsesMap } from "@/lib/prosesVeri";
+import { calcFromDk, getProsesMap, makeProsesKey, setProcessDkAndSyncRows, type ProsesMap } from "@/lib/prosesVeri";
 
 type ProductionTableProps = {
   rows: ProductionRow[];
@@ -113,6 +113,7 @@ export default function ProductionTable({
   const [processNames, setProcessNames] = useState<string[]>([]);
   const [prosesMap, setProsesMapState] = useState<ProsesMap>({});
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [dkEditTeam, setDkEditTeam] = useState<string>("");
   const [dkEditProcess, setDkEditProcess] = useState<string | null>(null);
   const [dkEditValue, setDkEditValue] = useState("");
 
@@ -240,7 +241,7 @@ export default function ProductionTable({
             </h3>
             <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
               <span className="font-medium text-slate-700 dark:text-slate-300">{dkEditProcess}</span> prosesine ait
-              dakikalık adet — aynı prosesteki tüm personel etkilenir.
+              dakikalık adet — aynı bölüm ve prosesteki tüm personel etkilenir.
             </p>
             <div className="mb-4 flex flex-col gap-1">
               <label className="text-xs font-medium text-amber-600 dark:text-amber-400">Dk Adet</label>
@@ -253,7 +254,7 @@ export default function ProductionTable({
                 onChange={(e) => setDkEditValue(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    setProcessDkAndSyncRows(dkEditProcess, dkEditValue);
+                    setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue);
                     setProsesMapState(getProsesMap());
                     setDkEditProcess(null);
                   }
@@ -288,7 +289,7 @@ export default function ProductionTable({
               <button
                 type="button"
                 onClick={() => {
-                  setProcessDkAndSyncRows(dkEditProcess, dkEditValue);
+                  setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue);
                   setProsesMapState(getProsesMap());
                   setDkEditProcess(null);
                 }}
@@ -449,12 +450,13 @@ export default function ProductionTable({
                       ))}
                       <td className={`px-2 py-2 text-center tabular-nums font-semibold ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-800 dark:text-slate-100"}`}>{total}</td>
                       {(() => {
-                        const result = calcFromDk(prosesMap[row.process] ?? "");
+                        const prosesKey = makeProsesKey(row.team, row.process);
+                        const result = calcFromDk(prosesMap[prosesKey] ?? "");
                         return (
                           <>
                             <td className="px-2 py-2 text-center tabular-nums">
                               {result ? (
-                                <span className="font-semibold text-amber-700 dark:text-amber-400">{prosesMap[row.process]}</span>
+                                <span className="font-semibold text-amber-700 dark:text-amber-400">{prosesMap[prosesKey]}</span>
                               ) : (
                                 <span className="text-slate-300 dark:text-slate-600">—</span>
                               )}
@@ -515,7 +517,7 @@ export default function ProductionTable({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => { setOpenMenuId(null); setDkEditProcess(row.process); setDkEditValue(prosesMap[row.process] ?? ""); }}
+                                  onClick={() => { setOpenMenuId(null); setDkEditTeam(row.team); setDkEditProcess(row.process); setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? ""); }}
                                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
                                 >
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
@@ -689,13 +691,14 @@ export default function ProductionTable({
                   </div>
 
                   {(() => {
-                    const result = calcFromDk(prosesMap[row.process] ?? "");
+                    const mobileProsesKey = makeProsesKey(row.team, row.process);
+                    const result = calcFromDk(prosesMap[mobileProsesKey] ?? "");
                     return (
                       <div className="mb-2 flex items-center gap-2">
                         <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-700/60 dark:bg-amber-950/30">
                           <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Dk</span>
                           <span className="text-sm font-bold text-amber-800 dark:text-amber-200">
-                            {result ? prosesMap[row.process] : "—"}
+                            {result ? prosesMap[mobileProsesKey] : "—"}
                           </span>
                         </div>
                         <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800/50 dark:bg-sky-950/30">
@@ -753,7 +756,7 @@ export default function ProductionTable({
                             </button>
                             <button
                               type="button"
-                              onClick={() => { setOpenMenuId(null); setDkEditProcess(row.process); setDkEditValue(prosesMap[row.process] ?? ""); }}
+                              onClick={() => { setOpenMenuId(null); setDkEditTeam(row.team); setDkEditProcess(row.process); setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? ""); }}
                               className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
                             >
                               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>

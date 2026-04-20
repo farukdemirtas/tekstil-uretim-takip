@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 import { getProcesses, getTeams, setAuthToken } from "@/lib/api";
 import type { ProcessRow, TeamRow } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
-import { setProsesMap } from "@/lib/prosesVeri";
+import { setProsesMap, makeProsesKey } from "@/lib/prosesVeri";
 
 const ROWS_STORAGE_KEY = "proses_veri_rows_v1";
 
@@ -98,7 +98,7 @@ export default function VeriSayfasiPage() {
     const map: Record<string, string> = {};
     for (const row of nextRows) {
       if (row.dkAdet && Number(row.dkAdet) > 0) {
-        map[row.processName] = row.dkAdet;
+        map[makeProsesKey(row.teamCode, row.processName)] = row.dkAdet;
       }
     }
     setProsesMap(map);
@@ -253,7 +253,7 @@ export default function VeriSayfasiPage() {
                 <select
                   value={selectedTeam}
                   onChange={(e) => setSelectedTeam(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  className="appearance-none rounded-xl border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 >
                   {teams.map((t) => (
                     <option key={t.code} value={t.code}>{t.label}</option>
@@ -272,7 +272,7 @@ export default function VeriSayfasiPage() {
                 <select
                   value={selectedProcess}
                   onChange={(e) => setSelectedProcess(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                  className="appearance-none rounded-xl border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 >
                   {processes.map((p) => (
                     <option key={p.name} value={p.name}>{p.name}</option>
@@ -398,7 +398,7 @@ export default function VeriSayfasiPage() {
                             <select
                               value={editTeam}
                               onChange={(e) => { setEditTeam(e.target.value); setEditDupError(false); }}
-                              className="w-full rounded-lg border border-violet-300 bg-white py-1.5 pl-2 pr-7 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
+                              className="w-full appearance-none rounded-lg border border-violet-300 bg-white py-1.5 pl-2 pr-7 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
                             >
                               {teams.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
                             </select>
@@ -419,7 +419,7 @@ export default function VeriSayfasiPage() {
                             <select
                               value={editProcess}
                               onChange={(e) => { setEditProcess(e.target.value); setEditDupError(false); }}
-                              className="w-full rounded-lg border border-violet-300 bg-white py-1.5 pl-2 pr-7 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
+                              className="w-full appearance-none rounded-lg border border-violet-300 bg-white py-1.5 pl-2 pr-7 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
                             >
                               {processes.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
                             </select>
@@ -530,7 +530,7 @@ export default function VeriSayfasiPage() {
                             <select
                               value={editTeam}
                               onChange={(e) => { setEditTeam(e.target.value); setEditDupError(false); }}
-                              className="w-full rounded-lg border border-violet-300 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
+                              className="w-full appearance-none rounded-lg border border-violet-300 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
                             >
                               {teams.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
                             </select>
@@ -542,7 +542,7 @@ export default function VeriSayfasiPage() {
                             <select
                               value={editProcess}
                               onChange={(e) => { setEditProcess(e.target.value); setEditDupError(false); }}
-                              className="w-full rounded-lg border border-violet-300 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
+                              className="w-full appearance-none rounded-lg border border-violet-300 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
                             >
                               {processes.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
                             </select>
