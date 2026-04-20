@@ -23,6 +23,8 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
   { key: "loglar", label: "Loglar", description: "Sistem ve kullanıcı işlem kayıtlarını görüntüleme" },
   { key: "tamirOrani", label: "Tamir Oranı", description: "Tamir oranı ekranına erişim ve günlük tamir verisi girişi" },
   { key: "veriSayfasi", label: "Veri Sayfası", description: "Proses bazlı dk / saatlik / günlük adet hesaplama sayfası" },
+  { key: "prosesKontrol", label: "Proses Kontrol", description: "Numune bazlı hata takip sayfası (8 kontrol × 7 numune)" },
+  { key: "hataRapor", label: "Hata Rapor", description: "Günlük hata oranı ve personel bazlı analiz sayfası" },
 ];
 
 export function isAdminRole(): boolean {

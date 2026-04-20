@@ -82,6 +82,10 @@ export type AppPermissions = {
   tamirOrani: boolean;
   /** Proses bazlı dk/saatlik/günlük adet hesaplama sayfası */
   veriSayfasi: boolean;
+  /** Proses kontrol sayfası — numune hata takibi */
+  prosesKontrol: boolean;
+  /** Hata rapor ve analiz sayfası */
+  hataRapor: boolean;
 };
 
 export type User = {

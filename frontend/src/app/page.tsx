@@ -759,6 +759,11 @@ export default function HomePage() {
               Veri Sayfası
             </Link>
           ) : null}
+          {hasPermission("prosesKontrol") ? (
+            <Link href="/proses-kontrol" className="btn-nav">
+              Proses Kontrol
+            </Link>
+          ) : null}
           {hasPermission("analysis") ? (
             <Link href="/analysis" className="btn-nav">
               Analiz

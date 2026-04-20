@@ -19,7 +19,13 @@ export default function ThemeToggle() {
 
   const label = useMemo(() => (theme === "dark" ? "Açık Mod" : "Koyu Mod"), [theme]);
 
-  if (pathname.startsWith("/ekran1") || pathname.startsWith("/ekran2") || pathname.startsWith("/ekran3")) return null;
+  if (
+    pathname.startsWith("/ekran1") ||
+    pathname.startsWith("/ekran2") ||
+    pathname.startsWith("/ekran3") ||
+    pathname.startsWith("/proses-kontrol") ||
+    pathname.startsWith("/hata-rapor")
+  ) return null;
 
   function toggleTheme() {
     const next: Theme = theme === "dark" ? "light" : "dark";
