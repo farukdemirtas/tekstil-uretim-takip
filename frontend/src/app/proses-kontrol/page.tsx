@@ -32,6 +32,7 @@ type KontrolRow = {
 type StoredPayload = {
   kontrolData: Record<number, { hata: number[]; note: string }>;
   extraWorkers: { workerId: number; name: string; process: string; team: string }[];
+  excludedIds?: number[];   // üretimden gelen ama listeden çıkarılan personeller
 };
 
 type Section = { team: string; rows: KontrolRow[]; startNo: number };
@@ -115,19 +116,22 @@ export default function ProsesKontrolPage() {
       ]);
       setDayMeta(meta.status === "fulfilled" ? meta.value : null);
       const productionRows: ProductionRow[] = production.status === "fulfilled" ? production.value : [];
-      const { kontrolData, extraWorkers } = loadPayload(date);
+      const { kontrolData, extraWorkers, excludedIds = [] } = loadPayload(date);
+      const excludedSet = new Set(excludedIds);
 
-      const fromProduction: KontrolRow[] = productionRows.map((p) => {
-        const saved = kontrolData[p.workerId];
-        return {
-          workerId: p.workerId,
-          name:     p.name,
-          process:  p.process,
-          team:     p.team,
-          hata:     saved?.hata?.length === SESSIONS ? saved.hata : Array<number>(SESSIONS).fill(0),
-          note:     saved?.note ?? "",
-        };
-      });
+      const fromProduction: KontrolRow[] = productionRows
+        .filter((p) => !excludedSet.has(p.workerId))
+        .map((p) => {
+          const saved = kontrolData[p.workerId];
+          return {
+            workerId: p.workerId,
+            name:     p.name,
+            process:  p.process,
+            team:     p.team,
+            hata:     saved?.hata?.length === SESSIONS ? saved.hata : Array<number>(SESSIONS).fill(0),
+            note:     saved?.note ?? "",
+          };
+        });
 
       const manual: KontrolRow[] = (extraWorkers ?? []).map((w) => {
         const saved = kontrolData[w.workerId];
@@ -148,13 +152,16 @@ export default function ProsesKontrolPage() {
   }
 
   /* ── Kaydet helper ─────────────────────────────────────── */
-  function saveRows(nextRows: KontrolRow[]) {
+  function saveRows(nextRows: KontrolRow[], excluded?: number[]) {
     const kontrolData: Record<number, { hata: number[]; note: string }> = {};
     for (const r of nextRows) kontrolData[r.workerId] = { hata: r.hata, note: r.note };
     const extraWorkers = nextRows
       .filter((r) => r.manual)
       .map(({ workerId, name, process, team }) => ({ workerId, name, process, team }));
-    persistPayload(selectedDate, { kontrolData, extraWorkers });
+    // excludedIds'i mevcut payload'dan okuyup birleştir
+    const current = loadPayload(selectedDate);
+    const merged = Array.from(new Set([...(current.excludedIds ?? []), ...(excluded ?? [])]));
+    persistPayload(selectedDate, { kontrolData, extraWorkers, excludedIds: merged });
   }
 
   /* ── Veri güncelle ─────────────────────────────────────── */
@@ -212,10 +219,13 @@ export default function ProsesKontrolPage() {
     setShowAddForm(false);
   }
 
-  function handleRemoveWorker(workerId: number) {
+  function handleRemoveWorker(workerId: number, isManual: boolean) {
+    const name = rows.find((r) => r.workerId === workerId)?.name ?? "bu personel";
+    if (!window.confirm(`"${name}" listeden çıkarılsın mı?`)) return;
     setRows((prev) => {
       const next = prev.filter((r) => r.workerId !== workerId);
-      saveRows(next);
+      // Üretimden gelen personel (workerId > 0) → excludedIds'e ekle
+      saveRows(next, isManual ? [] : [workerId]);
       return next;
     });
   }
@@ -619,18 +629,14 @@ export default function ProsesKontrolPage() {
                           </td>
                           {/* Sil */}
                           <td className="px-1 py-1 text-center">
-                            {row.manual ? (
-                              <button
-                                type="button"
-                                title="Listeden kaldır"
-                                onClick={() => handleRemoveWorker(row.workerId)}
-                                className="flex h-5 w-5 items-center justify-center rounded text-slate-300 transition hover:bg-red-50 hover:text-red-500"
-                              >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                                </svg>
-                              </button>
-                            ) : null}
+                            <button
+                              type="button"
+                              title={row.manual ? "Listeden kaldır" : "Bu personeli bugünkü listeden çıkar"}
+                              onClick={() => handleRemoveWorker(row.workerId, row.manual ?? false)}
+                              className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                            >
+                              Sil
+                            </button>
                           </td>
                         </tr>
                       );

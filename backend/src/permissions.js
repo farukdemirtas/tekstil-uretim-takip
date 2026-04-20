@@ -16,6 +16,10 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   tamirOrani: false,
   /** Proses bazlı dk/saatlik/günlük adet hesaplama sayfası */
   veriSayfasi: false,
+  /** Proses kontrol sayfası — numune hata takibi */
+  prosesKontrol: false,
+  /** Hata rapor ve analiz sayfası */
+  hataRapor: false,
 };
 
 export const PERMISSION_KEYS = Object.keys(DEFAULT_DATA_ENTRY_PERMISSIONS);
