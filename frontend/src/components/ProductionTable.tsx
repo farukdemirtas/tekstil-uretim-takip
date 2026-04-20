@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { getProcesses, getTeams } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
 
@@ -112,17 +112,6 @@ export default function ProductionTable({
   const [processNames, setProcessNames] = useState<string[]>([]);
   const [saatlikAdetMap, setSaatlikAdetMap] = useState<Record<number, string>>({});
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuId(null);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   useEffect(() => {
     void Promise.all([getTeams(), getProcesses()])
@@ -218,6 +207,9 @@ export default function ProductionTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100 dark:shadow-none">
+      {openMenuId !== null && (
+        <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
+      )}
 
       <div className="hidden overflow-auto md:block">
         <table className="w-full min-w-[960px] border-collapse text-sm">
@@ -391,7 +383,7 @@ export default function ProductionTable({
                             >İptal</button>
                           </div>
                         ) : (
-                          <div className="relative flex justify-center" ref={openMenuId === row.workerId ? menuRef : null}>
+                          <div className="relative flex justify-center">
                             <button
                               type="button"
                               title="İşlemler"
@@ -624,7 +616,7 @@ export default function ProductionTable({
                         >İptal</button>
                       </>
                     ) : (
-                      <div className="relative w-full" ref={openMenuId === row.workerId ? menuRef : null}>
+                      <div className="relative w-full">
                         <button
                           type="button"
                           onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
