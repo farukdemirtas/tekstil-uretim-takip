@@ -817,7 +817,8 @@ export async function getHedefTakipStageTotals(startDate, endDate, modelId) {
     [modelId]
   );
   if (!baseRows.length) {
-    throw new Error("Bu model için en az bir bölüm satırı tanımlanmalıdır (Ayarlar → Ürün modelleri).");
+    // Modelin henüz bölüm satırı yoksa eski (hedef_metric) yaklaşımına düş
+    return getHedefTakipStageTotals(startDate, endDate, null);
   }
   const teamRows = await dbAll("SELECT code, label FROM teams");
   const labelByCode = Object.fromEntries((teamRows || []).map((t) => [t.code, t.label]));
