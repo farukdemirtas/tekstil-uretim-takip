@@ -1,19 +1,95 @@
 /** Bölüm+Proses → dakikalık adet haritasını localStorage'da saklar.
- *  Anahtar formatı: "teamCode|processName"
+ *  v2: Her ürün modeli için ayrı veri seti destekler.
  */
 
-const STORAGE_KEY = "proses_dk_adet_v1";
+/* ── Storage anahtar sabitleri ───────────────────────────── */
+const DK_KEY_V1      = "proses_dk_adet_v1";    // eski global anahtar (geriye dönük)
+const ROWS_KEY_V1    = "proses_veri_rows_v1";   // eski global satırlar
+const MODEL_LIST_KEY = "proses_model_list_v1";  // kayıtlı model adları
 
+/* ── Tipler ──────────────────────────────────────────────── */
 export type ProsesMap = Record<string, string>; // key: "teamCode|processName"
 
+/* ── Yardımcı key fonksiyonları ──────────────────────────── */
 export function makeProsesKey(teamCode: string, processName: string): string {
   return `${teamCode}|${processName}`;
 }
 
-export function getProsesMap(): ProsesMap {
+export function dkKeyForModel(modelKey: string): string {
+  return `proses_dk_v2_${modelKey}`;
+}
+
+export function rowsKeyForModel(modelKey: string): string {
+  return `proses_rows_v2_${modelKey}`;
+}
+
+/** Verilen modele ait dk storage anahtarını döner; model yoksa eski v1 anahtarı */
+export function resolveDkKey(modelKey?: string | null): string {
+  return modelKey ? dkKeyForModel(modelKey) : DK_KEY_V1;
+}
+
+/** Verilen modele ait rows storage anahtarını döner; model yoksa eski v1 anahtarı */
+export function resolveRowsKey(modelKey?: string | null): string {
+  return modelKey ? rowsKeyForModel(modelKey) : ROWS_KEY_V1;
+}
+
+/* ── Model listesi yönetimi ──────────────────────────────── */
+export function getModelList(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(MODEL_LIST_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as string[];
+  } catch { return []; }
+}
+
+export function saveModelList(list: string[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MODEL_LIST_KEY, JSON.stringify(list));
+}
+
+export function addModelToList(modelName: string): string[] {
+  const list = getModelList();
+  if (list.includes(modelName)) return list;
+  const next = [...list, modelName];
+  saveModelList(next);
+  return next;
+}
+
+export function removeModelFromList(modelName: string): string[] {
+  const next = getModelList().filter((m) => m !== modelName);
+  saveModelList(next);
+  return next;
+}
+
+/* ── V1 → ilk model otomatik geçiş ──────────────────────── */
+/**
+ * Eski v1 verisi varken henüz model listesi oluşturulmamışsa,
+ * verileri "Varsayılan" modeli altına taşır (bir kerelik).
+ * Veri sayfası mount sırasında çağrılmalı.
+ */
+export function migrateV1IfNeeded(): string | null {
+  if (typeof window === "undefined") return null;
+  const models = getModelList();
+  if (models.length > 0) return null; // zaten geçiş yapılmış
+
+  const v1Rows = window.localStorage.getItem(ROWS_KEY_V1);
+  const v1Dk   = window.localStorage.getItem(DK_KEY_V1);
+  if (!v1Rows && !v1Dk) return null; // eski veri yok, geçiş gerekmez
+
+  const name = "Varsayılan";
+  if (v1Rows) window.localStorage.setItem(rowsKeyForModel(name), v1Rows);
+  if (v1Dk)   window.localStorage.setItem(dkKeyForModel(name), v1Dk);
+  saveModelList([name]);
+  return name;
+}
+
+/* ── ProsesMap okuma / yazma ─────────────────────────────── */
+export function getProsesMap(modelKey?: string | null): ProsesMap {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const key = resolveDkKey(modelKey);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -23,27 +99,29 @@ export function getProsesMap(): ProsesMap {
   }
 }
 
-export function setProsesMap(map: ProsesMap): void {
+export function setProsesMap(map: ProsesMap, modelKey?: string | null): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+  window.localStorage.setItem(resolveDkKey(modelKey), JSON.stringify(map));
 }
 
-export function setProcessDk(teamCode: string, processName: string, dkAdet: string): void {
-  const map = getProsesMap();
-  const key = makeProsesKey(teamCode, processName);
-  if (dkAdet === "" || Number(dkAdet) <= 0) {
-    delete map[key];
-  } else {
-    map[key] = dkAdet;
-  }
-  setProsesMap(map);
-}
+/* ── Hem dk hem rows güncelle (ProductionTable modalından) ── */
+export function setProcessDkAndSyncRows(
+  teamCode: string,
+  processName: string,
+  dkAdet: string,
+  modelKey?: string | null,
+): void {
+  // dk haritasını güncelle
+  const map = getProsesMap(modelKey);
+  const k   = makeProsesKey(teamCode, processName);
+  if (!dkAdet || Number(dkAdet) <= 0) delete map[k];
+  else map[k] = dkAdet;
+  setProsesMap(map, modelKey);
 
-/** Hem dk haritasını hem Proses Veri Sayfası satır listesini günceller */
-export function setProcessDkAndSyncRows(teamCode: string, processName: string, dkAdet: string): void {
-  setProcessDk(teamCode, processName, dkAdet);
+  // Veri sayfası satırlarını güncelle
+  const rowsKey = resolveRowsKey(modelKey);
   try {
-    const raw = window.localStorage.getItem("proses_veri_rows_v1");
+    const raw = window.localStorage.getItem(rowsKey);
     if (!raw) return;
     const rows = JSON.parse(raw) as Array<Record<string, unknown>>;
     if (!Array.isArray(rows)) return;
@@ -52,15 +130,16 @@ export function setProcessDkAndSyncRows(teamCode: string, processName: string, d
         ? { ...r, dkAdet }
         : r
     );
-    window.localStorage.setItem("proses_veri_rows_v1", JSON.stringify(updated));
+    window.localStorage.setItem(rowsKey, JSON.stringify(updated));
   } catch { /* quota / parse hatası */ }
 }
 
+/* ── Hesaplama yardımcısı ────────────────────────────────── */
 export function calcFromDk(dkAdet: string) {
   const dk = Number(dkAdet);
   if (!dkAdet || isNaN(dk) || dk <= 0) return null;
   return {
     saatlik: Math.round(dk * 60 * 100) / 100,
-    gunluk: Math.round(dk * 60 * 9 * 100) / 100,
+    gunluk:  Math.round(dk * 60 * 9 * 100) / 100,
   };
 }

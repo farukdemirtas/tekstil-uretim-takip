@@ -3,12 +3,14 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getProcesses, getTeams } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
-import { calcFromDk, getProsesMap, makeProsesKey, setProcessDkAndSyncRows, type ProsesMap } from "@/lib/prosesVeri";
+import { calcFromDk, getProsesMap, makeProsesKey, setProcessDkAndSyncRows, dkKeyForModel, type ProsesMap } from "@/lib/prosesVeri";
 
 type ProductionTableProps = {
   rows: ProductionRow[];
   /** Seçili takvim günü (ipucu / tutarlılık) */
   selectedDate: string;
+  /** O günkü ürün modeli — model bazlı dk/saat/günlük adet okumak için */
+  modelKey?: string;
   onCellChange: (workerId: number, field: "t1000" | "t1300" | "t1600" | "t1830", value: number) => void;
   onDeleteWorker: (workerId: number, workerName: string) => void;
   /** Bu gün sahada yok (satır soluk, hücreler kilitli) */
@@ -94,6 +96,7 @@ function ProcessSelectEditor({
 export default function ProductionTable({
   rows,
   selectedDate,
+  modelKey,
   onCellChange,
   onDeleteWorker,
   onHideWorkerForDay,
@@ -118,15 +121,16 @@ export default function ProductionTable({
   const [dkEditValue, setDkEditValue] = useState("");
 
   useEffect(() => {
-    setProsesMapState(getProsesMap());
+    setProsesMapState(getProsesMap(modelKey));
     function onStorage(e: StorageEvent) {
-      if (e.key === "proses_dk_adet_v1") {
-        setProsesMapState(getProsesMap());
+      const modelSpecificKey = modelKey ? dkKeyForModel(modelKey) : null;
+      if (e.key === "proses_dk_adet_v1" || (modelSpecificKey && e.key === modelSpecificKey)) {
+        setProsesMapState(getProsesMap(modelKey));
       }
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [modelKey]);
 
   useEffect(() => {
     void Promise.all([getTeams(), getProcesses()])
@@ -254,8 +258,8 @@ export default function ProductionTable({
                 onChange={(e) => setDkEditValue(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue);
-                    setProsesMapState(getProsesMap());
+                    setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue, modelKey);
+                    setProsesMapState(getProsesMap(modelKey));
                     setDkEditProcess(null);
                   }
                   if (e.key === "Escape") setDkEditProcess(null);
@@ -289,8 +293,8 @@ export default function ProductionTable({
               <button
                 type="button"
                 onClick={() => {
-                  setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue);
-                  setProsesMapState(getProsesMap());
+                  setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue, modelKey);
+                  setProsesMapState(getProsesMap(modelKey));
                   setDkEditProcess(null);
                 }}
                 className="rounded-xl border border-emerald-500 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"

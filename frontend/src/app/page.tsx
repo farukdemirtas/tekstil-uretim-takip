@@ -1173,6 +1173,7 @@ export default function HomePage() {
         <ProductionTable
           rows={rows}
           selectedDate={selectedDate}
+          modelKey={productModel.trim() || undefined}
           onCellChange={(id, field, value) => void handleCellChange(id, field, value)}
           onDeleteWorker={(id, name) => void handleDeleteWorker(id, name)}
           onHideWorkerForDay={(id, name) => void handleHideWorkerForDay(id, name)}
