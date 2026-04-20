@@ -9,6 +9,7 @@ export type TickerItem = {
   team: string;
   efficiencyPct: number;
   trend: "up" | "down" | "neutral";
+  trendDelta?: number;   // bir önceki döneme göre verimlilik farkı (puan)
 };
 
 const ITEMS_PER_PAGE = 5;
@@ -107,28 +108,46 @@ export function EfficiencyTicker({ items }: { items: TickerItem[] }) {
                 </p>
               </div>
 
-              {/* Sağ: yüzde + trend oku */}
-              <div className="flex shrink-0 flex-col items-center gap-0.5 leading-none">
+              {/* Sağ: yüzde + trend */}
+              <div className="flex shrink-0 flex-col items-center gap-0 leading-none">
                 <span className={`text-xl font-black tabular-nums ${
                   isGreen ? "text-emerald-600" : "text-red-600"
                 }`}>
                   %{item.efficiencyPct}
                 </span>
-                {isUp && (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-                    <path d="M8 3l6 9H2z" fill="#16a34a" />
-                  </svg>
-                )}
-                {isDown && (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-                    <path d="M8 13L2 4h12z" fill="#dc2626" />
-                  </svg>
-                )}
-                {!isUp && !isDown && (
-                  <svg width="16" height="10" viewBox="0 0 16 10" fill="none" aria-hidden>
-                    <path d="M2 5h12" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round"/>
-                  </svg>
-                )}
+
+                {/* Ok + delta değeri */}
+                <div className="flex items-center gap-0.5">
+                  {isUp && (
+                    <>
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+                        <path d="M8 3l6 9H2z" fill="#16a34a" />
+                      </svg>
+                      {item.trendDelta != null && (
+                        <span className="text-[11px] font-bold tabular-nums text-emerald-600">
+                          +{item.trendDelta}p
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {isDown && (
+                    <>
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+                        <path d="M8 13L2 4h12z" fill="#dc2626" />
+                      </svg>
+                      {item.trendDelta != null && (
+                        <span className="text-[11px] font-bold tabular-nums text-red-600">
+                          {item.trendDelta}p
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {!isUp && !isDown && (
+                    <svg width="14" height="8" viewBox="0 0 16 10" fill="none" aria-hidden>
+                      <path d="M2 5h12" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                  )}
+                </div>
               </div>
             </div>
           );
