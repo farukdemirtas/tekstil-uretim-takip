@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { getProcesses, getTeams } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
 
@@ -110,6 +110,19 @@ export default function ProductionTable({
   const [teamOrder, setTeamOrder] = useState<string[]>(FALLBACK_TEAM_ORDER);
   const [teamLabels, setTeamLabels] = useState<Record<string, string>>(FALLBACK_LABELS);
   const [processNames, setProcessNames] = useState<string[]>([]);
+  const [saatlikAdetMap, setSaatlikAdetMap] = useState<Record<number, string>>({});
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     void Promise.all([getTeams(), getProcesses()])
@@ -218,6 +231,8 @@ export default function ProductionTable({
               <th className="px-3 py-2">16:00</th>
               <th className="px-3 py-2">18:30</th>
               <th className="px-3 py-2">Toplam</th>
+              <th className="px-3 py-2 text-amber-300" title="Saatlik ortalama adet girişi">Saat. Adet</th>
+              <th className="px-3 py-2 text-emerald-300" title="Günlük adet = saatlik × 9">Günlük Adet</th>
               <th className="px-3 py-2">İşlem</th>
             </tr>
           </thead>
@@ -225,7 +240,7 @@ export default function ProductionTable({
             {sections.map(({ team, teamRows, startNo }) => (
               <Fragment key={team}>
                 <tr className="bg-slate-200 dark:bg-slate-700">
-                  <td colSpan={9} className="px-3 py-2 text-left text-sm font-semibold">
+                  <td colSpan={11} className="px-3 py-2 text-left text-sm font-semibold">
                     {teamLabel(team)}
                   </td>
                 </tr>
@@ -338,66 +353,103 @@ export default function ProductionTable({
                         </td>
                       ))}
                       <td className={`px-3 py-2 text-right font-semibold ${absent ? "text-slate-500 dark:text-slate-400" : ""}`}>{total}</td>
-                      <td className="px-3 py-2 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {isEditing ? (
-                            <>
-                              <button
-                                onClick={() => void saveEdit(row.workerId)}
-                                disabled={saving}
-                                className="rounded border border-emerald-400 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                              >Kaydet</button>
-                              <button
-                                onClick={cancelEdit}
-                                disabled={saving}
-                                className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
-                              >İptal</button>
-                            </>
+                      <td className="px-2 py-1">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          title="Saatlik ortalama adet"
+                          value={saatlikAdetMap[row.workerId] ?? ""}
+                          onChange={(e) =>
+                            setSaatlikAdetMap((prev) => ({ ...prev, [row.workerId]: e.target.value }))
+                          }
+                          className="w-20 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-right text-sm outline-none focus:border-amber-500 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200"
+                        />
+                      </td>
+                      <td className="px-3 py-1 text-right">
+                        {(() => {
+                          const s = Number(saatlikAdetMap[row.workerId] ?? "");
+                          return s > 0 ? (
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-400">{s * 9}</span>
                           ) : (
-                            <>
-                              <button
-                                type="button"
-                                disabled={absent}
-                                onClick={() => startEdit(row)}
-                                className="rounded-lg border border-violet-300 px-2 py-1 text-xs font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-600 dark:text-violet-300 dark:hover:bg-violet-950/35"
-                              >
-                                Taşı
-                              </button>
-                              {absent && onUnhideWorkerForDay ? (
+                            <span className="text-slate-400 dark:text-slate-500">—</span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {isEditing ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => void saveEdit(row.workerId)}
+                              disabled={saving}
+                              className="rounded border border-emerald-400 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                            >Kaydet</button>
+                            <button
+                              onClick={cancelEdit}
+                              disabled={saving}
+                              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
+                            >İptal</button>
+                          </div>
+                        ) : (
+                          <div className="relative flex justify-center" ref={openMenuId === row.workerId ? menuRef : null}>
+                            <button
+                              type="button"
+                              title="İşlemler"
+                              onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                                <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+                              </svg>
+                            </button>
+                            {openMenuId === row.workerId && (
+                              <div className="absolute right-0 top-full z-50 mt-1 min-w-[120px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
                                 <button
                                   type="button"
-                                  title={`${selectedDate}: sahada yok işaretini kaldır`}
-                                  onClick={() => onUnhideWorkerForDay(row.workerId, row.name)}
-                                  className="rounded border border-teal-400 px-2 py-1 text-xs font-medium text-teal-800 hover:bg-teal-50 dark:border-teal-600 dark:text-teal-200 dark:hover:bg-teal-950/40"
+                                  disabled={absent}
+                                  onClick={() => { setOpenMenuId(null); startEdit(row); }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-950/40"
                                 >
-                                  Bugün var
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
+                                  Taşı
                                 </button>
-                              ) : null}
-                              {!absent && onHideWorkerForDay ? (
-                                <button
-                                  type="button"
-                                  title={`${selectedDate}: sahada yok (satır soluk kalır, hücreler kilitlenir)`}
-                                  onClick={() => onHideWorkerForDay(row.workerId, row.name)}
-                                  className="rounded border border-amber-300/90 px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 dark:border-amber-700/70 dark:text-amber-200 dark:hover:bg-amber-950/40"
-                                >
-                                  Bugün yok
-                                </button>
-                              ) : null}
-                              {canDelete ? (
-                                <button
-                                  type="button"
-                                  title="Seçili tarih ve sonrasında sil (pasif)"
-                                  onClick={() => onDeleteWorker(row.workerId, row.name)}
-                                  className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-700/60 dark:text-red-200 dark:hover:bg-red-900/20"
-                                >
-                                  Sil
-                                </button>
-                              ) : (
-                                <span className="text-xs text-slate-400 dark:text-slate-500">-</span>
-                              )}
-                            </>
-                          )}
-                        </div>
+                                {absent && onUnhideWorkerForDay ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenMenuId(null); onUnhideWorkerForDay(row.workerId, row.name); }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40"
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                    Bugün var
+                                  </button>
+                                ) : null}
+                                {!absent && onHideWorkerForDay ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                                    Bugün yok
+                                  </button>
+                                ) : null}
+                                {canDelete ? (
+                                  <>
+                                    <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                                    <button
+                                      type="button"
+                                      onClick={() => { setOpenMenuId(null); onDeleteWorker(row.workerId, row.name); }}
+                                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                    >
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                      Sil
+                                    </button>
+                                  </>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -528,6 +580,35 @@ export default function ProductionTable({
                     ))}
                   </div>
 
+                  <div className="mb-2 flex items-center gap-2">
+                    <div className="flex flex-1 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-700/60 dark:bg-amber-950/30">
+                      <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Saat. Adet</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        step={1}
+                        title="Saatlik ortalama adet"
+                        value={saatlikAdetMap[row.workerId] ?? ""}
+                        onChange={(e) =>
+                          setSaatlikAdetMap((prev) => ({ ...prev, [row.workerId]: e.target.value }))
+                        }
+                        className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold text-amber-800 outline-none focus:text-amber-600 dark:text-amber-200 dark:focus:text-amber-300"
+                      />
+                    </div>
+                    <div className="flex flex-1 items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800/50 dark:bg-emerald-950/30">
+                      <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Günlük Adet</span>
+                      {(() => {
+                        const s = Number(saatlikAdetMap[row.workerId] ?? "");
+                        return s > 0 ? (
+                          <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{s * 9}</span>
+                        ) : (
+                          <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
                   <div className="flex gap-2">
                     {isEditing ? (
                       <>
@@ -543,44 +624,64 @@ export default function ProductionTable({
                         >İptal</button>
                       </>
                     ) : (
-                      <>
+                      <div className="relative w-full" ref={openMenuId === row.workerId ? menuRef : null}>
                         <button
                           type="button"
-                          disabled={absent}
-                          onClick={() => startEdit(row)}
-                          className="flex-1 rounded-lg border border-violet-300 py-2 text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:opacity-40 dark:border-violet-600 dark:text-violet-300 dark:hover:bg-violet-950/35"
+                          onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                         >
-                          Taşı
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                            <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
+                          </svg>
+                          İşlemler
                         </button>
-                        {absent && onUnhideWorkerForDay && (
-                          <button
-                            type="button"
-                            onClick={() => onUnhideWorkerForDay(row.workerId, row.name)}
-                            className="flex-1 rounded-lg border border-teal-400 py-2 text-sm font-medium text-teal-800 hover:bg-teal-50 dark:border-teal-600 dark:text-teal-200 dark:hover:bg-teal-950/40"
-                          >
-                            Bugün var
-                          </button>
+                        {openMenuId === row.workerId && (
+                          <div className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                            <button
+                              type="button"
+                              disabled={absent}
+                              onClick={() => { setOpenMenuId(null); startEdit(row); }}
+                              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                            >
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
+                              Taşı
+                            </button>
+                            {absent && onUnhideWorkerForDay ? (
+                              <button
+                                type="button"
+                                onClick={() => { setOpenMenuId(null); onUnhideWorkerForDay(row.workerId, row.name); }}
+                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40"
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                Bugün var
+                              </button>
+                            ) : null}
+                            {!absent && onHideWorkerForDay ? (
+                              <button
+                                type="button"
+                                onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
+                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                                Bugün yok
+                              </button>
+                            ) : null}
+                            {canDelete ? (
+                              <>
+                                <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenMenuId(null); onDeleteWorker(row.workerId, row.name); }}
+                                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                  Sil
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
                         )}
-                        {!absent && onHideWorkerForDay && (
-                          <button
-                            type="button"
-                            title={`${selectedDate}: sahada yok (satır soluk)`}
-                            onClick={() => onHideWorkerForDay(row.workerId, row.name)}
-                            className="flex-1 rounded-lg border border-amber-300 py-2 text-sm font-medium text-amber-900 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-950/40"
-                          >
-                            Bugün yok
-                          </button>
-                        )}
-                        {canDelete && (
-                          <button
-                            type="button"
-                            onClick={() => onDeleteWorker(row.workerId, row.name)}
-                            className="flex-1 rounded-lg border border-red-300 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-700/60 dark:text-red-200 dark:hover:bg-red-900/20"
-                          >
-                            Sil
-                          </button>
-                        )}
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>
