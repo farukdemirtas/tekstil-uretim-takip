@@ -437,28 +437,45 @@ export async function copyRosterToFutureWeekdays(sourceDate, endDate) {
   };
 }
 
-export function getDayProductMeta(date) {
-  return new Promise((resolve, reject) => {
+export async function getDayProductMeta(date) {
+  const row = await new Promise((resolve, reject) => {
     db.get(
       `SELECT product_name AS productName, product_model AS productModel,
               model_id AS modelId, meta_source AS metaSource
        FROM daily_product_meta WHERE production_date = ?`,
       [date],
-      (err, row) => {
-        if (err) return reject(err);
-        const mid = row?.modelId;
-        const modelId =
-          mid != null && mid !== "" && Number.isFinite(Number(mid)) ? Number(mid) : null;
-        const ms = row?.metaSource != null ? String(row.metaSource) : "manual";
-        resolve({
-          productName: row?.productName != null ? String(row.productName) : "",
-          productModel: row?.productModel != null ? String(row.productModel) : "",
-          modelId,
-          metaSource: ms === "hedef" ? "hedef" : "manual",
-        });
-      }
+      (err, r) => (err ? reject(err) : resolve(r))
     );
   });
+
+  const mid = row?.modelId;
+  let modelId =
+    mid != null && mid !== "" && Number.isFinite(Number(mid)) ? Number(mid) : null;
+  const ms = row?.metaSource != null ? String(row.metaSource) : "manual";
+
+  // Bu gün için model yoksa en yakın geçmiş tarihin modelini kullan (fallback)
+  if (modelId === null) {
+    const fallback = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT model_id AS modelId FROM daily_product_meta
+         WHERE model_id IS NOT NULL AND production_date <= ?
+         ORDER BY production_date DESC LIMIT 1`,
+        [date],
+        (err, r) => (err ? reject(err) : resolve(r))
+      );
+    });
+    const fm = fallback?.modelId;
+    if (fm != null && Number.isFinite(Number(fm))) {
+      modelId = Number(fm);
+    }
+  }
+
+  return {
+    productName: row?.productName != null ? String(row.productName) : "",
+    productModel: row?.productModel != null ? String(row.productModel) : "",
+    modelId,
+    metaSource: ms === "hedef" ? "hedef" : "manual",
+  };
 }
 
 export function upsertDayProductMeta({ date, productName, productModel, modelId, metaSource }) {

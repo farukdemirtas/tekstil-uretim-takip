@@ -77,6 +77,7 @@ export default function HomePage() {
   const [selectedDate, setSelectedDate] = useState<string>(todayWeekdayIso());
   const [rows, setRows] = useState<ProductionRow[]>([]);
   const [hedefStageTotals, setHedefStageTotals] = useState<HedefStageTotals>({ stages: [] });
+  const [hedefStageError, setHedefStageError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [productName, setProductName] = useState("");
@@ -150,6 +151,7 @@ export default function HomePage() {
   async function loadDateData(date: string) {
     setLoading(true);
     setError(null);
+    setHedefStageError(null);
     const emptyHedef: HedefStageTotals = { stages: [] };
     try {
       const meta = await getDayProductMeta(date).catch(
@@ -183,7 +185,16 @@ export default function HomePage() {
       if (settled[1].status === "fulfilled") {
         setHedefStageTotals(settled[1].value);
       } else {
+        console.error(
+          "[Günlük Özet] Stage totals alınamadı:",
+          settled[1].reason
+        );
         setHedefStageTotals(emptyHedef);
+        setHedefStageError(
+          settled[1].reason instanceof Error
+            ? settled[1].reason.message
+            : "Günlük Özet verisi alınamadı"
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu");
@@ -1178,7 +1189,7 @@ export default function HomePage() {
         />
       ) : null}
 
-      <AdminPanel workerCount={rows.length} stageTotals={hedefStageTotals} />
+      <AdminPanel workerCount={rows.length} stageTotals={hedefStageTotals} stageError={hedefStageError} />
     </main>
   );
 }

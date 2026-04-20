@@ -18,6 +18,7 @@ export type HedefStageTotals = {
 type AdminPanelProps = {
   workerCount: number;
   stageTotals: HedefStageTotals;
+  stageError?: string | null;
 };
 
 function safeNum(n: unknown): number {
@@ -32,6 +33,7 @@ function genelTamamlananFromStages(stages: HedefStageLine[]): number {
 export default function AdminPanel({
   workerCount,
   stageTotals,
+  stageError,
 }: AdminPanelProps) {
   const stages = stageTotals.stages ?? [];
   const genelTamamlanan = useMemo(() => genelTamamlananFromStages(stages), [stages]);
@@ -73,6 +75,11 @@ export default function AdminPanel({
       <h2 className="mb-4 text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">
         Günlük Özet
       </h2>
+      {stageError && (
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+          ⚠ {stageError}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {tiles.map(({ key, label, value, valueClass, boxClass }) => (
           <div

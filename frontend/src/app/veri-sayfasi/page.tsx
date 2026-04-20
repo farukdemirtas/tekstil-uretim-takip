@@ -65,6 +65,7 @@ export default function VeriSayfasiPage() {
   const [editTeam, setEditTeam] = useState("");
   const [editProcess, setEditProcess] = useState("");
   const [editDk, setEditDk] = useState("");
+  const [editDupError, setEditDupError] = useState(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -103,8 +104,12 @@ export default function VeriSayfasiPage() {
     setProsesMap(map);
   }
 
+  const isDuplicate = rows.some(
+    (r) => r.teamCode === selectedTeam && r.processName === selectedProcess
+  );
+
   function handleAdd() {
-    if (!selectedTeam || !selectedProcess || !dkAdet) return;
+    if (!selectedTeam || !selectedProcess || !dkAdet || isDuplicate) return;
     const team = teams.find((t) => t.code === selectedTeam);
     const next = [
       ...rows,
@@ -138,6 +143,7 @@ export default function VeriSayfasiPage() {
     setEditTeam(row.teamCode);
     setEditProcess(row.processName);
     setEditDk(row.dkAdet);
+    setEditDupError(false);
   }
 
   function cancelEdit() {
@@ -145,9 +151,17 @@ export default function VeriSayfasiPage() {
     setEditTeam("");
     setEditProcess("");
     setEditDk("");
+    setEditDupError(false);
   }
 
   function saveEdit(id: number) {
+    const dupInOtherRows = rows.some(
+      (r) => r.id !== id && r.teamCode === editTeam && r.processName === editProcess
+    );
+    if (dupInOtherRows) {
+      setEditDupError(true);
+      return;
+    }
     const team = teams.find((t) => t.code === editTeam);
     const next = rows.map((r) =>
       r.id === id
@@ -197,7 +211,7 @@ export default function VeriSayfasiPage() {
     XLSX.writeFile(wb, `proses-veri-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
-  const canAdd = Boolean(selectedTeam && selectedProcess && dkAdet && Number(dkAdet) > 0);
+  const canAdd = Boolean(selectedTeam && selectedProcess && dkAdet && Number(dkAdet) > 0 && !isDuplicate);
 
   if (!authorized) return null;
 
@@ -301,14 +315,21 @@ export default function VeriSayfasiPage() {
             )}
 
             {/* Ekle butonu */}
-            <button
-              type="button"
-              disabled={!canAdd}
-              onClick={handleAdd}
-              className="rounded-xl border border-teal-500 bg-teal-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              + Ekle
-            </button>
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                disabled={!canAdd}
+                onClick={handleAdd}
+                className="rounded-xl border border-teal-500 bg-teal-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                + Ekle
+              </button>
+              {isDuplicate && selectedTeam && selectedProcess && (
+                <p className="text-xs font-medium text-red-600 dark:text-red-400">
+                  Bu bölüm + proses zaten ekli
+                </p>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -376,7 +397,7 @@ export default function VeriSayfasiPage() {
                           <div className="relative">
                             <select
                               value={editTeam}
-                              onChange={(e) => setEditTeam(e.target.value)}
+                              onChange={(e) => { setEditTeam(e.target.value); setEditDupError(false); }}
                               className="w-full rounded-lg border border-violet-300 bg-white py-1.5 pl-2 pr-7 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
                             >
                               {teams.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
@@ -397,7 +418,7 @@ export default function VeriSayfasiPage() {
                           <div className="relative">
                             <select
                               value={editProcess}
-                              onChange={(e) => setEditProcess(e.target.value)}
+                              onChange={(e) => { setEditProcess(e.target.value); setEditDupError(false); }}
                               className="w-full rounded-lg border border-violet-300 bg-white py-1.5 pl-2 pr-7 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
                             >
                               {processes.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
@@ -448,17 +469,22 @@ export default function VeriSayfasiPage() {
                       {/* Aksiyon */}
                       <td className="px-3 py-2 text-center">
                         {isEditing ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => saveEdit(row.id)}
-                              className="rounded-lg border border-emerald-400 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                            >Kaydet</button>
-                            <button
-                              type="button"
-                              onClick={cancelEdit}
-                              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-                            >İptal</button>
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => saveEdit(row.id)}
+                                className="rounded-lg border border-emerald-400 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                              >Kaydet</button>
+                              <button
+                                type="button"
+                                onClick={cancelEdit}
+                                className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                              >İptal</button>
+                            </div>
+                            {editDupError && (
+                              <p className="text-[10px] font-medium text-red-600 dark:text-red-400">Zaten mevcut</p>
+                            )}
                           </div>
                         ) : (
                           <div className="flex items-center justify-center gap-1">
@@ -503,7 +529,7 @@ export default function VeriSayfasiPage() {
                           <div className="relative">
                             <select
                               value={editTeam}
-                              onChange={(e) => setEditTeam(e.target.value)}
+                              onChange={(e) => { setEditTeam(e.target.value); setEditDupError(false); }}
                               className="w-full rounded-lg border border-violet-300 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
                             >
                               {teams.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
@@ -515,7 +541,7 @@ export default function VeriSayfasiPage() {
                           <div className="relative">
                             <select
                               value={editProcess}
-                              onChange={(e) => setEditProcess(e.target.value)}
+                              onChange={(e) => { setEditProcess(e.target.value); setEditDupError(false); }}
                               className="w-full rounded-lg border border-violet-300 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
                             >
                               {processes.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
@@ -536,13 +562,18 @@ export default function VeriSayfasiPage() {
                     </div>
                     {/* Aksiyon butonları */}
                     {isEditing ? (
-                      <div className="flex shrink-0 gap-1">
-                        <button type="button" onClick={() => saveEdit(row.id)}
-                          className="rounded-lg border border-emerald-400 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-600 dark:text-emerald-300"
-                        >Kaydet</button>
-                        <button type="button" onClick={cancelEdit}
-                          className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300"
-                        >İptal</button>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => saveEdit(row.id)}
+                            className="rounded-lg border border-emerald-400 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-600 dark:text-emerald-300"
+                          >Kaydet</button>
+                          <button type="button" onClick={cancelEdit}
+                            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300"
+                          >İptal</button>
+                        </div>
+                        {editDupError && (
+                          <p className="text-[10px] font-medium text-red-600 dark:text-red-400">Zaten mevcut</p>
+                        )}
                       </div>
                     ) : (
                       <div className="flex shrink-0 gap-1">
