@@ -743,6 +743,11 @@ export default function HomePage() {
 
         {/* Aksiyon butonları — sarılabilir satır */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
+          {hasPermission("veriSayfasi") ? (
+            <Link href="/veri-sayfasi" className="btn-nav">
+              Veri Sayfası
+            </Link>
+          ) : null}
           {hasPermission("analysis") ? (
             <Link href="/analysis" className="btn-nav">
               Analiz

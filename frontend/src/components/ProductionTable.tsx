@@ -223,7 +223,8 @@ export default function ProductionTable({
               <th className="px-3 py-2">16:00</th>
               <th className="px-3 py-2">18:30</th>
               <th className="px-3 py-2">Toplam</th>
-              <th className="px-3 py-2 text-amber-300" title="Saatlik ortalama adet girişi">Saat. Adet</th>
+              <th className="px-3 py-2 text-amber-300" title="Dakikalık adet girişi">Dk Adet</th>
+              <th className="px-3 py-2 text-sky-300" title="Saatlik adet = dakikalık × 60">Saat Adet</th>
               <th className="px-3 py-2 text-emerald-300" title="Günlük adet = saatlik × 9">Günlük Adet</th>
               <th className="px-3 py-2">İşlem</th>
             </tr>
@@ -232,7 +233,7 @@ export default function ProductionTable({
             {sections.map(({ team, teamRows, startNo }) => (
               <Fragment key={team}>
                 <tr className="bg-slate-200 dark:bg-slate-700">
-                  <td colSpan={11} className="px-3 py-2 text-left text-sm font-semibold">
+                  <td colSpan={12} className="px-3 py-2 text-left text-sm font-semibold">
                     {teamLabel(team)}
                   </td>
                 </tr>
@@ -350,7 +351,7 @@ export default function ProductionTable({
                           type="number"
                           min={0}
                           step={1}
-                          title="Saatlik ortalama adet"
+                          title="Dakikalık adet"
                           value={saatlikAdetMap[row.workerId] ?? ""}
                           onChange={(e) =>
                             setSaatlikAdetMap((prev) => ({ ...prev, [row.workerId]: e.target.value }))
@@ -360,9 +361,19 @@ export default function ProductionTable({
                       </td>
                       <td className="px-3 py-1 text-right">
                         {(() => {
-                          const s = Number(saatlikAdetMap[row.workerId] ?? "");
-                          return s > 0 ? (
-                            <span className="font-semibold text-emerald-700 dark:text-emerald-400">{s * 9}</span>
+                          const d = Number(saatlikAdetMap[row.workerId] ?? "");
+                          return d > 0 ? (
+                            <span className="font-semibold text-sky-700 dark:text-sky-400">{d * 60}</span>
+                          ) : (
+                            <span className="text-slate-400 dark:text-slate-500">—</span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-3 py-1 text-right">
+                        {(() => {
+                          const d = Number(saatlikAdetMap[row.workerId] ?? "");
+                          return d > 0 ? (
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-400">{d * 60 * 9}</span>
                           ) : (
                             <span className="text-slate-400 dark:text-slate-500">—</span>
                           );
@@ -574,13 +585,13 @@ export default function ProductionTable({
 
                   <div className="mb-2 flex items-center gap-2">
                     <div className="flex flex-1 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-700/60 dark:bg-amber-950/30">
-                      <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Saat. Adet</span>
+                      <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Dk Adet</span>
                       <input
                         type="number"
                         inputMode="numeric"
                         min={0}
                         step={1}
-                        title="Saatlik ortalama adet"
+                        title="Dakikalık adet"
                         value={saatlikAdetMap[row.workerId] ?? ""}
                         onChange={(e) =>
                           setSaatlikAdetMap((prev) => ({ ...prev, [row.workerId]: e.target.value }))
@@ -588,12 +599,23 @@ export default function ProductionTable({
                         className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold text-amber-800 outline-none focus:text-amber-600 dark:text-amber-200 dark:focus:text-amber-300"
                       />
                     </div>
+                    <div className="flex flex-1 items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800/50 dark:bg-sky-950/30">
+                      <span className="text-xs font-medium text-sky-700 dark:text-sky-300">Saat Adet</span>
+                      {(() => {
+                        const d = Number(saatlikAdetMap[row.workerId] ?? "");
+                        return d > 0 ? (
+                          <span className="text-sm font-bold text-sky-800 dark:text-sky-300">{d * 60}</span>
+                        ) : (
+                          <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
+                        );
+                      })()}
+                    </div>
                     <div className="flex flex-1 items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800/50 dark:bg-emerald-950/30">
                       <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Günlük Adet</span>
                       {(() => {
-                        const s = Number(saatlikAdetMap[row.workerId] ?? "");
-                        return s > 0 ? (
-                          <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{s * 9}</span>
+                        const d = Number(saatlikAdetMap[row.workerId] ?? "");
+                        return d > 0 ? (
+                          <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{d * 60 * 9}</span>
                         ) : (
                           <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
                         );

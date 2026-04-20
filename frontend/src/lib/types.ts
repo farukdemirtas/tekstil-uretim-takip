@@ -80,6 +80,8 @@ export type AppPermissions = {
   topluEkle: boolean;
   /** Tamir orani ekranina erisim ve tamir verisi girisi */
   tamirOrani: boolean;
+  /** Proses bazlı dk/saatlik/günlük adet hesaplama sayfası */
+  veriSayfasi: boolean;
 };
 
 export type User = {

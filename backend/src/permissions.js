@@ -14,6 +14,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   topluEkle: false,
   /** Tamir oranı ekranına erişim ve tamir verisi girişi */
   tamirOrani: false,
+  /** Proses bazlı dk/saatlik/günlük adet hesaplama sayfası */
+  veriSayfasi: false,
 };
 
 export const PERMISSION_KEYS = Object.keys(DEFAULT_DATA_ENTRY_PERMISSIONS);

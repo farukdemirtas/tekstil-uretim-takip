@@ -22,6 +22,7 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
   { key: "ekran3", label: "EKRAN3", description: "4 bölüm personel döngü panosu (TV)" },
   { key: "loglar", label: "Loglar", description: "Sistem ve kullanıcı işlem kayıtlarını görüntüleme" },
   { key: "tamirOrani", label: "Tamir Oranı", description: "Tamir oranı ekranına erişim ve günlük tamir verisi girişi" },
+  { key: "veriSayfasi", label: "Veri Sayfası", description: "Proses bazlı dk / saatlik / günlük adet hesaplama sayfası" },
 ];
 
 export function isAdminRole(): boolean {

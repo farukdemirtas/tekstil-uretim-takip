@@ -18,6 +18,7 @@ function emptyDraft(): AppPermissions {
     topluListeKaldir: false,
     topluEkle: false,
     tamirOrani: false,
+    veriSayfasi: false,
   };
 }
 
