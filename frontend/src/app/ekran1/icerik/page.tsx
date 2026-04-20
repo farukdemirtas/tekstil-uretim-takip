@@ -6,6 +6,7 @@ import {
   getHedefTakipStageTotals,
   getTopWorkersAnalytics,
   listProductModels,
+  getDayProductMeta,
   setAuthToken,
   type HedefStageLineDto,
 } from "@/lib/api";
@@ -119,21 +120,37 @@ export default function Ekran1IcerikPage() {
       const prevStartDate = nWorkdaysBack(startDate, rangeDays);
       const isSingleDay = startDate === endDate;
 
-      const [totals, rawCurrent, rawPrev, allModels] = await Promise.all([
+      const [totals, rawCurrent, rawPrev, allModels, dayMeta] = await Promise.all([
         getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined),
         getTopWorkersAnalytics({ startDate, endDate, limit: 200 }),
         getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }),
         listProductModels(),
+        getDayProductMeta(endDate).catch(() => null),
       ]);
       setStages(totals.stages ?? []);
 
       // ── Proses Veri Sayfası hedef haritası ─────────────────────────────
-      // modelId → modelCode → localStorage'daki dk haritası
-      const resolvedModelCode =
+      // Öncelik 1: Hedef-takip ayarlarındaki modelId (kullanıcının seçtiği model)
+      // Öncelik 2: O tarihe ait üretim meta verisi (model seçili değilse)
+      // Son yedek: v1 global veri
+      const settingsModelCode =
         modelId != null
           ? (allModels.find((m) => m.id === modelId)?.modelCode ?? null)
           : null;
-      const prosesMap = getProsesMap(resolvedModelCode);
+      const resolvedModelCode = settingsModelCode ?? dayMeta?.modelCode ?? null;
+
+      let prosesMap = getProsesMap(resolvedModelCode);
+
+      // Harita boşsa (seçili modelde veri girilmemiş) tüm modeller denenir
+      if (Object.keys(prosesMap).length === 0) {
+        for (const m of allModels) {
+          const candidate = getProsesMap(m.modelCode);
+          if (Object.keys(candidate).length > 0) {
+            prosesMap = candidate;
+            break;
+          }
+        }
+      }
 
       // ── Bugün tamamlandı mı? ────────────────────────────────────────────
       const todayActiveCount     = isSingleDay ? rawCurrent.filter((w) => w.totalProduction > 0).length : 0;
