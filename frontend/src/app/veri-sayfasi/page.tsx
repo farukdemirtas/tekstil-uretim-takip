@@ -208,6 +208,86 @@ export default function VeriSayfasiPage() {
     setShowTransfer(false);
   }
 
+  /* ── Excel import ───────────────────────────────────────── */
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  function handleImportClick() {
+    importFileRef.current?.click();
+  }
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !activeModel) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      // input'u sıfırla — onload içinde yapıyoruz ki dosya referansı kaybolmasın
+      e.target.value = "";
+      try {
+        const bstr = ev.target!.result as string;
+        const wb   = XLSX.read(bstr, { type: "binary" });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const aoa  = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1 });
+
+        // Satır yapısı: 0=başlık, 1=tarih, 2=boş, 3=sütun adları, 4+=veri
+        // Ama satır sayısına göre esnek davranalım: ilk sütunu "Bölüm" olan satırı bul
+        let startIdx = 4;
+        for (let i = 0; i < Math.min(aoa.length, 10); i++) {
+          const cell = String(aoa[i]?.[0] ?? "").trim().toLowerCase();
+          if (cell === "bölüm" || cell === "bolum") { startIdx = i + 1; break; }
+        }
+
+        const dataRows = aoa.slice(startIdx).filter((r) => r && r.length >= 2 && String(r[0] ?? "").trim());
+
+        if (dataRows.length === 0) {
+          alert("Excel'de veri satırı bulunamadı. Dosyanın doğru formatta olduğundan emin olun.");
+          return;
+        }
+
+        // setModelState dışında hesaplayalım ki sayaçlar doğru çalışsın
+        const m        = activeModel;
+        const snapshot = modelState.rows;
+        const existing = new Set(snapshot.map((r) => makeProsesKey(r.teamCode, r.processName)));
+        const toAdd: typeof snapshot = [];
+
+        for (const row of dataRows) {
+          const teamLabelRaw = String(row[0] ?? "").trim();
+          const processName  = String(row[1] ?? "").trim();
+          const dkRaw        = row[2];
+          const dkAdet       = String(dkRaw ?? "").replace(",", ".");
+
+          if (!teamLabelRaw || !processName) continue;
+
+          // teamLabel → teamCode eşleştir (bulunamazsa label'ı kod olarak kullan)
+          const matched  = teams.find((t) => t.label.trim().toLowerCase() === teamLabelRaw.toLowerCase());
+          const teamCode  = matched?.code  ?? teamLabelRaw;
+          const teamLabel = matched?.label ?? teamLabelRaw;
+
+          const key = makeProsesKey(teamCode, processName);
+          if (existing.has(key)) continue;
+
+          existing.add(key);
+          toAdd.push({ id: nextId++, teamCode, teamLabel, processName, dkAdet });
+        }
+
+        const skipped  = dataRows.filter((r) => r && r.length >= 2 && String(r[0] ?? "").trim()).length - toAdd.length;
+        const next = [...snapshot, ...toAdd];
+        syncToStorage(next, m);
+        setModelState((prev) => ({ ...prev, rows: next }));
+
+        if (toAdd.length === 0) {
+          alert(`Eklenecek yeni satır yok — ${skipped} satır zaten mevcut.`);
+        } else {
+          alert(`İçe aktarma tamamlandı: ${toAdd.length} satır eklendi${skipped > 0 ? `, ${skipped} satır zaten mevcuttu` : ""}.`);
+        }
+      } catch (err) {
+        console.error("[Excel Yükle] hata:", err);
+        alert("Excel dosyası okunamadı. Geçerli bir Proses Veri Excel dosyası seçin.");
+      }
+    };
+    reader.readAsBinaryString(file);
+  }
+
   /* ── Excel export ───────────────────────────────────────── */
   function handleExport() {
     if (rows.length === 0) return;
@@ -424,6 +504,24 @@ export default function VeriSayfasiPage() {
               </span>
             </span>
             <div className="flex items-center gap-2">
+              {/* Gizli file input */}
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+              <button
+                type="button"
+                onClick={handleImportClick}
+                className="flex items-center gap-1.5 rounded-lg border border-sky-400 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 shadow-sm transition hover:bg-sky-100 dark:border-sky-600 dark:bg-sky-950/30 dark:text-sky-300"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 4l4-4m0 0l4 4m-4-4V4" />
+                </svg>
+                Excel Yükle
+              </button>
               <button
                 type="button"
                 onClick={handleExport}
