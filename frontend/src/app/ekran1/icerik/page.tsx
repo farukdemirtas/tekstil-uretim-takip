@@ -137,7 +137,11 @@ export default function Ekran1IcerikPage() {
         modelId != null
           ? (allModels.find((m) => m.id === modelId)?.modelCode ?? null)
           : null;
-      const resolvedModelCode = settingsModelCode ?? dayMeta?.modelCode ?? null;
+      const dayMetaModelCode =
+        dayMeta?.modelId != null
+          ? (allModels.find((m) => m.id === dayMeta.modelId)?.modelCode ?? null)
+          : null;
+      const resolvedModelCode = settingsModelCode ?? dayMetaModelCode ?? null;
 
       let prosesMap = getProsesMap(resolvedModelCode);
 
