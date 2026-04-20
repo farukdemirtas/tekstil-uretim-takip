@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { getProcesses, getTeams } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
+import { calcFromDk, getProsesMap, setProcessDkAndSyncRows, type ProsesMap } from "@/lib/prosesVeri";
 
 type ProductionTableProps = {
   rows: ProductionRow[];
@@ -110,8 +111,21 @@ export default function ProductionTable({
   const [teamOrder, setTeamOrder] = useState<string[]>(FALLBACK_TEAM_ORDER);
   const [teamLabels, setTeamLabels] = useState<Record<string, string>>(FALLBACK_LABELS);
   const [processNames, setProcessNames] = useState<string[]>([]);
-  const [saatlikAdetMap, setSaatlikAdetMap] = useState<Record<number, string>>({});
+  const [prosesMap, setProsesMapState] = useState<ProsesMap>({});
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [dkEditProcess, setDkEditProcess] = useState<string | null>(null);
+  const [dkEditValue, setDkEditValue] = useState("");
+
+  useEffect(() => {
+    setProsesMapState(getProsesMap());
+    function onStorage(e: StorageEvent) {
+      if (e.key === "proses_dk_adet_v1") {
+        setProsesMapState(getProsesMap());
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   useEffect(() => {
     void Promise.all([getTeams(), getProcesses()])
@@ -211,22 +225,110 @@ export default function ProductionTable({
         <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
       )}
 
+      {/* Dk Adet düzenleme modalı */}
+      {dkEditProcess !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+          onClick={() => setDkEditProcess(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-1 text-sm font-semibold text-slate-900 dark:text-white">
+              Dk Adet Düzenle
+            </h3>
+            <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-medium text-slate-700 dark:text-slate-300">{dkEditProcess}</span> prosesine ait
+              dakikalık adet — aynı prosesteki tüm personel etkilenir.
+            </p>
+            <div className="mb-4 flex flex-col gap-1">
+              <label className="text-xs font-medium text-amber-600 dark:text-amber-400">Dk Adet</label>
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                autoFocus
+                value={dkEditValue}
+                onChange={(e) => setDkEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setProcessDkAndSyncRows(dkEditProcess, dkEditValue);
+                    setProsesMapState(getProsesMap());
+                    setDkEditProcess(null);
+                  }
+                  if (e.key === "Escape") setDkEditProcess(null);
+                }}
+                className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-center text-sm font-semibold outline-none focus:border-amber-500 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200"
+              />
+            </div>
+            {dkEditValue && Number(dkEditValue) > 0 && (
+              <div className="mb-4 flex gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800">
+                <div className="flex-1 text-center">
+                  <p className="text-[10px] font-medium text-sky-600 dark:text-sky-400">Saat Adet</p>
+                  <p className="text-base font-bold text-sky-800 dark:text-sky-300">
+                    {Math.round(Number(dkEditValue) * 60 * 100) / 100}
+                  </p>
+                </div>
+                <div className="w-px bg-slate-200 dark:bg-slate-700" />
+                <div className="flex-1 text-center">
+                  <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Günlük Adet</p>
+                  <p className="text-base font-bold text-emerald-800 dark:text-emerald-300">
+                    {Math.round(Number(dkEditValue) * 60 * 9 * 100) / 100}
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDkEditProcess(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+              >İptal</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProcessDkAndSyncRows(dkEditProcess, dkEditValue);
+                  setProsesMapState(getProsesMap());
+                  setDkEditProcess(null);
+                }}
+                className="rounded-xl border border-emerald-500 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+              >Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="hidden overflow-auto md:block">
-        <table className="w-full min-w-[960px] border-collapse text-sm">
+        <table className="w-full min-w-[1040px] border-collapse text-sm">
+          <colgroup>
+            <col className="w-9" />         {/* No */}
+            <col />                          {/* Ad Soyad – esnek */}
+            <col className="w-36" />        {/* Proses */}
+            <col className="w-[5.5rem]" /> {/* 10:00 */}
+            <col className="w-[5.5rem]" /> {/* 13:00 */}
+            <col className="w-[5.5rem]" /> {/* 16:00 */}
+            <col className="w-[5.5rem]" /> {/* 18:30 */}
+            <col className="w-[4.5rem]" /> {/* Toplam */}
+            <col className="w-14" />        {/* Dk Adet */}
+            <col className="w-16" />        {/* Saat Adet */}
+            <col className="w-[4.5rem]" /> {/* Günlük Adet */}
+            <col className="w-12" />        {/* İşlem */}
+          </colgroup>
           <thead className="bg-slate-800 text-white">
             <tr>
-              <th className="px-3 py-2">No</th>
-              <th className="px-3 py-2">Ad Soyad</th>
-              <th className="px-3 py-2">Proses</th>
-              <th className="px-3 py-2">10:00</th>
-              <th className="px-3 py-2">13:00</th>
-              <th className="px-3 py-2">16:00</th>
-              <th className="px-3 py-2">18:30</th>
-              <th className="px-3 py-2">Toplam</th>
-              <th className="px-3 py-2 text-amber-300" title="Dakikalık adet girişi">Dk Adet</th>
-              <th className="px-3 py-2 text-sky-300" title="Saatlik adet = dakikalık × 60">Saat Adet</th>
-              <th className="px-3 py-2 text-emerald-300" title="Günlük adet = saatlik × 9">Günlük Adet</th>
-              <th className="px-3 py-2">İşlem</th>
+              <th className="px-2 py-2.5 text-center text-sm font-bold">No</th>
+              <th className="px-3 py-2.5 text-left text-sm font-bold">Ad Soyad</th>
+              <th className="px-3 py-2.5 text-left text-sm font-bold">Proses</th>
+              <th className="px-2 py-2.5 text-center text-sm font-bold">10:00</th>
+              <th className="px-2 py-2.5 text-center text-sm font-bold">13:00</th>
+              <th className="px-2 py-2.5 text-center text-sm font-bold">16:00</th>
+              <th className="px-2 py-2.5 text-center text-sm font-bold">18:30</th>
+              <th className="px-2 py-2.5 text-center text-sm font-bold">Toplam</th>
+              <th className="px-1 py-2.5 text-center text-[11px] font-semibold text-amber-300/90" title="Proses Veri Sayfasından dakikalık adet">Dk</th>
+              <th className="px-1 py-2.5 text-center text-[11px] font-semibold text-sky-300/90" title="Saatlik adet = dakikalık × 60">Saat</th>
+              <th className="px-1 py-2.5 text-center text-[11px] font-semibold text-emerald-300/90" title="Günlük adet = saatlik × 9">Günlük</th>
+              <th className="px-2 py-2.5 text-center text-sm font-bold">İşlem</th>
             </tr>
           </thead>
           <tbody>
@@ -250,7 +352,7 @@ export default function ProductionTable({
                           : "hover:bg-slate-50 dark:hover:bg-slate-600"
                       }`}
                     >
-                      <td className="px-3 py-2 text-center">{startNo + index}</td>
+                      <td className="px-2 py-2 text-center tabular-nums text-slate-600 dark:text-slate-400">{startNo + index}</td>
                       <td className="px-3 py-2">
                         <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
                           {row.name}
@@ -297,7 +399,7 @@ export default function ProductionTable({
                           </button>
                         ) : null}
                       </td>
-                      <td className="min-w-[10rem] px-3 py-2">
+                      <td className="px-3 py-2">
                         {isEditing ? (
                           <div className="flex flex-col gap-1.5">
                             <div className="relative w-full">
@@ -328,7 +430,7 @@ export default function ProductionTable({
                         )}
                       </td>
                       {TIME_FIELDS.map(({ key }) => (
-                        <td key={key} className="px-2 py-1">
+                        <td key={key} className="px-1.5 py-1 text-center">
                           <input
                             type="number"
                             min={0}
@@ -337,7 +439,7 @@ export default function ProductionTable({
                             title={absent ? "Sahada yok — önce Bugün var ile açın" : undefined}
                             value={cellInputValue(row[key])}
                             onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
-                            className={`w-20 rounded border px-2 py-1 text-right outline-none dark:text-slate-100 ${
+                            className={`w-full rounded border px-1 py-1 text-center tabular-nums outline-none dark:text-slate-100 ${
                               absent
                                 ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500"
                                 : "border-slate-300 bg-white focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:focus:border-blue-300"
@@ -345,41 +447,36 @@ export default function ProductionTable({
                           />
                         </td>
                       ))}
-                      <td className={`px-3 py-2 text-right font-semibold ${absent ? "text-slate-500 dark:text-slate-400" : ""}`}>{total}</td>
-                      <td className="px-2 py-1">
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          title="Dakikalık adet"
-                          value={saatlikAdetMap[row.workerId] ?? ""}
-                          onChange={(e) =>
-                            setSaatlikAdetMap((prev) => ({ ...prev, [row.workerId]: e.target.value }))
-                          }
-                          className="w-20 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-right text-sm outline-none focus:border-amber-500 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200"
-                        />
-                      </td>
-                      <td className="px-3 py-1 text-right">
-                        {(() => {
-                          const d = Number(saatlikAdetMap[row.workerId] ?? "");
-                          return d > 0 ? (
-                            <span className="font-semibold text-sky-700 dark:text-sky-400">{d * 60}</span>
-                          ) : (
-                            <span className="text-slate-400 dark:text-slate-500">—</span>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-3 py-1 text-right">
-                        {(() => {
-                          const d = Number(saatlikAdetMap[row.workerId] ?? "");
-                          return d > 0 ? (
-                            <span className="font-semibold text-emerald-700 dark:text-emerald-400">{d * 60 * 9}</span>
-                          ) : (
-                            <span className="text-slate-400 dark:text-slate-500">—</span>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-3 py-2 text-center">
+                      <td className={`px-2 py-2 text-center tabular-nums font-semibold ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-800 dark:text-slate-100"}`}>{total}</td>
+                      {(() => {
+                        const result = calcFromDk(prosesMap[row.process] ?? "");
+                        return (
+                          <>
+                            <td className="px-2 py-2 text-center tabular-nums">
+                              {result ? (
+                                <span className="font-semibold text-amber-700 dark:text-amber-400">{prosesMap[row.process]}</span>
+                              ) : (
+                                <span className="text-slate-300 dark:text-slate-600">—</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-2 text-center tabular-nums">
+                              {result ? (
+                                <span className="font-semibold text-sky-700 dark:text-sky-400">{result.saatlik}</span>
+                              ) : (
+                                <span className="text-slate-300 dark:text-slate-600">—</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-2 text-center tabular-nums">
+                              {result ? (
+                                <span className="font-semibold text-emerald-700 dark:text-emerald-400">{result.gunluk}</span>
+                              ) : (
+                                <span className="text-slate-300 dark:text-slate-600">—</span>
+                              )}
+                            </td>
+                          </>
+                        );
+                      })()}
+                      <td className="px-2 py-2 text-center">
                         {isEditing ? (
                           <div className="flex items-center justify-center gap-1">
                             <button
@@ -406,7 +503,7 @@ export default function ProductionTable({
                               </svg>
                             </button>
                             {openMenuId === row.workerId && (
-                              <div className="absolute right-0 top-full z-50 mt-1 min-w-[120px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                              <div className="absolute right-0 top-full z-50 mt-1 min-w-[148px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
                                 <button
                                   type="button"
                                   disabled={absent}
@@ -415,6 +512,14 @@ export default function ProductionTable({
                                 >
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
                                   Taşı
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenMenuId(null); setDkEditProcess(row.process); setDkEditValue(prosesMap[row.process] ?? ""); }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                  Dk Adet Düzenle
                                 </button>
                                 {absent && onUnhideWorkerForDay ? (
                                   <button
@@ -430,7 +535,7 @@ export default function ProductionTable({
                                   <button
                                     type="button"
                                     onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-orange-700 transition hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
                                   >
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
                                     Bugün yok
@@ -583,45 +688,31 @@ export default function ProductionTable({
                     ))}
                   </div>
 
-                  <div className="mb-2 flex items-center gap-2">
-                    <div className="flex flex-1 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-700/60 dark:bg-amber-950/30">
-                      <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Dk Adet</span>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        step={1}
-                        title="Dakikalık adet"
-                        value={saatlikAdetMap[row.workerId] ?? ""}
-                        onChange={(e) =>
-                          setSaatlikAdetMap((prev) => ({ ...prev, [row.workerId]: e.target.value }))
-                        }
-                        className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold text-amber-800 outline-none focus:text-amber-600 dark:text-amber-200 dark:focus:text-amber-300"
-                      />
-                    </div>
-                    <div className="flex flex-1 items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800/50 dark:bg-sky-950/30">
-                      <span className="text-xs font-medium text-sky-700 dark:text-sky-300">Saat Adet</span>
-                      {(() => {
-                        const d = Number(saatlikAdetMap[row.workerId] ?? "");
-                        return d > 0 ? (
-                          <span className="text-sm font-bold text-sky-800 dark:text-sky-300">{d * 60}</span>
-                        ) : (
-                          <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
-                        );
-                      })()}
-                    </div>
-                    <div className="flex flex-1 items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800/50 dark:bg-emerald-950/30">
-                      <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Günlük Adet</span>
-                      {(() => {
-                        const d = Number(saatlikAdetMap[row.workerId] ?? "");
-                        return d > 0 ? (
-                          <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{d * 60 * 9}</span>
-                        ) : (
-                          <span className="text-sm text-slate-400 dark:text-slate-500">—</span>
-                        );
-                      })()}
-                    </div>
-                  </div>
+                  {(() => {
+                    const result = calcFromDk(prosesMap[row.process] ?? "");
+                    return (
+                      <div className="mb-2 flex items-center gap-2">
+                        <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-700/60 dark:bg-amber-950/30">
+                          <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Dk</span>
+                          <span className="text-sm font-bold text-amber-800 dark:text-amber-200">
+                            {result ? prosesMap[row.process] : "—"}
+                          </span>
+                        </div>
+                        <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800/50 dark:bg-sky-950/30">
+                          <span className="text-xs font-medium text-sky-700 dark:text-sky-300">Saat</span>
+                          <span className="text-sm font-bold text-sky-800 dark:text-sky-300">
+                            {result ? result.saatlik : "—"}
+                          </span>
+                        </div>
+                        <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800/50 dark:bg-emerald-950/30">
+                          <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Günlük</span>
+                          <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300">
+                            {result ? result.gunluk : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="flex gap-2">
                     {isEditing ? (
@@ -660,6 +751,14 @@ export default function ProductionTable({
                               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
                               Taşı
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => { setOpenMenuId(null); setDkEditProcess(row.process); setDkEditValue(prosesMap[row.process] ?? ""); }}
+                              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                            >
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                              Dk Adet Düzenle
+                            </button>
                             {absent && onUnhideWorkerForDay ? (
                               <button
                                 type="button"
@@ -674,7 +773,7 @@ export default function ProductionTable({
                               <button
                                 type="button"
                                 onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
-                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-orange-700 transition hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
                               >
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
                                 Bugün yok

@@ -7,6 +7,9 @@ import * as XLSX from "xlsx";
 import { getProcesses, getTeams, setAuthToken } from "@/lib/api";
 import type { ProcessRow, TeamRow } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
+import { setProsesMap } from "@/lib/prosesVeri";
+
+const ROWS_STORAGE_KEY = "proses_veri_rows_v1";
 
 type Row = {
   id: number;
@@ -24,6 +27,27 @@ function calc(dkAdet: string) {
 
 let nextId = 1;
 
+function saveRows(rows: Row[]) {
+  try {
+    window.localStorage.setItem(ROWS_STORAGE_KEY, JSON.stringify(rows));
+  } catch { /* quota */ }
+}
+
+function loadRows(): Row[] {
+  try {
+    const raw = window.localStorage.getItem(ROWS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Row[];
+    if (!Array.isArray(parsed)) return [];
+    // nextId'yi yüklenen satırlara göre ayarla
+    const maxId = parsed.reduce((m, r) => Math.max(m, r.id ?? 0), 0);
+    if (maxId >= nextId) nextId = maxId + 1;
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
 export default function VeriSayfasiPage() {
   const router = useRouter();
   const [processes, setProcesses] = useState<ProcessRow[]>([]);
@@ -37,6 +61,11 @@ export default function VeriSayfasiPage() {
 
   const [rows, setRows] = useState<Row[]>([]);
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editTeam, setEditTeam] = useState("");
+  const [editProcess, setEditProcess] = useState("");
+  const [editDk, setEditDk] = useState("");
+
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
     if (!token) {
@@ -49,6 +78,9 @@ export default function VeriSayfasiPage() {
     }
     setAuthorized(true);
     setAuthToken(token);
+    // Kaydedilmiş satırları geri yükle
+    const saved = loadRows();
+    if (saved.length > 0) setRows(saved);
     void Promise.all([getProcesses(), getTeams()])
       .then(([procs, tms]) => {
         setProcesses(procs);
@@ -59,11 +91,23 @@ export default function VeriSayfasiPage() {
       .finally(() => setLoading(false));
   }, [router]);
 
+  /** Rows değiştiğinde hem rows'u hem proses dk haritasını localStorage'a yaz */
+  function syncToStorage(nextRows: Row[]) {
+    saveRows(nextRows);
+    const map: Record<string, string> = {};
+    for (const row of nextRows) {
+      if (row.dkAdet && Number(row.dkAdet) > 0) {
+        map[row.processName] = row.dkAdet;
+      }
+    }
+    setProsesMap(map);
+  }
+
   function handleAdd() {
     if (!selectedTeam || !selectedProcess || !dkAdet) return;
     const team = teams.find((t) => t.code === selectedTeam);
-    setRows((prev) => [
-      ...prev,
+    const next = [
+      ...rows,
       {
         id: nextId++,
         teamCode: selectedTeam,
@@ -71,24 +115,56 @@ export default function VeriSayfasiPage() {
         processName: selectedProcess,
         dkAdet,
       },
-    ]);
+    ];
+    setRows(next);
+    syncToStorage(next);
     setDkAdet("");
   }
 
   function handleRemove(id: number) {
-    setRows((prev) => prev.filter((r) => r.id !== id));
+    const next = rows.filter((r) => r.id !== id);
+    setRows(next);
+    syncToStorage(next);
   }
 
   function handleDkChange(id: number, value: string) {
-    setRows((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, dkAdet: value } : r))
+    const next = rows.map((r) => (r.id === id ? { ...r, dkAdet: value } : r));
+    setRows(next);
+    syncToStorage(next);
+  }
+
+  function startEdit(row: Row) {
+    setEditingId(row.id);
+    setEditTeam(row.teamCode);
+    setEditProcess(row.processName);
+    setEditDk(row.dkAdet);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditTeam("");
+    setEditProcess("");
+    setEditDk("");
+  }
+
+  function saveEdit(id: number) {
+    const team = teams.find((t) => t.code === editTeam);
+    const next = rows.map((r) =>
+      r.id === id
+        ? { ...r, teamCode: editTeam, teamLabel: team?.label ?? editTeam, processName: editProcess, dkAdet: editDk }
+        : r
     );
+    setRows(next);
+    syncToStorage(next);
+    cancelEdit();
   }
 
   function handleClear() {
     if (rows.length === 0) return;
     if (!window.confirm("Tüm satırlar silinsin mi?")) return;
     setRows([]);
+    saveRows([]);
+    setProsesMap({});
   }
 
   function handleExport() {
@@ -278,35 +354,78 @@ export default function VeriSayfasiPage() {
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">Dk Adet</th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-400">Saat Adet</th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Günlük Adet</th>
-                  <th className="w-12 px-4 py-2.5"></th>
+                  <th className="px-4 py-2.5"></th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, i) => {
-                  const result = calc(row.dkAdet);
+                  const isEditing = editingId === row.id;
+                  const result = calc(isEditing ? editDk : row.dkAdet);
                   return (
                     <tr
                       key={row.id}
                       className={`border-b border-slate-100 dark:border-slate-800 ${
-                        i % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50/60 dark:bg-slate-800/40"
+                        isEditing
+                          ? "bg-violet-50/60 dark:bg-violet-950/20"
+                          : i % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50/60 dark:bg-slate-800/40"
                       }`}
                     >
-                      <td className="px-4 py-3">
-                        <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                          {row.teamLabel}
-                        </span>
+                      {/* Bölüm */}
+                      <td className="px-4 py-2.5">
+                        {isEditing ? (
+                          <div className="relative">
+                            <select
+                              value={editTeam}
+                              onChange={(e) => setEditTeam(e.target.value)}
+                              className="w-full rounded-lg border border-violet-300 bg-white py-1.5 pl-2 pr-7 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
+                            >
+                              {teams.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute inset-y-0 right-0 flex w-6 items-center justify-center text-slate-400">
+                              <svg width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                            {row.teamLabel}
+                          </span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{row.processName}</td>
+                      {/* Proses */}
+                      <td className="px-4 py-2.5">
+                        {isEditing ? (
+                          <div className="relative">
+                            <select
+                              value={editProcess}
+                              onChange={(e) => setEditProcess(e.target.value)}
+                              className="w-full rounded-lg border border-violet-300 bg-white py-1.5 pl-2 pr-7 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
+                            >
+                              {processes.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute inset-y-0 right-0 flex w-6 items-center justify-center text-slate-400">
+                              <svg width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-medium text-slate-800 dark:text-slate-100">{row.processName}</span>
+                        )}
+                      </td>
+                      {/* Dk Adet */}
                       <td className="px-4 py-2 text-center">
                         <input
                           type="number"
                           min={0}
                           step={0.1}
-                          value={row.dkAdet}
-                          onChange={(e) => handleDkChange(row.id, e.target.value)}
-                          className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-center text-sm font-semibold outline-none focus:border-amber-500 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200"
+                          value={isEditing ? editDk : row.dkAdet}
+                          onChange={(e) => isEditing ? setEditDk(e.target.value) : handleDkChange(row.id, e.target.value)}
+                          className={`w-24 rounded-lg border px-2 py-1.5 text-center text-sm font-semibold outline-none ${
+                            isEditing
+                              ? "border-violet-300 bg-violet-50 focus:border-violet-500 dark:border-violet-700/60 dark:bg-violet-950/30 dark:text-violet-200"
+                              : "border-amber-300 bg-amber-50 focus:border-amber-500 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200"
+                          }`}
                         />
                       </td>
+                      {/* Saat Adet */}
                       <td className="px-4 py-3 text-center">
                         {result ? (
                           <span className="inline-block min-w-[3.5rem] rounded-lg bg-sky-100 px-3 py-1 text-sm font-bold text-sky-800 dark:bg-sky-950/50 dark:text-sky-300">
@@ -316,6 +435,7 @@ export default function VeriSayfasiPage() {
                           <span className="text-slate-400">—</span>
                         )}
                       </td>
+                      {/* Günlük Adet */}
                       <td className="px-4 py-3 text-center">
                         {result ? (
                           <span className="inline-block min-w-[3.5rem] rounded-lg bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
@@ -325,15 +445,41 @@ export default function VeriSayfasiPage() {
                           <span className="text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleRemove(row.id)}
-                          className="rounded-lg border border-red-200 p-1.5 text-red-500 transition hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/30"
-                          title="Sil"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                        </button>
+                      {/* Aksiyon */}
+                      <td className="px-3 py-2 text-center">
+                        {isEditing ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => saveEdit(row.id)}
+                              className="rounded-lg border border-emerald-400 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                            >Kaydet</button>
+                            <button
+                              type="button"
+                              onClick={cancelEdit}
+                              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                            >İptal</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(row)}
+                              className="rounded-lg border border-violet-200 p-1.5 text-violet-600 transition hover:bg-violet-50 dark:border-violet-800/50 dark:text-violet-400 dark:hover:bg-violet-950/30"
+                              title="Düzenle"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemove(row.id)}
+                              className="rounded-lg border border-red-200 p-1.5 text-red-500 transition hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/30"
+                              title="Sil"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -345,24 +491,78 @@ export default function VeriSayfasiPage() {
           {/* Mobil */}
           <div className="divide-y divide-slate-100 dark:divide-slate-800 md:hidden">
             {rows.map((row) => {
-              const result = calc(row.dkAdet);
+              const isEditing = editingId === row.id;
+              const result = calc(isEditing ? editDk : row.dkAdet);
               return (
-                <div key={row.id} className="p-4">
-                  <div className="mb-2 flex items-start justify-between">
-                    <div>
-                      <span className="mr-2 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                        {row.teamLabel}
-                      </span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-100">{row.processName}</span>
+                <div key={row.id} className={`p-4 ${isEditing ? "bg-violet-50/50 dark:bg-violet-950/20" : ""}`}>
+                  {/* Başlık satırı */}
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      {isEditing ? (
+                        <div className="flex flex-col gap-2">
+                          <div className="relative">
+                            <select
+                              value={editTeam}
+                              onChange={(e) => setEditTeam(e.target.value)}
+                              className="w-full rounded-lg border border-violet-300 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
+                            >
+                              {teams.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute inset-y-0 right-0 flex w-8 items-center justify-center text-slate-400">
+                              <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </span>
+                          </div>
+                          <div className="relative">
+                            <select
+                              value={editProcess}
+                              onChange={(e) => setEditProcess(e.target.value)}
+                              className="w-full rounded-lg border border-violet-300 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 outline-none focus:border-violet-500 dark:border-violet-700/60 dark:bg-slate-800 dark:text-slate-100"
+                            >
+                              {processes.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute inset-y-0 right-0 flex w-8 items-center justify-center text-slate-400">
+                              <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="mr-2 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                            {row.teamLabel}
+                          </span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-100">{row.processName}</span>
+                        </div>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(row.id)}
-                      className="rounded-lg border border-red-200 p-1.5 text-red-500 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                    </button>
+                    {/* Aksiyon butonları */}
+                    {isEditing ? (
+                      <div className="flex shrink-0 gap-1">
+                        <button type="button" onClick={() => saveEdit(row.id)}
+                          className="rounded-lg border border-emerald-400 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-600 dark:text-emerald-300"
+                        >Kaydet</button>
+                        <button type="button" onClick={cancelEdit}
+                          className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300"
+                        >İptal</button>
+                      </div>
+                    ) : (
+                      <div className="flex shrink-0 gap-1">
+                        <button type="button" onClick={() => startEdit(row)}
+                          className="rounded-lg border border-violet-200 p-1.5 text-violet-600 hover:bg-violet-50 dark:border-violet-800/50 dark:text-violet-400"
+                          title="Düzenle"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        </button>
+                        <button type="button" onClick={() => handleRemove(row.id)}
+                          className="rounded-lg border border-red-200 p-1.5 text-red-500 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400"
+                          title="Sil"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Adet grid */}
                   <div className="grid grid-cols-3 gap-2">
                     <div className="flex flex-col gap-1">
                       <span className="text-center text-xs font-medium text-amber-600 dark:text-amber-400">Dk Adet</span>
@@ -370,9 +570,13 @@ export default function VeriSayfasiPage() {
                         type="number"
                         min={0}
                         step={0.1}
-                        value={row.dkAdet}
-                        onChange={(e) => handleDkChange(row.id, e.target.value)}
-                        className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-2 text-center text-sm font-semibold outline-none focus:border-amber-500 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200"
+                        value={isEditing ? editDk : row.dkAdet}
+                        onChange={(e) => isEditing ? setEditDk(e.target.value) : handleDkChange(row.id, e.target.value)}
+                        className={`rounded-lg border px-2 py-2 text-center text-sm font-semibold outline-none ${
+                          isEditing
+                            ? "border-violet-300 bg-violet-50 focus:border-violet-500 dark:border-violet-700/60 dark:bg-violet-950/30 dark:text-violet-200"
+                            : "border-amber-300 bg-amber-50 focus:border-amber-500 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200"
+                        }`}
                       />
                     </div>
                     <div className="flex flex-col gap-1">
