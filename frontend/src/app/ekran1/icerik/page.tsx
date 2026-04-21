@@ -159,10 +159,14 @@ export default function Ekran1IcerikPage() {
       // ── Bugün tamamlandı mı? ────────────────────────────────────────────
       const todayActiveCount     = isSingleDay ? rawCurrent.filter((w) => w.totalProduction > 0).length : 0;
       const yesterdayActiveCount = isSingleDay ? rawPrev.filter((w) => w.totalProduction > 0).length : 0;
+      // Bugün için hiç üretim kaydı yoksa veya gün henüz "tamamlanmadı" sayılmıyorsa dünün verisini kullan
+      // (eski mantık: todayActiveCount===0 → "tamam" deyip bugünkü sıfır veriyi kullanıyordu → ticker boş kalıyordu)
       const isTodayComplete =
-        !isSingleDay || todayActiveCount === 0
+        !isSingleDay
           ? true
-          : todayActiveCount >= yesterdayActiveCount * 0.75;
+          : todayActiveCount === 0
+            ? false
+            : todayActiveCount >= yesterdayActiveCount * 0.75;
 
       // Verimlilik kaynağı: tamamlanmadıysa dünkü, tamamlandıysa bugünkü veri
       const effSource = isSingleDay && !isTodayComplete ? rawPrev : rawCurrent;
@@ -229,19 +233,31 @@ export default function Ekran1IcerikPage() {
     setAuthToken(token);
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
+      const today = clampToWeekdayIso(todayWeekdayIso());
       if (raw) {
         const saved = JSON.parse(raw) as {
           target?: number;
           startDate?: string;
           endDate?: string;
+          rangeMode?: boolean;
           modelId?: number | null;
         };
         if (Number.isFinite(Number(saved.target))) setTarget(Number(saved.target));
-        if (saved.startDate) setStartDate(clampToWeekdayIso(saved.startDate));
-        if (saved.endDate) setEndDate(clampToWeekdayIso(saved.endDate));
+        setStartDate(today);
+        setEndDate(today);
         if (saved.modelId != null && Number.isFinite(Number(saved.modelId))) {
           setModelId(Number(saved.modelId));
         }
+        window.localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            target: Number.isFinite(Number(saved.target)) ? Number(saved.target) : 5000,
+            startDate: today,
+            endDate: today,
+            rangeMode: Boolean(saved.rangeMode),
+            modelId: saved.modelId ?? null,
+          })
+        );
       }
     } catch { /* ignore */ }
   }, []);

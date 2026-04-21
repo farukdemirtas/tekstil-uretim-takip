@@ -65,7 +65,7 @@ export default function HedefTakip() {
   /* Otomatik yenileme zamanlayıcısı */
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* ─── Sayfa yüklenince localStorage'dan ayarları geri yükle ─── */
+  /* ─── Sayfa yüklenince: hedef/model korunur; tarihler her zaman bugün (isterseniz siz değiştirirsiniz) ─── */
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
     if (!token || !hasPermission("hedefTakip")) {
@@ -79,48 +79,42 @@ export default function HedefTakip() {
         setModels(list);
         try {
           const raw = window.localStorage.getItem(STORAGE_KEY);
-          const savedMid = raw
-            ? (JSON.parse(raw) as { modelId?: number }).modelId
-            : undefined;
-          if (savedMid != null && Number.isFinite(Number(savedMid)) && list.some((x) => x.id === Number(savedMid))) {
-            setSelectedModelId(Number(savedMid));
+          const saved = raw
+            ? (JSON.parse(raw) as {
+                target?: number;
+                rangeMode?: boolean;
+                modelId?: number | null;
+              })
+            : {};
+          const today = clampToWeekdayIso(todayWeekdayIso());
+          const t = Number(saved.target) || 5000;
+          const rm = Boolean(saved.rangeMode);
+
+          let mid: number | null = null;
+          if (
+            saved.modelId != null &&
+            Number.isFinite(Number(saved.modelId)) &&
+            list.some((x) => x.id === Number(saved.modelId))
+          ) {
+            mid = Number(saved.modelId);
+            setSelectedModelId(mid);
           } else if (list.length === 1) {
-            setSelectedModelId(list[0].id);
+            mid = list[0].id;
+            setSelectedModelId(mid);
+          }
+
+          setTarget(t);
+          setStartDate(today);
+          setEndDate(today);
+          persistSettings(t, today, today, rm, mid);
+
+          if (rm && mid != null) {
+            setRangeMode(true);
+            void fetchRangeData(today, today, false, mid);
           }
         } catch { /* ignore */ }
       })
       .catch(() => {});
-
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-
-      const saved = JSON.parse(raw) as {
-        target?: number;
-        startDate?: string;
-        endDate?: string;
-        rangeMode?: boolean;
-        modelId?: number | null;
-      };
-
-      const t  = Number(saved.target) || 5000;
-      const sd = clampToWeekdayIso(saved.startDate || todayWeekdayIso());
-      const ed = clampToWeekdayIso(saved.endDate || todayWeekdayIso());
-      const rm = Boolean(saved.rangeMode);
-      const mid =
-        saved.modelId != null && Number.isFinite(Number(saved.modelId)) ? Number(saved.modelId) : null;
-
-      setTarget(t);
-      setStartDate(sd);
-      setEndDate(ed);
-      persistSettings(t, sd, ed, rm, mid);
-
-      /* Tarih aralığı modu kayıtlıysa hemen veri çek */
-      if (rm) {
-        setRangeMode(true);
-        void fetchRangeData(sd, ed, false, mid ?? undefined);
-      }
-    } catch { /* ignore */ }
 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
