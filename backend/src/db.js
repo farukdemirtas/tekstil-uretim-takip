@@ -481,6 +481,20 @@ export function initDb() {
     `);
     db.run(`CREATE INDEX IF NOT EXISTS idx_repair_entries_date ON repair_entries (repair_date)`);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS proses_veri_rows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_code TEXT NOT NULL,
+        team_code TEXT NOT NULL,
+        team_label TEXT NOT NULL DEFAULT '',
+        process_name TEXT NOT NULL,
+        dk_adet TEXT NOT NULL DEFAULT '0',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(model_code, team_code, process_name)
+      )
+    `);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_proses_veri_rows_model ON proses_veri_rows (model_code)`);
+
     seedTeamsAndProcessesIfEmpty();
     migrateWorkersRemoveTeamCheckIfNeeded();
   });

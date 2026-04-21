@@ -953,3 +953,40 @@ export async function getRepairsHistory(params: {
   if (!res.ok) throw new Error("Tamir geçmişi alınamadı");
   return res.json() as Promise<RepairHistoryPoint[]>;
 }
+
+// ─── Proses Veri Satırları (sunucu kalıcı depolama) ───────────────────────────
+
+export type ProsesVeriRow = {
+  id: number;
+  teamCode: string;
+  teamLabel: string;
+  processName: string;
+  dkAdet: string;
+};
+
+export async function getProsesVeriRowsFromServer(modelCode: string): Promise<ProsesVeriRow[]> {
+  const res = await apiFetch(`${apiBase()}/proses-veri/${encodeURIComponent(modelCode)}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    if (res.status === 403) return []; // yetkisiz — boş dön
+    throw new Error("Proses veri alınamadı");
+  }
+  return res.json() as Promise<ProsesVeriRow[]>;
+}
+
+export async function saveProsesVeriRowsToServer(
+  modelCode: string,
+  rows: Array<{ teamCode: string; teamLabel: string; processName: string; dkAdet: string }>
+): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/proses-veri/${encodeURIComponent(modelCode)}`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ rows }),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Proses veri kaydedilemedi");
+  }
+}

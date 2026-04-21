@@ -1768,3 +1768,89 @@ export async function getRepairHistory(startDate, endDate) {
   }
   return results;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Proses Veri Rows  (sunucu tarafı kalıcı depolama)
+═══════════════════════════════════════════════════════════ */
+
+/**
+ * Belirtilen model kodu için kayıtlı proses veri satırlarını döner.
+ * @param {string} modelCode
+ * @returns {Promise<Array<{teamCode,teamLabel,processName,dkAdet}>>}
+ */
+export function getProsesVeriRows(modelCode) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT team_code, team_label, process_name, dk_adet
+         FROM proses_veri_rows
+        WHERE model_code = ?
+        ORDER BY sort_order, id`,
+      [modelCode],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(
+          (rows || []).map((r, i) => ({
+            id: i + 1,
+            teamCode: r.team_code,
+            teamLabel: r.team_label,
+            processName: r.process_name,
+            dkAdet: r.dk_adet,
+          }))
+        );
+      }
+    );
+  });
+}
+
+/**
+ * Belirtilen model kodu için tüm satırları kaydeder (tam değiştir).
+ * @param {string} modelCode
+ * @param {Array<{teamCode,teamLabel,processName,dkAdet}>} rows
+ * @returns {Promise<void>}
+ */
+export function saveProsesVeriRows(modelCode, rows) {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run("BEGIN TRANSACTION");
+      db.run(
+        "DELETE FROM proses_veri_rows WHERE model_code = ?",
+        [modelCode],
+        (delErr) => {
+          if (delErr) {
+            db.run("ROLLBACK");
+            return reject(delErr);
+          }
+          if (!rows || rows.length === 0) {
+            db.run("COMMIT", (commitErr) => {
+              if (commitErr) return reject(commitErr);
+              resolve();
+            });
+            return;
+          }
+          const stmt = db.prepare(
+            `INSERT INTO proses_veri_rows
+               (model_code, team_code, team_label, process_name, dk_adet, sort_order)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          );
+          let insertErr = null;
+          rows.forEach((row, idx) => {
+            stmt.run(
+              [modelCode, row.teamCode ?? "", row.teamLabel ?? "", row.processName ?? "", row.dkAdet ?? "0", idx],
+              (e) => { if (e && !insertErr) insertErr = e; }
+            );
+          });
+          stmt.finalize((finalErr) => {
+            if (insertErr || finalErr) {
+              db.run("ROLLBACK");
+              return reject(insertErr || finalErr);
+            }
+            db.run("COMMIT", (commitErr) => {
+              if (commitErr) return reject(commitErr);
+              resolve();
+            });
+          });
+        }
+      );
+    });
+  });
+}

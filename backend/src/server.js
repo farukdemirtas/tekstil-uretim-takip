@@ -66,6 +66,8 @@ import {
   upsertRepairEntries,
   getRepairHistory,
   deleteRepairEntries,
+  getProsesVeriRows,
+  saveProsesVeriRows,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 
@@ -1129,6 +1131,29 @@ app.get("/api/repairs/history", requireAuth, async (req, res) => {
     return res.json(history);
   } catch (err) {
     return res.status(500).json({ message: "Tamir geçmişi alınamadı", error: String(err) });
+  }
+});
+
+/* ── Proses Veri Satırları ─────────────────────────────── */
+app.get("/api/proses-veri/:modelCode", requirePermission("veriSayfasi"), async (req, res) => {
+  const { modelCode } = req.params;
+  try {
+    const rows = await getProsesVeriRows(String(modelCode));
+    return res.json(rows);
+  } catch (err) {
+    return res.status(500).json({ message: "Proses veri alınamadı", error: String(err) });
+  }
+});
+
+app.put("/api/proses-veri/:modelCode", requirePermission("veriSayfasi"), async (req, res) => {
+  const { modelCode } = req.params;
+  const { rows } = req.body;
+  if (!Array.isArray(rows)) return res.status(400).json({ message: "rows dizisi zorunlu" });
+  try {
+    await saveProsesVeriRows(String(modelCode), rows);
+    return res.json({ ok: true, count: rows.length });
+  } catch (err) {
+    return res.status(500).json({ message: "Proses veri kaydedilemedi", error: String(err) });
   }
 });
 

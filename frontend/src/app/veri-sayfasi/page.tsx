@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { getProcesses, getTeams, listProductModels, setAuthToken } from "@/lib/api";
+import { getProcesses, getTeams, listProductModels, setAuthToken, getProsesVeriRowsFromServer, saveProsesVeriRowsToServer } from "@/lib/api";
 import type { ProcessRow, TeamRow, ProductModelListItem } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import {
@@ -83,6 +83,28 @@ export default function VeriSayfasiPage() {
   const [transferSource,  setTransferSource]  = useState<string>("");
   const [transferMode,    setTransferMode]    = useState<"merge" | "replace">("merge");
 
+  /* ── Sunucudan yükle (API + localStorage fallback + otomatik migrasyon) ── */
+  async function loadModelRowsFromServer(model: string): Promise<Row[]> {
+    try {
+      const serverRows = await getProsesVeriRowsFromServer(model);
+      if (serverRows.length > 0) {
+        // Sunucu verisi varsa localStorage cache'i güncelle
+        saveModelRows(model, serverRows);
+        return serverRows;
+      }
+      // Sunucu boş — localStorage'da eski veri varsa otomatik yükle
+      const localRows = loadModelRows(model);
+      if (localRows.length > 0) {
+        // Arka planda sunucuya yükle (migrasyon)
+        saveProsesVeriRowsToServer(model, localRows).catch(() => {/* sessiz hata */});
+      }
+      return localRows;
+    } catch {
+      // API erişim hatası — localStorage'a düş
+      return loadModelRows(model);
+    }
+  }
+
   /* ── Auth & Init — sadece ilk mount'ta çalışır ────────── */
   const routerRef = useRef(router);
   useEffect(() => {
@@ -94,25 +116,32 @@ export default function VeriSayfasiPage() {
     setAuthToken(token);
 
     void Promise.all([getProcesses(), getTeams(), listProductModels()])
-      .then(([procs, tms, mds]) => {
+      .then(async ([procs, tms, mds]) => {
         setProcesses(procs);
         setTeams(tms);
         setApiModels(mds);
         if (tms.length)  setSelectedTeam(tms[0].code);
         if (procs.length) setSelectedProcess(procs[0].name);
         const first = mds[0]?.modelCode ?? "";
-        setModelState({ model: first, rows: first ? loadModelRows(first) : [] });
+        if (first) {
+          const rows = await loadModelRowsFromServer(first);
+          setModelState({ model: first, rows });
+        } else {
+          setModelState({ model: "", rows: [] });
+        }
       })
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Model değişimi — model+rows tek atomik state güncellemesi ── */
-  function switchModel(model: string) {
+  /* ── Model değişimi — sunucudan yükle ── */
+  async function switchModel(model: string) {
     setEdit(EDIT_RESET);
-    setModelState({ model, rows: loadModelRows(model) });
+    setModelState({ model, rows: loadModelRows(model) }); // önce localStorage (anlık)
+    const rows = await loadModelRowsFromServer(model);    // sonra sunucu (güncel)
+    setModelState({ model, rows });
   }
 
-  /* ── Storage sync ─────────────────────────────────────────────────────
+  /* ── Storage sync — localStorage + sunucu ─────────────────────────────
      Model her zaman açıkça geçirilmeli; stale closure riskini ortadan kaldırır. */
   function syncToStorage(nextRows: Row[], model: string) {
     if (!model) return;
@@ -124,6 +153,8 @@ export default function VeriSayfasiPage() {
       }
     }
     setProsesMap(map, model);
+    // Sunucuya async kaydet (arka planda)
+    saveProsesVeriRowsToServer(model, nextRows).catch(() => {/* sessiz hata */});
   }
 
   /* ── Satır işlemleri ────────────────────────────────────── */
