@@ -20,6 +20,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   prosesKontrol: false,
   /** Hata rapor ve analiz sayfası */
   hataRapor: false,
+  /** Girişte koyu mod (veri girişi kullanıcıları; yöneticiler her zaman açık mod varsayımı) */
+  defaultDarkMode: false,
 };
 
 export const PERMISSION_KEYS = Object.keys(DEFAULT_DATA_ENTRY_PERMISSIONS);
@@ -33,7 +35,10 @@ function allTruePermissions() {
 /** DB JSON + rol → API ve JWT’de kullanılacak etkin yetkiler */
 export function normalizePermissions(rawJson, role) {
   if (role === "admin") {
-    return allTruePermissions();
+    const all = allTruePermissions();
+    /** Ekran görünümü tercihi — yöneticiye “hepsi açık” anlamında true üyelikler verilirken tema sabit açık kalsın */
+    all.defaultDarkMode = false;
+    return all;
   }
   let parsed = {};
   try {

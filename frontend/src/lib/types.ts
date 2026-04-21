@@ -106,6 +106,8 @@ export type AppPermissions = {
   prosesKontrol: boolean;
   /** Hata rapor ve analiz sayfası */
   hataRapor: boolean;
+  /** Girişte koyu tema; açık mod için false (yöneticilerde API’de false döner) */
+  defaultDarkMode: boolean;
 };
 
 export type User = {

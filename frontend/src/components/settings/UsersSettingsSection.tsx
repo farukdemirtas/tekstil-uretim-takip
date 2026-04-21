@@ -21,6 +21,7 @@ function emptyDraft(): AppPermissions {
     veriSayfasi: false,
     prosesKontrol: false,
     hataRapor: false,
+    defaultDarkMode: false,
   };
 }
 
@@ -250,7 +251,7 @@ export default function UsersSettingsSection() {
                   ) : (
                     <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-600">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Ekran yetkileri
+                        Ekran yetkileri ve açılış teması
                       </p>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {PERMISSION_ROWS.map(({ key, label, description }) => (

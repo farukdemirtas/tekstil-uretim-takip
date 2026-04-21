@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
+import { THEME_CHANGE_EVENT } from "@/lib/permissions";
 
 type Theme = "light" | "dark";
 
@@ -15,6 +16,15 @@ export default function ThemeToggle() {
     const initial: Theme = stored === "dark" || stored === "light" ? (stored as Theme) : prefersDark ? "dark" : "light";
     setTheme(initial);
     document.documentElement.classList.toggle("dark", initial === "dark");
+  }, []);
+
+  useEffect(() => {
+    function onThemeFromLogin(e: Event) {
+      const d = (e as CustomEvent<Theme>).detail;
+      if (d === "dark" || d === "light") setTheme(d);
+    }
+    window.addEventListener(THEME_CHANGE_EVENT, onThemeFromLogin as EventListener);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeFromLogin as EventListener);
   }, []);
 
   const label = useMemo(() => (theme === "dark" ? "Açık Mod" : "Koyu Mod"), [theme]);

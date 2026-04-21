@@ -916,7 +916,10 @@ app.get("/api/production", async (req, res) => {
   }
 });
 
-app.get("/api/analytics/top-workers", requireAnyPermission(["analysis", "ekran2", "ekran3"]), async (req, res) => {
+app.get(
+  "/api/analytics/top-workers",
+  requireAnyPermission(["analysis", "ekran2", "ekran3", "ekran1"]),
+  async (req, res) => {
   const { startDate, endDate, team = "", process = "", limit = "20", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });

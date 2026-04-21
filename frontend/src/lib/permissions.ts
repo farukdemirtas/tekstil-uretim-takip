@@ -2,7 +2,14 @@ import type { AppPermissions } from "./types";
 
 const STORAGE_PERMS = "auth_permissions";
 
+export const THEME_CHANGE_EVENT = "tekstil-theme-change";
+
 export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; description: string }[] = [
+  {
+    key: "defaultDarkMode",
+    label: "Koyu modda açılış",
+    description: "Girişte arayüz koyu temada açılır. Kapalıysa açık tema ile açılır; sonraki girişte geçerli olur.",
+  },
   { key: "analysis", label: "Analiz", description: "Analiz grafikleri ve rapor API’leri" },
   { key: "karsilastirma", label: "Karşılaştırma", description: "İki işçi karşılaştırma ekranı" },
   { key: "ayarlar", label: "Ayarlar", description: "Personel isimleri, bölüm ve proses tanımları" },
@@ -65,4 +72,13 @@ export function persistPermissions(perms: AppPermissions | undefined) {
 export function clearStoredPermissions() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_PERMS);
+}
+
+/** Giriş sonrası: yetkiye göre `localStorage.theme` ve `html.dark` uygular; ThemeToggle ile senkron için olay yayınlar */
+export function applyThemeFromPermissions(perms: AppPermissions | null | undefined) {
+  if (typeof window === "undefined" || !perms) return;
+  const next: "light" | "dark" = perms.defaultDarkMode ? "dark" : "light";
+  window.localStorage.setItem("theme", next);
+  document.documentElement.classList.toggle("dark", next === "dark");
+  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: next }));
 }

@@ -45,7 +45,13 @@ import {
 import ExcelImportPanel from "@/components/ExcelImportPanel";
 import BulkEntryPanel from "@/components/BulkEntryPanel";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
-import { hasPermission, isAdminRole, persistPermissions, clearStoredPermissions } from "@/lib/permissions";
+import {
+  applyThemeFromPermissions,
+  hasPermission,
+  isAdminRole,
+  persistPermissions,
+  clearStoredPermissions,
+} from "@/lib/permissions";
 import { ProductionRow } from "@/lib/types";
 
 const EXPORT_TEAM_FALLBACK = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
@@ -235,6 +241,7 @@ export default function HomePage() {
     }
     if (result.permissions && typeof result.permissions === "object") {
       persistPermissions(result.permissions);
+      applyThemeFromPermissions(result.permissions);
     } else {
       clearStoredPermissions();
     }

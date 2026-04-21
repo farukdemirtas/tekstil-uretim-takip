@@ -121,10 +121,11 @@ export default function Ekran1IcerikPage() {
       const prevStartDate = nWorkdaysBack(startDate, rangeDays);
       const isSingleDay = startDate === endDate;
 
+      // Verimlilik API’si başarısız olsa da (eski: yalnız ekran1 yetkisi → 403) ana özet yüklenir; ticker boş kalır.
       const [totals, rawCurrent, rawPrev, allModels, dayMeta] = await Promise.all([
         getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined),
-        getTopWorkersAnalytics({ startDate, endDate, limit: 200 }),
-        getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }),
+        getTopWorkersAnalytics({ startDate, endDate, limit: 200 }).catch(() => []),
+        getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }).catch(() => []),
         listProductModels(),
         getDayProductMeta(endDate).catch(() => null),
       ]);
@@ -338,12 +339,12 @@ export default function Ekran1IcerikPage() {
         <EfficiencyTicker items={leftItems} />
       </div>
 
-      {/* Ana içerik */}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
-        <div className="mx-auto flex w-full max-w-[min(100%,120rem)] shrink-0 flex-col gap-4 px-4 py-3 sm:gap-5 sm:px-6 sm:py-4 md:gap-6 md:px-8 md:py-5 min-[1920px]:gap-6 min-[1920px]:px-10 min-[1920px]:py-6">
+      {/* Ana içerik: üst sabit, alt aşamalar kalan yükseklikte kayar (TV’de kesilme olmasın) */}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,120rem)] flex-col gap-3 px-3 py-2 sm:gap-4 sm:px-5 sm:py-3 md:gap-5 md:px-8 md:py-4 min-[1920px]:gap-5 min-[1920px]:px-10 min-[1920px]:py-5">
 
           {/* Header */}
-          <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
+          <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
             <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 px-3 py-1 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-emerald-500/20">
                 EKRAN1
@@ -367,91 +368,89 @@ export default function Ekran1IcerikPage() {
           </header>
 
           {error && (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-base font-semibold text-red-600">
+            <p className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-base font-semibold text-red-600">
               {error}
             </p>
           )}
           {loading && !lastUpdated && (
-            <div className="flex items-center justify-center gap-2 py-4 text-slate-500">
+            <div className="flex shrink-0 items-center justify-center gap-2 py-3 text-slate-500">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
               Yükleniyor…
             </div>
           )}
 
-          {/* Genel ilerleme — flex-1 yok: alt aşama kartları her zaman görünür (TV) */}
-          <section className="flex shrink-0 flex-col gap-4 md:gap-5 min-[1920px]:gap-6">
-            <h1
-              className="text-center font-black uppercase tracking-tight text-slate-950 drop-shadow-sm dark:text-white"
-              style={{ fontSize: "clamp(1.75rem, 4.5vw, 4rem)" }}
-            >
-              Genel İlerleme
-            </h1>
-
-            {/* Ana progress bar */}
-            <div className="relative mx-auto w-full max-w-5xl">
-              <div
-                className="relative overflow-hidden rounded-2xl border-2 border-slate-300 bg-slate-200/90 shadow-inner dark:border-slate-500 dark:bg-slate-700/90"
-                style={{ height: "clamp(4.5rem, 10vh, 7.5rem)" }}
-                role="progressbar"
-                aria-valuenow={Math.round(genelPercent)}
-                aria-valuemin={0}
-                aria-valuemax={100}
+          {/* Genel ilerleme — kompakt; TV’de başlık her zaman okunur */}
+          <section className="flex shrink-0 flex-col gap-3 md:gap-4">
+            <div className="flex justify-center px-2">
+              <h1
+                className="rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 px-6 py-2.5 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/25 ring-2 ring-slate-700/50 min-[1920px]:px-10 min-[1920px]:py-3"
+                style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}
               >
-                {/* Dolgu */}
+                Genel İlerleme
+              </h1>
+            </div>
+
+            {/* Bar + yüzde yan yana — rakam çizgide boğulmaz */}
+            <div className="mx-auto w-full max-w-5xl px-1">
+              <div
+                className="grid items-center gap-3 sm:grid-cols-[1fr_auto] sm:gap-4 md:gap-6"
+                role="group"
+                aria-label="Genel ilerleme özeti"
+              >
                 <div
-                  className="absolute inset-y-0 left-0 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 transition-[width] duration-1000 ease-out"
-                  style={{ width: `${genelPercent}%` }}
+                  className="relative h-14 overflow-hidden rounded-2xl bg-gradient-to-b from-slate-100 to-slate-200/90 p-[3px] shadow-[inset_0_2px_8px_rgba(15,23,42,0.08)] ring-1 ring-slate-300/90 sm:h-16 md:h-[4.25rem] md:rounded-3xl md:p-1"
+                  role="progressbar"
+                  aria-valuenow={Math.round(genelPercent)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
                 >
-                  <div className="absolute inset-x-0 top-0 h-1/3 rounded-t-2xl bg-white/25" />
+                  <div className="relative h-full overflow-hidden rounded-[0.75rem] bg-slate-300/50 md:rounded-[1.2rem]">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-[0.65rem] bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 shadow-[0_0_24px_rgba(16,185,129,0.35)] transition-[width] duration-1000 ease-out md:rounded-[1.1rem]"
+                      style={{ width: `${genelPercent}%` }}
+                    >
+                      <div className="absolute inset-x-0 top-0 h-2/5 bg-gradient-to-b from-white/30 to-transparent" />
+                    </div>
+                  </div>
                 </div>
-                {/* Yüzde — koyu kontur + hafif zemin okunurluk */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span
-                    className="rounded-xl bg-white/95 px-4 py-1 font-black tabular-nums text-neutral-950 shadow-md ring-2 ring-slate-400/80 dark:bg-slate-900/95 dark:text-white dark:ring-slate-500"
-                    style={{
-                      fontSize: "clamp(1.75rem, 5vw, 4rem)",
-                      textShadow: "none",
-                    }}
-                  >
-                    %{genelPercent.toFixed(0)}
-                  </span>
+                <div className="flex justify-center sm:justify-end">
+                  <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-white px-5 py-2 shadow-md sm:min-w-[7rem] sm:px-6 sm:py-3 md:min-w-[8.5rem]">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Oran</span>
+                    <span
+                      className="font-black tabular-nums leading-none text-slate-900"
+                      style={{ fontSize: "clamp(2rem, 6vw, 4.25rem)" }}
+                    >
+                      %{genelPercent.toFixed(0)}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Hedef / gerçekleşen / kalan */}
-              <div className="mt-5 grid grid-cols-3 gap-3 md:gap-5">
-                {/* Hedef */}
-                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 md:text-xs">
-                    Hedef
-                  </p>
+              {/* Hedef / gerçekleşen / kalan — biraz daha kompakt */}
+              <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3 md:mt-5 md:gap-4">
+                <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-slate-200 bg-white px-2 py-3 shadow-sm sm:py-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 sm:text-[10px]">Hedef</p>
                   <p
                     className="font-black tabular-nums text-slate-800"
-                    style={{ fontSize: "clamp(2.2rem, 5.5vw, 5rem)" }}
+                    style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
                   >
                     {target.toLocaleString("tr-TR")}
                   </p>
                 </div>
-                {/* Gerçekleşen */}
-                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 shadow-sm">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 md:text-xs">
-                    Gerçekleşen
-                  </p>
+                <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-2 py-3 shadow-sm sm:py-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 sm:text-[10px]">Gerçekleşen</p>
                   <p
                     className="font-black tabular-nums text-emerald-700"
-                    style={{ fontSize: "clamp(2.2rem, 5.5vw, 5rem)" }}
+                    style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
                   >
                     {genelTamamlanan.toLocaleString("tr-TR")}
                   </p>
                 </div>
-                {/* Kalan */}
-                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-5 shadow-sm">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 md:text-xs">
-                    Kalan
-                  </p>
+                <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-amber-200 bg-amber-50 px-2 py-3 shadow-sm sm:py-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 sm:text-[10px]">Kalan</p>
                   <p
-                    className="font-black tabular-nums text-amber-700"
-                    style={{ fontSize: "clamp(2.2rem, 5.5vw, 5rem)" }}
+                    className="font-black tabular-nums text-amber-800"
+                    style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
                   >
                     {Math.max(0, target - genelTamamlanan).toLocaleString("tr-TR")}
                   </p>
@@ -460,10 +459,11 @@ export default function Ekran1IcerikPage() {
             </div>
           </section>
 
-          {/* Aşama kartları — üst blok flex-1 olmadığı için kesilmeden sıralanır */}
+          {/* Aşama kartları — kalan yükseklikte kaydır; kesilmez */}
           {stageRows.length > 0 && (
-            <section className="shrink-0 pb-4 pt-1">
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3 lg:grid-cols-5 min-[1920px]:gap-4">
+            <section className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain pb-6 [-webkit-overflow-scrolling:touch]">
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3 lg:grid-cols-5 min-[1920px]:gap-4">
                 {stageRows.map((row, idx) => (
                   <div
                     key={`${row.label}-${idx}`}
@@ -494,6 +494,7 @@ export default function Ekran1IcerikPage() {
                     </p>
                   </div>
                 ))}
+                </div>
               </div>
             </section>
           )}
