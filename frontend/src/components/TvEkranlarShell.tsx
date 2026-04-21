@@ -77,16 +77,16 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
   const iframeSrc = IFRAME_SRC[active];
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-200 dark:bg-slate-950">
-      <header className="z-[101] flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-white px-3 py-2 shadow-sm dark:border-slate-600 dark:bg-slate-900">
-        <nav className="flex flex-wrap gap-1.5" aria-label="TV ekranları">
+    <div className="fixed inset-0 z-[100] flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-slate-200 dark:bg-slate-950">
+      <header className="z-[101] flex min-h-0 shrink-0 flex-wrap items-center justify-between gap-1.5 border-b border-slate-300 bg-white px-2 py-1.5 shadow-sm sm:gap-2 sm:px-3 sm:py-2 dark:border-slate-600 dark:bg-slate-900">
+        <nav className="flex flex-wrap gap-1" aria-label="TV ekranları">
           {tabs.map((t) => {
             const on = active === t.id;
             return (
               <Link
                 key={t.id}
                 href={t.href}
-                className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition sm:px-3 sm:py-1.5 sm:text-sm ${
                   on
                     ? "bg-teal-600 text-white shadow-sm"
                     : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -99,7 +99,7 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
         </nav>
         <Link
           href="/"
-          className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:px-3 sm:py-1.5 sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
         >
           Üretim ekranı
         </Link>
@@ -108,7 +108,7 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
         key={iframeSrc}
         title={tabs.find((x) => x.id === active)?.label ?? "TV"}
         src={iframeSrc}
-        className="min-h-0 w-full flex-1 border-0"
+        className="min-h-0 min-w-0 w-full flex-1 border-0 bg-slate-100"
       />
     </div>
   );

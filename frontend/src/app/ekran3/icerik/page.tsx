@@ -216,11 +216,11 @@ export default function Ekran3Page() {
   }
 
   return (
-    <div className="relative flex h-dvh max-h-dvh flex-col overflow-hidden bg-gradient-to-br from-slate-100 via-teal-50/35 to-emerald-50/45 text-slate-900">
+    <div className="fixed inset-0 z-0 flex min-h-0 w-full flex-col overflow-hidden bg-gradient-to-br from-slate-100 via-teal-50/35 to-emerald-50/45 text-slate-950">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_60%_at_100%_0%,rgba(45,212,191,0.12),transparent)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_0%_100%,rgba(16,185,129,0.08),transparent)]" />
 
-      <header className="relative z-10 mx-2 mt-2 flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/75 px-4 py-3 shadow-surface backdrop-blur-md sm:mx-3 sm:mt-3 sm:rounded-3xl sm:px-5 sm:py-3.5">
+      <header className="relative z-10 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-white/90 px-4 py-2.5 shadow-sm backdrop-blur-md dark:border-slate-600 dark:bg-slate-900/90 sm:px-5 sm:py-3 min-[1920px]:px-6 min-[1920px]:py-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white sm:text-xs">
@@ -238,7 +238,7 @@ export default function Ekran3Page() {
               </span>
             )}
           </div>
-          <p className="mt-2 truncate text-xs text-slate-600 sm:text-sm">
+          <p className="mt-1 truncate text-sm text-slate-700 dark:text-slate-300 min-[1920px]:text-base">
             <span className="font-medium text-slate-800">4 vitrin kartı</span>
             <span className="mx-1.5 text-slate-300">·</span>
             <span className="font-semibold text-teal-800">{displayDate}</span>
@@ -275,18 +275,18 @@ export default function Ekran3Page() {
       </header>
 
       {error ? (
-        <p className="relative z-10 mx-3 mt-2 shrink-0 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-center text-sm font-medium text-red-800">
+        <p className="relative z-10 shrink-0 border-b border-red-200 bg-red-50 px-4 py-2 text-center text-sm font-semibold text-red-900">
           {error}
         </p>
       ) : null}
       {loading && !cards.some((c) => c.worker) ? (
-        <div className="relative z-10 flex shrink-0 items-center justify-center gap-2 py-4 text-sm font-medium text-slate-500">
+        <div className="relative z-10 flex shrink-0 items-center justify-center gap-2 py-3 text-sm font-semibold text-slate-700">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
           Yükleniyor…
         </div>
       ) : null}
 
-      <div className="relative z-10 grid min-h-0 flex-1 grid-cols-1 grid-rows-4 gap-3 p-2 sm:grid-cols-2 sm:grid-rows-2 sm:gap-4 sm:p-4">
+      <div className="relative z-10 grid min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-4 gap-2 p-2 sm:grid-cols-2 sm:grid-rows-2 sm:gap-3 sm:p-3 min-[1920px]:gap-4 min-[1920px]:p-4 min-[2560px]:gap-5 min-[2560px]:p-5">
         {cards.map((c, i) => (
           <Ekran3WorkerCard
             key={
