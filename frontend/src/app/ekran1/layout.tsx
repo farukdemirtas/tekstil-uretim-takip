@@ -6,5 +6,5 @@ export const metadata: Metadata = {
 };
 
 export default function Ekran1Layout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return children;
+  return <div className="relative h-full min-h-0 min-w-0 w-full">{children}</div>;
 }

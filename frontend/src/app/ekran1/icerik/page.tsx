@@ -78,15 +78,16 @@ const STAGE_GLOWS = [
   "shadow-lime-500/30",
 ] as const;
 
+/** TV / uzak mesafe: açık zeminde okunaklı koyu tonlar */
 const STAGE_TEXT = [
-  "text-emerald-400",
-  "text-sky-400",
-  "text-violet-400",
-  "text-amber-400",
-  "text-rose-400",
-  "text-cyan-400",
-  "text-fuchsia-400",
-  "text-lime-400",
+  "text-emerald-800",
+  "text-sky-800",
+  "text-violet-800",
+  "text-amber-800",
+  "text-rose-800",
+  "text-cyan-800",
+  "text-fuchsia-800",
+  "text-lime-800",
 ] as const;
 
 export default function Ekran1IcerikPage() {
@@ -338,8 +339,8 @@ export default function Ekran1IcerikPage() {
       </div>
 
       {/* Ana içerik */}
-      <div className="relative flex min-w-0 flex-1 flex-col overflow-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-[1920px] flex-1 flex-col gap-5 px-6 py-5 md:gap-8 md:px-10 md:py-8">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto flex w-full max-w-[min(100%,120rem)] shrink-0 flex-col gap-4 px-4 py-3 sm:gap-5 sm:px-6 sm:py-4 md:gap-6 md:px-8 md:py-5 min-[1920px]:gap-6 min-[1920px]:px-10 min-[1920px]:py-6">
 
           {/* Header */}
           <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
@@ -377,11 +378,11 @@ export default function Ekran1IcerikPage() {
             </div>
           )}
 
-          {/* Genel ilerleme */}
-          <section className="flex flex-1 flex-col justify-center gap-5 md:gap-8">
+          {/* Genel ilerleme — flex-1 yok: alt aşama kartları her zaman görünür (TV) */}
+          <section className="flex shrink-0 flex-col gap-4 md:gap-5 min-[1920px]:gap-6">
             <h1
-              className="text-center font-black uppercase tracking-tight text-slate-900"
-              style={{ fontSize: "clamp(2rem, 6vw, 5.5rem)" }}
+              className="text-center font-black uppercase tracking-tight text-slate-950 drop-shadow-sm dark:text-white"
+              style={{ fontSize: "clamp(1.75rem, 4.5vw, 4rem)" }}
             >
               Genel İlerleme
             </h1>
@@ -389,8 +390,8 @@ export default function Ekran1IcerikPage() {
             {/* Ana progress bar */}
             <div className="relative mx-auto w-full max-w-5xl">
               <div
-                className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-inner"
-                style={{ height: "clamp(5rem, 12vh, 9rem)" }}
+                className="relative overflow-hidden rounded-2xl border-2 border-slate-300 bg-slate-200/90 shadow-inner dark:border-slate-500 dark:bg-slate-700/90"
+                style={{ height: "clamp(4.5rem, 10vh, 7.5rem)" }}
                 role="progressbar"
                 aria-valuenow={Math.round(genelPercent)}
                 aria-valuemin={0}
@@ -403,13 +404,13 @@ export default function Ekran1IcerikPage() {
                 >
                   <div className="absolute inset-x-0 top-0 h-1/3 rounded-t-2xl bg-white/25" />
                 </div>
-                {/* Yüzde */}
+                {/* Yüzde — koyu kontur + hafif zemin okunurluk */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <span
-                    className="font-black tabular-nums text-slate-900 drop-shadow"
+                    className="rounded-xl bg-white/95 px-4 py-1 font-black tabular-nums text-neutral-950 shadow-md ring-2 ring-slate-400/80 dark:bg-slate-900/95 dark:text-white dark:ring-slate-500"
                     style={{
-                      fontSize: "clamp(2.2rem, 7vw, 5.5rem)",
-                      textShadow: "0 1px 0 rgba(255,255,255,0.9), 0 2px 6px rgba(0,0,0,0.15)",
+                      fontSize: "clamp(1.75rem, 5vw, 4rem)",
+                      textShadow: "none",
                     }}
                   >
                     %{genelPercent.toFixed(0)}
@@ -459,39 +460,41 @@ export default function Ekran1IcerikPage() {
             </div>
           </section>
 
-          {/* Aşama kartları */}
+          {/* Aşama kartları — üst blok flex-1 olmadığı için kesilmeden sıralanır */}
           {stageRows.length > 0 && (
-            <section className="mt-auto grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 md:gap-4 lg:grid-cols-5">
-              {stageRows.map((row, idx) => (
-                <div
-                  key={`${row.label}-${idx}`}
-                  className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:p-4"
-                >
-                  {/* Üst renk şeridi */}
-                  <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${row.gradient}`} />
+            <section className="shrink-0 pb-4 pt-1">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3 lg:grid-cols-5 min-[1920px]:gap-4">
+                {stageRows.map((row, idx) => (
+                  <div
+                    key={`${row.label}-${idx}`}
+                    className="relative overflow-hidden rounded-2xl border-2 border-slate-300 bg-white p-3 shadow-md md:p-3.5 dark:border-slate-600 dark:bg-slate-900"
+                  >
+                    {/* Üst renk şeridi */}
+                    <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${row.gradient}`} />
 
-                  <div className="flex items-start justify-between gap-1 pt-1">
-                    <span className="text-xs font-semibold leading-tight text-slate-600 md:text-sm">
-                      {row.label}
-                    </span>
-                    <span className={`shrink-0 text-lg font-black tabular-nums md:text-2xl ${row.textColor}`}>
-                      {row.pct.toFixed(0)}%
-                    </span>
+                    <div className="flex items-start justify-between gap-2 pt-1.5">
+                      <span className="min-w-0 text-left text-[11px] font-bold leading-snug text-slate-800 sm:text-xs md:text-sm dark:text-slate-100">
+                        {row.label}
+                      </span>
+                      <span className={`shrink-0 text-base font-black tabular-nums sm:text-lg md:text-xl ${row.textColor} dark:opacity-95`}>
+                        {row.pct.toFixed(0)}%
+                      </span>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200 md:h-3 dark:bg-slate-700">
+                      <div
+                        className={`h-full rounded-full bg-gradient-to-r ${row.gradient} transition-[width] duration-1000 ease-out`}
+                        style={{ width: `${row.pct}%` }}
+                      />
+                    </div>
+
+                    <p className="mt-2 text-[11px] font-bold tabular-nums text-slate-800 sm:text-xs md:text-sm dark:text-slate-200">
+                      {row.value.toLocaleString("tr-TR")} / {target.toLocaleString("tr-TR")}
+                    </p>
                   </div>
-
-                  {/* Progress bar */}
-                  <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-slate-100 md:h-2.5">
-                    <div
-                      className={`h-full rounded-full bg-gradient-to-r ${row.gradient} transition-[width] duration-1000 ease-out`}
-                      style={{ width: `${row.pct}%` }}
-                    />
-                  </div>
-
-                  <p className="mt-1.5 text-xs font-semibold tabular-nums text-slate-500 md:text-sm">
-                    {row.value.toLocaleString("tr-TR")} / {target.toLocaleString("tr-TR")}
-                  </p>
-                </div>
-              ))}
+                ))}
+              </div>
             </section>
           )}
         </div>
