@@ -2,16 +2,51 @@
 
 import { useState } from "react";
 import { ProductionRow } from "@/lib/types";
+import { isNewSlotLayout } from "@/lib/productionSlots";
 
 type BulkEntryPanelProps = {
   rows: ProductionRow[];
-  onApply: (entries: Array<{ workerId: number; t1000: number; t1300: number; t1600: number; t1830: number }>) => Promise<void>;
+  /** Seçili gün — 21.04.2026 ve sonrası 9 saat sütunu, öncesi 4 sütun */
+  selectedDate: string;
+  onApply: (entries: Array<{
+    workerId: number;
+    t1000: number;
+    t1300: number;
+    t1600: number;
+    t1830: number;
+    h0900: number;
+    h1000: number;
+    h1115: number;
+    h1215: number;
+    h1300: number;
+    h1445: number;
+    h1545: number;
+    h1700: number;
+    h1830: number;
+  }>) => Promise<void>;
 };
 
-export default function BulkEntryPanel({ rows, onApply }: BulkEntryPanelProps) {
+const Z = () => ({
+  t1000: 0,
+  t1300: 0,
+  t1600: 0,
+  t1830: 0,
+  h0900: 0,
+  h1000: 0,
+  h1115: 0,
+  h1215: 0,
+  h1300: 0,
+  h1445: 0,
+  h1545: 0,
+  h1700: 0,
+  h1830: 0,
+});
+
+export default function BulkEntryPanel({ rows, onApply, selectedDate }: BulkEntryPanelProps) {
   const [text, setText] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const newLayout = isNewSlotLayout(selectedDate);
 
   async function handleApply() {
     setMessage(null);
@@ -24,12 +59,18 @@ export default function BulkEntryPanel({ rows, onApply }: BulkEntryPanelProps) {
     }
 
     const byName = new Map(rows.map((r) => [r.name.toLowerCase(), r]));
-    const entries: Array<{ workerId: number; t1000: number; t1300: number; t1600: number; t1830: number }> = [];
+    const needCols = newLayout ? 10 : 5;
+    type EntryRow = { workerId: number } & ReturnType<typeof Z>;
+    const entries: EntryRow[] = [];
 
     for (const line of lines) {
       const cols = line.split("\t");
-      if (cols.length < 5) {
-        setError("Her satır: Ad Soyad + 4 saat değeri (TAB ayraçlı) olmalı.");
+      if (cols.length < needCols) {
+        setError(
+          newLayout
+            ? "Her satır: Ad Soyad + 9 saat değeri (TAB ayraçlı) olmalı."
+            : "Her satır: Ad Soyad + 4 saat değeri (TAB ayraçlı) olmalı."
+        );
         return;
       }
       const name = cols[0].trim().toLowerCase();
@@ -39,13 +80,31 @@ export default function BulkEntryPanel({ rows, onApply }: BulkEntryPanelProps) {
         return;
       }
 
-      entries.push({
-        workerId: worker.workerId,
-        t1000: Number(cols[1]) || 0,
-        t1300: Number(cols[2]) || 0,
-        t1600: Number(cols[3]) || 0,
-        t1830: Number(cols[4]) || 0
-      });
+      const base = Z();
+      if (newLayout) {
+        entries.push({
+          workerId: worker.workerId,
+          ...base,
+          h0900: Number(cols[1]) || 0,
+          h1000: Number(cols[2]) || 0,
+          h1115: Number(cols[3]) || 0,
+          h1215: Number(cols[4]) || 0,
+          h1300: Number(cols[5]) || 0,
+          h1445: Number(cols[6]) || 0,
+          h1545: Number(cols[7]) || 0,
+          h1700: Number(cols[8]) || 0,
+          h1830: Number(cols[9]) || 0,
+        });
+      } else {
+        entries.push({
+          workerId: worker.workerId,
+          ...base,
+          t1000: Number(cols[1]) || 0,
+          t1300: Number(cols[2]) || 0,
+          t1600: Number(cols[3]) || 0,
+          t1830: Number(cols[4]) || 0,
+        });
+      }
     }
 
     try {
@@ -60,14 +119,30 @@ export default function BulkEntryPanel({ rows, onApply }: BulkEntryPanelProps) {
     <section className="surface-card rounded-xl border border-slate-200/90 p-4 shadow-surface-sm dark:border-slate-700 dark:text-slate-100">
       <h2 className="text-base font-semibold text-slate-900 dark:text-white">Toplu Veri Girişi</h2>
       <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-        Excel&apos;den satırları seçip yapıştırın. Format:{" "}
-        <code className="rounded bg-slate-100 px-1 text-xs dark:bg-slate-800">Ad Soyad[TAB]10:00[TAB]13:00[TAB]16:00[TAB]18:30</code>
+        Excel&apos;den satırları seçip yapıştırın.{" "}
+        {newLayout ? (
+          <>
+            Format (9 sütun):{" "}
+            <code className="rounded bg-slate-100 px-1 text-[10px] leading-tight dark:bg-slate-800">
+              Ad[TAB]09:00[TAB]10:00[TAB]11:15[TAB]12:15[TAB]13:00[TAB]14:45[TAB]15:45[TAB]17:00[TAB]18:30
+            </code>
+          </>
+        ) : (
+          <>
+            Format:{" "}
+            <code className="rounded bg-slate-100 px-1 text-xs dark:bg-slate-800">Ad Soyad[TAB]10:00[TAB]13:00[TAB]16:00[TAB]18:30</code>
+          </>
+        )}
       </p>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={6}
-        placeholder={"Örnek:\nAyşe Kaya\t12\t10\t8\t6"}
+        placeholder={
+          newLayout
+            ? "Örnek:\nAyşe Kaya\t1\t2\t3\t4\t5\t6\t7\t8\t9"
+            : "Örnek:\nAyşe Kaya\t12\t10\t8\t6"
+        }
         className="mt-3 w-full rounded-md border border-slate-300 bg-white p-3 font-mono text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
       />
       <div className="mt-3 flex flex-wrap items-center gap-3">

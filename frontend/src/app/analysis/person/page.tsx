@@ -11,19 +11,21 @@ import {
 } from "@/lib/api";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
+import { aggregateDisplaySlots, DISPLAY_SLOT_CHART_LABELS } from "@/lib/displaySlotAggregation";
+import { sumProductionRow } from "@/lib/productionSlots";
 import { SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
-import type { Worker, WorkerProductionDayDetail } from "@/lib/types";
+import type { ProductionRow, Worker, WorkerProductionDayDetail } from "@/lib/types";
 
 const SLOTS = [
-  { key: "t1000" as const, label: "10:00" },
-  { key: "t1300" as const, label: "13:00" },
-  { key: "t1600" as const, label: "16:00" },
-  { key: "t1830" as const, label: "18:30" },
+  { key: "t1000" as const, label: DISPLAY_SLOT_CHART_LABELS[0] },
+  { key: "t1300" as const, label: DISPLAY_SLOT_CHART_LABELS[1] },
+  { key: "t1600" as const, label: DISPLAY_SLOT_CHART_LABELS[2] },
+  { key: "t1830" as const, label: DISPLAY_SLOT_CHART_LABELS[3] },
 ];
 
 function dayTotal(r: WorkerProductionDayDetail): number {
-  return r.t1000 + r.t1300 + r.t1600 + r.t1830;
+  return sumProductionRow(r as unknown as ProductionRow);
 }
 
 function formatDateLong(iso: string): string {
@@ -178,10 +180,11 @@ export default function PersonAnalysisPage() {
     for (const r of rows) {
       const t = dayTotal(r);
       grandTotal += t;
-      slotTotals.t1000 += r.t1000;
-      slotTotals.t1300 += r.t1300;
-      slotTotals.t1600 += r.t1600;
-      slotTotals.t1830 += r.t1830;
+      const d = aggregateDisplaySlots(r);
+      slotTotals.t1000 += d.t1000;
+      slotTotals.t1300 += d.t1300;
+      slotTotals.t1600 += d.t1600;
+      slotTotals.t1830 += d.t1830;
     }
     let maxDay: { date: string; total: number } | null = null;
     let minDay: { date: string; total: number } | null = null;
@@ -257,17 +260,20 @@ export default function PersonAnalysisPage() {
       { Alan: "En düşük gün", Değer: stats.minDay ? `${stats.minDay.date} (${stats.minDay.total})` : "—" },
       { Alan: "Baskın saat dilimi", Değer: `${stats.dominantSlot} (${stats.dominantSlotTotal})` },
     ];
-    const gunluk = rows.map((r) => ({
-      Tarih: r.productionDate,
-      "Kayıt no": r.workerId ?? "",
-      Bölüm: teamLabel(r.team),
-      Proses: r.process,
-      "10:00": r.t1000,
-      "13:00": r.t1300,
-      "16:00": r.t1600,
-      "18:30": r.t1830,
-      "Gün toplamı": dayTotal(r),
-    }));
+    const gunluk = rows.map((r) => {
+      const d = aggregateDisplaySlots(r);
+      return {
+        Tarih: r.productionDate,
+        "Kayıt no": r.workerId ?? "",
+        Bölüm: teamLabel(r.team),
+        Proses: r.process,
+        [DISPLAY_SLOT_CHART_LABELS[0]]: d.t1000,
+        [DISPLAY_SLOT_CHART_LABELS[1]]: d.t1300,
+        [DISPLAY_SLOT_CHART_LABELS[2]]: d.t1600,
+        [DISPLAY_SLOT_CHART_LABELS[3]]: d.t1830,
+        "Gün toplamı": dayTotal(r),
+      };
+    });
     const bolumOzet = processBreakdown.map((row) => ({
       Bölüm: teamLabel(row.team),
       Proses: row.process,
@@ -679,7 +685,9 @@ export default function PersonAnalysisPage() {
                     const share = stats.grandTotal > 0 ? Math.round((100 * v) / stats.grandTotal) : 0;
                     return (
                       <li key={s.key} className="flex items-center gap-3 text-sm text-slate-800">
-                        <span className="w-14 shrink-0 font-mono text-xs font-semibold text-slate-600">{s.label}</span>
+                        <span className="w-32 shrink-0 text-[10px] font-semibold leading-tight text-slate-600 sm:w-40 sm:text-xs">
+                          {s.label}
+                        </span>
                         <div className="min-w-0 flex-1">
                           <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200/60">
                             <div
@@ -730,16 +738,25 @@ export default function PersonAnalysisPage() {
                       ) : null}
                       <th className="px-3 py-3">Bölüm</th>
                       <th className="px-3 py-3">Proses</th>
-                      <th className="px-3 py-3 text-right">10:00</th>
-                      <th className="px-3 py-3 text-right">13:00</th>
-                      <th className="px-3 py-3 text-right">16:00</th>
-                      <th className="px-3 py-3 text-right">18:30</th>
+                      <th className="max-w-[8rem] px-2 py-3 text-right text-[10px] leading-tight sm:max-w-none sm:px-3 sm:text-xs">
+                        {DISPLAY_SLOT_CHART_LABELS[0]}
+                      </th>
+                      <th className="max-w-[8rem] px-2 py-3 text-right text-[10px] leading-tight sm:max-w-none sm:px-3 sm:text-xs">
+                        {DISPLAY_SLOT_CHART_LABELS[1]}
+                      </th>
+                      <th className="max-w-[8rem] px-2 py-3 text-right text-[10px] leading-tight sm:max-w-none sm:px-3 sm:text-xs">
+                        {DISPLAY_SLOT_CHART_LABELS[2]}
+                      </th>
+                      <th className="max-w-[8rem] px-2 py-3 text-right text-[10px] leading-tight sm:max-w-none sm:px-3 sm:text-xs">
+                        {DISPLAY_SLOT_CHART_LABELS[3]}
+                      </th>
                       <th className="px-4 py-3 text-right">Gün toplamı</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((r) => {
                       const t = dayTotal(r);
+                      const d = aggregateDisplaySlots(r);
                       const rowKey = `${r.productionDate}-${r.workerId ?? 0}-${r.team}-${r.process}`;
                       return (
                         <tr
@@ -756,10 +773,10 @@ export default function PersonAnalysisPage() {
                           <td className="max-w-[10rem] truncate px-3 py-2.5 text-slate-700" title={r.process}>
                             {r.process}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{r.t1000}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{r.t1300}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{r.t1600}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{r.t1830}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{d.t1000}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{d.t1300}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{d.t1600}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{d.t1830}</td>
                           <td className="px-4 py-2.5 text-right font-bold tabular-nums text-teal-800">{t}</td>
                         </tr>
                       );

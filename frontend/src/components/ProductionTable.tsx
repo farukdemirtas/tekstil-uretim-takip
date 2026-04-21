@@ -4,6 +4,13 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { getProcesses, getTeams, getProsesVeriRowsFromServer, saveProsesVeriRowsToServer } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
 import {
+  isNewSlotLayout,
+  LEGACY_SLOT_DEFS,
+  NEW_SLOT_DEFS,
+  sumProductionRow,
+  type ProductionSlotKey,
+} from "@/lib/productionSlots";
+import {
   calcFromDk,
   getProsesMap,
   makeProsesKey,
@@ -20,7 +27,7 @@ type ProductionTableProps = {
   selectedDate: string;
   /** O günkü ürün modeli — model bazlı dk/saat/günlük adet okumak için */
   modelKey?: string;
-  onCellChange: (workerId: number, field: "t1000" | "t1300" | "t1600" | "t1830", value: number) => void;
+  onCellChange: (workerId: number, field: ProductionSlotKey, value: number) => void;
   onDeleteWorker: (workerId: number, workerName: string) => void;
   /** Bu gün sahada yok (satır soluk, hücreler kilitli) */
   onHideWorkerForDay?: (workerId: number, workerName: string) => void;
@@ -41,13 +48,6 @@ const FALLBACK_LABELS: Record<string, string> = {
   BITIM: "BİTİM",
   ADET: "ADET",
 };
-
-const TIME_FIELDS = [
-  { key: "t1000" as const, label: "10:00" },
-  { key: "t1300" as const, label: "13:00" },
-  { key: "t1600" as const, label: "16:00" },
-  { key: "t1830" as const, label: "18:30" },
-];
 
 function cellInputValue(n: number): string {
   return n === 0 ? "" : String(n);
@@ -175,6 +175,13 @@ export default function ProductionTable({
   }, []);
 
   const teamLabel = (code: string) => teamLabels[code] ?? FALLBACK_LABELS[code] ?? code;
+
+  const timeFields = useMemo(
+    () => (isNewSlotLayout(selectedDate) ? NEW_SLOT_DEFS : LEGACY_SLOT_DEFS),
+    [selectedDate]
+  );
+  const timeColCount = timeFields.length;
+  const tableColSpan = 2 + timeColCount + 1 + 3 + 1;
 
   function persistProsesServerSnapshot() {
     if (!modelKey) return;
@@ -342,28 +349,31 @@ export default function ProductionTable({
       )}
 
       <div className="hidden overflow-auto md:block">
-        <table className="w-full min-w-[960px] border-collapse text-sm">
+        <table className={`w-full border-collapse text-sm ${timeColCount > 4 ? "min-w-[1280px]" : "min-w-[960px]"}`}>
           <colgroup>
-            <col className="w-8" />         {/* No */}
-            <col className="w-52" />        {/* Ad Soyad + Proses */}
-            <col className="w-[6.5rem]" /> {/* 10:00 */}
-            <col className="w-[6.5rem]" /> {/* 13:00 */}
-            <col className="w-[6.5rem]" /> {/* 16:00 */}
-            <col className="w-[6.5rem]" /> {/* 18:30 */}
-            <col className="w-[5.5rem]" /> {/* Toplam */}
-            <col className="w-14" />        {/* Dk Adet */}
-            <col className="w-16" />        {/* Saat Adet */}
-            <col className="w-[4.5rem]" /> {/* Günlük Adet */}
-            <col className="w-12" />        {/* İşlem */}
+            <col className="w-8" />
+            <col className="w-52" />
+            {timeFields.map((f) => (
+              <col key={f.key} className={timeColCount > 4 ? "w-[4.5rem]" : "w-[6.5rem]"} />
+            ))}
+            <col className="w-[5.5rem]" />
+            <col className="w-14" />
+            <col className="w-16" />
+            <col className="w-[4.5rem]" />
+            <col className="w-12" />
           </colgroup>
           <thead className="bg-slate-800 text-white">
             <tr>
               <th className="px-2 py-2.5 text-center text-sm font-bold">No</th>
               <th className="px-3 py-2.5 text-left text-sm font-bold">Ad Soyad</th>
-              <th className="px-1 py-2.5 text-center text-sm font-bold">10:00</th>
-              <th className="px-1 py-2.5 text-center text-sm font-bold">13:00</th>
-              <th className="px-1 py-2.5 text-center text-sm font-bold">16:00</th>
-              <th className="px-1 py-2.5 text-center text-sm font-bold">18:30</th>
+              {timeFields.map((f) => (
+                <th
+                  key={f.key}
+                  className={`px-1 py-2.5 text-center font-bold ${timeColCount > 4 ? "text-[11px] leading-tight" : "text-sm"}`}
+                >
+                  {f.label}
+                </th>
+              ))}
               <th className="px-1 py-2.5 text-center text-sm font-bold">Toplam</th>
               <th className="px-1 py-2.5 text-center text-[11px] font-semibold text-amber-300/90" title="Proses Veri Sayfasından dakikalık adet">Dk</th>
               <th className="px-1 py-2.5 text-center text-[11px] font-semibold text-sky-300/90" title="Saatlik adet = dakikalık × 60">Saat</th>
@@ -375,12 +385,12 @@ export default function ProductionTable({
             {sections.map(({ team, teamRows, startNo }) => (
               <Fragment key={team}>
                 <tr className="bg-slate-200 dark:bg-slate-700">
-                  <td colSpan={11} className="px-3 py-2 text-left text-sm font-semibold">
+                  <td colSpan={tableColSpan} className="px-3 py-2 text-left text-sm font-semibold">
                     {teamLabel(team)}
                   </td>
                 </tr>
                 {teamRows.map((row, index) => {
-                  const total = row.t1000 + row.t1300 + row.t1600 + row.t1830;
+                  const total = sumProductionRow(row);
                   const isEditing = editingId === row.workerId;
                   const absent = Boolean(row.absentForDay);
                   return (
@@ -465,7 +475,7 @@ export default function ProductionTable({
                           </div>
                         )}
                       </td>
-                      {TIME_FIELDS.map(({ key }) => (
+                      {timeFields.map(({ key }) => (
                         <td key={key} className="px-1.5 py-1.5 text-center">
                           <input
                             type="number"
@@ -473,7 +483,7 @@ export default function ProductionTable({
                             disabled={absent}
                             aria-disabled={absent}
                             title={absent ? "Sahada yok — önce Bugün var ile açın" : undefined}
-                            value={cellInputValue(row[key])}
+                            value={cellInputValue(row[key as keyof ProductionRow] as number)}
                             onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
                             className={`w-full rounded border px-1 py-2 text-center text-[15px] font-medium tabular-nums outline-none dark:text-slate-100 ${
                               absent
@@ -623,7 +633,7 @@ export default function ProductionTable({
             </div>
 
             {teamRows.map((row, index) => {
-              const total = row.t1000 + row.t1300 + row.t1600 + row.t1830;
+              const total = sumProductionRow(row);
               const isEditing = editingId === row.workerId;
               const absent = Boolean(row.absentForDay);
 
@@ -706,16 +716,16 @@ export default function ProductionTable({
                     </div>
                   </div>
 
-                  <div className="mb-2 grid grid-cols-2 gap-2">
-                    {TIME_FIELDS.map(({ key, label }) => (
-                      <div key={key} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-600 dark:bg-slate-700">
-                        <span className="w-10 text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
+                  <div className={`mb-2 grid gap-2 ${timeColCount > 4 ? "grid-cols-3" : "grid-cols-2"}`}>
+                    {timeFields.map(({ key, label }) => (
+                      <div key={key} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-600 dark:bg-slate-700">
+                        <span className={`shrink-0 font-medium text-slate-500 dark:text-slate-400 ${timeColCount > 4 ? "w-[2.75rem] text-[10px]" : "w-10 text-xs"}`}>{label}</span>
                         <input
                           type="number"
                           inputMode="numeric"
                           min={0}
                           disabled={absent}
-                          value={cellInputValue(row[key])}
+                          value={cellInputValue(row[key as keyof ProductionRow] as number)}
                           onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
                           className={`min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none ${
                             absent

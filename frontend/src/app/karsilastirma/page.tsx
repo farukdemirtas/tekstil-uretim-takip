@@ -7,13 +7,14 @@ import { todayWeekdayIso } from "@/lib/businessCalendar";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission } from "@/lib/permissions";
 import type { WorkerComparisonData, WorkerCompStat } from "@/lib/api";
+import { DISPLAY_SLOT_CHART_LABELS } from "@/lib/displaySlotAggregation";
 import type { Worker } from "@/lib/types";
 
 const SLOTS = [
-  { key: "t1000" as const, label: "10:00" },
-  { key: "t1300" as const, label: "13:00" },
-  { key: "t1600" as const, label: "16:00" },
-  { key: "t1830" as const, label: "18:30" },
+  { key: "t1000" as const, label: DISPLAY_SLOT_CHART_LABELS[0] },
+  { key: "t1300" as const, label: DISPLAY_SLOT_CHART_LABELS[1] },
+  { key: "t1600" as const, label: DISPLAY_SLOT_CHART_LABELS[2] },
+  { key: "t1830" as const, label: DISPLAY_SLOT_CHART_LABELS[3] },
 ];
 
 /* ── SVG Line Chart ── */
@@ -350,10 +351,10 @@ export default function KarsilastirmaPage() {
       const slotBarW = (CW-34)/2;
       const slotX    = MAR+11;
       const slotsData = [
-        { label:"10:00", v1:w1.t1000, v2:w2.t1000 },
-        { label:"13:00", v1:w1.t1300, v2:w2.t1300 },
-        { label:"16:00", v1:w1.t1600, v2:w2.t1600 },
-        { label:"18:30", v1:w1.t1830, v2:w2.t1830 },
+        { label: DISPLAY_SLOT_CHART_LABELS[0], v1: w1.t1000, v2: w2.t1000 },
+        { label: DISPLAY_SLOT_CHART_LABELS[1], v1: w1.t1300, v2: w2.t1300 },
+        { label: DISPLAY_SLOT_CHART_LABELS[2], v1: w1.t1600, v2: w2.t1600 },
+        { label: DISPLAY_SLOT_CHART_LABELS[3], v1: w1.t1830, v2: w2.t1830 },
       ];
 
       for (const slot of slotsData) {
@@ -694,7 +695,7 @@ export default function KarsilastirmaPage() {
                       className="rounded-lg border border-slate-100 p-3 dark:border-slate-700"
                     >
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                        <span className="max-w-[min(100%,14rem)] text-xs font-semibold leading-tight text-slate-700 dark:text-slate-200 sm:text-sm">
                           {label}
                         </span>
                         <span

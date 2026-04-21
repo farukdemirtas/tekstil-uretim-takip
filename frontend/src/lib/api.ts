@@ -337,15 +337,25 @@ function parseProductionRow(raw: unknown): ProductionRow | null {
     absentRaw === 1 ||
     absentRaw === "1" ||
     String(absentRaw).toLowerCase() === "true";
+  const z = (k: string) => Number(o[k]) || 0;
   return {
     workerId,
     name: o.name != null ? String(o.name) : "",
     team: o.team != null ? String(o.team) : "",
     process: o.process != null ? String(o.process) : "",
-    t1000: Number(o.t1000) || 0,
-    t1300: Number(o.t1300) || 0,
-    t1600: Number(o.t1600) || 0,
-    t1830: Number(o.t1830) || 0,
+    t1000: z("t1000"),
+    t1300: z("t1300"),
+    t1600: z("t1600"),
+    t1830: z("t1830"),
+    h0900: z("h0900"),
+    h1000: z("h1000"),
+    h1115: z("h1115"),
+    h1215: z("h1215"),
+    h1300: z("h1300"),
+    h1445: z("h1445"),
+    h1545: z("h1545"),
+    h1700: z("h1700"),
+    h1830: z("h1830"),
     absentForDay: absentForDay || undefined,
     note: typeof o.note === "string" && o.note ? o.note : undefined,
   };
@@ -430,6 +440,15 @@ export async function saveProduction(payload: {
   t1300: number;
   t1600: number;
   t1830: number;
+  h0900: number;
+  h1000: number;
+  h1115: number;
+  h1215: number;
+  h1300: number;
+  h1445: number;
+  h1545: number;
+  h1700: number;
+  h1830: number;
 }): Promise<void> {
   const response = await apiFetch(`${apiBase()}/production`, {
     method: "POST",
@@ -447,6 +466,15 @@ export async function saveProductionBulk(payload: {
     t1300: number;
     t1600: number;
     t1830: number;
+    h0900: number;
+    h1000: number;
+    h1115: number;
+    h1215: number;
+    h1300: number;
+    h1445: number;
+    h1545: number;
+    h1700: number;
+    h1830: number;
   }>;
 }): Promise<void> {
   const response = await apiFetch(`${apiBase()}/production/bulk`, {
@@ -677,7 +705,22 @@ export async function getTopWorkersAnalytics(params: {
   return response.json();
 }
 
-export type WorkerHourlyBreakdown = { t1000: number; t1300: number; t1600: number; t1830: number };
+/** API toplamı: legacy t* + isteğe bağlı h* (ekran3/analiz gruplaması için) */
+export type WorkerHourlyBreakdown = {
+  t1000: number;
+  t1300: number;
+  t1600: number;
+  t1830: number;
+  h0900?: number;
+  h1000?: number;
+  h1115?: number;
+  h1215?: number;
+  h1300?: number;
+  h1445?: number;
+  h1545?: number;
+  h1700?: number;
+  h1830?: number;
+};
 
 export async function getWorkerHourlyBreakdown(params: {
   workerId: number;

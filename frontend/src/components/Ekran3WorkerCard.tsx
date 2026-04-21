@@ -1,32 +1,38 @@
 import type { WorkerHourlyBreakdown } from "@/lib/api";
+import { aggregateDisplaySlots, DISPLAY_SLOT_SHORT_LABELS } from "@/lib/displaySlotAggregation";
 import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import type { TopWorkerAnalytics } from "@/lib/types";
 
+/** Ekranda tek saat (eski düzen); değerler aggregateDisplaySlots ile gruplanır. */
 const SLOTS = [
   {
     key: "t1000" as const,
-    label: "10:00",
+    label: DISPLAY_SLOT_SHORT_LABELS[0],
+    title: "Toplam: 09:00 + 10:00",
     gradient: "from-violet-500 to-purple-400",
     textColor: "text-violet-700",
     dot: "bg-violet-500",
   },
   {
     key: "t1300" as const,
-    label: "13:00",
+    label: DISPLAY_SLOT_SHORT_LABELS[1],
+    title: "Toplam: 11:15 + 12:15 + 13:00",
     gradient: "from-sky-500 to-blue-400",
     textColor: "text-sky-700",
     dot: "bg-sky-500",
   },
   {
     key: "t1600" as const,
-    label: "16:00",
+    label: DISPLAY_SLOT_SHORT_LABELS[2],
+    title: "Toplam: 14:45 + 15:45",
     gradient: "from-emerald-500 to-teal-400",
     textColor: "text-emerald-700",
     dot: "bg-emerald-500",
   },
   {
     key: "t1830" as const,
-    label: "18:30",
+    label: DISPLAY_SLOT_SHORT_LABELS[3],
+    title: "Toplam: 17:00 + 18:30",
     gradient: "from-amber-500 to-orange-400",
     textColor: "text-amber-700",
     dot: "bg-amber-500",
@@ -46,6 +52,7 @@ export function Ekran3WorkerCard({
   worker: TopWorkerAnalytics | null;
   rank: number | null;
   teamLabel: string;
+  /** API ham veya dört dilim; içeride gruplanır */
   hourly: WorkerHourlyBreakdown | null;
   singleDayMode?: boolean;
   multiDayTotal?: number;
@@ -66,7 +73,8 @@ export function Ekran3WorkerCard({
   }
 
   const noTodayData = singleDayMode && worker.totalProduction === 0;
-  const h = hourly ?? { t1000: 0, t1300: 0, t1600: 0, t1830: 0 };
+  const raw = hourly ?? { t1000: 0, t1300: 0, t1600: 0, t1830: 0 };
+  const h = aggregateDisplaySlots(raw);
   const singleAvgs = singleDayMode ? computeShiftHourAverages(h, worker.totalProduction) : null;
 
   const hasMultiDay = multiDayActiveDays > 0;
@@ -187,13 +195,14 @@ export function Ekran3WorkerCard({
 
       {/* ── SAATLİK ÜRETİM 2×2 ── */}
       <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-0 divide-x divide-y divide-slate-100">
-        {SLOTS.map(({ key, label, textColor, dot, gradient }) => {
+        {SLOTS.map(({ key, label, title: slotTitle, textColor, dot, gradient }) => {
           const val = noTodayData ? 0 : h[key];
           const active = val > 0;
 
           return (
             <div
               key={key}
+              title={slotTitle}
               className="relative flex min-h-0 flex-col justify-between bg-white p-3 sm:p-4"
             >
               {/* Sol-üst renk noktası + saat */}

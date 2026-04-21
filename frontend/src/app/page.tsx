@@ -29,11 +29,19 @@ import {
 } from "@/lib/api";
 import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
 import {
-  PRODUCTION_EXCEL_HEADERS,
+  getProductionExcelHeaders,
+  getConsolidatedProductionExcelHeaders,
   PRODUCTION_EXCEL_META_MODEL,
   PRODUCTION_EXCEL_META_PRODUCT,
   PRODUCTION_EXCEL_SHEET_NAME,
 } from "@/lib/productionExcelFormat";
+import {
+  LEGACY_SLOT_DEFS,
+  NEW_SLOT_DEFS,
+  isNewSlotLayout,
+  sumProductionRow,
+  type ProductionSlotKey,
+} from "@/lib/productionSlots";
 import ExcelImportPanel from "@/components/ExcelImportPanel";
 import BulkEntryPanel from "@/components/BulkEntryPanel";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
@@ -57,6 +65,13 @@ function formatExportDateLabel(iso: string): string {
 }
 
 /** Ana tablo ile aynı bölüm sırası (Ayarlardaki takım sırası veya varsayılan). */
+function productionRowSlotValues(row: ProductionRow, dateIso: string): number[] {
+  if (isNewSlotLayout(dateIso)) {
+    return NEW_SLOT_DEFS.map(({ key }) => Number(row[key as keyof ProductionRow]) || 0);
+  }
+  return LEGACY_SLOT_DEFS.map(({ key }) => Number(row[key as keyof ProductionRow]) || 0);
+}
+
 function orderedExportRows(rows: ProductionRow[], teamMeta: Array<{ code: string }>): ProductionRow[] {
   const inData = [...new Set(rows.map((r) => r.team))];
   const order = teamMeta.length ? teamMeta.map((t) => t.code) : [...EXPORT_TEAM_FALLBACK];
@@ -272,7 +287,16 @@ export default function HomePage() {
       t1000: snap.t1000,
       t1300: snap.t1300,
       t1600: snap.t1600,
-      t1830: snap.t1830
+      t1830: snap.t1830,
+      h0900: snap.h0900,
+      h1000: snap.h1000,
+      h1115: snap.h1115,
+      h1215: snap.h1215,
+      h1300: snap.h1300,
+      h1445: snap.h1445,
+      h1545: snap.h1545,
+      h1700: snap.h1700,
+      h1830: snap.h1830,
     });
     try {
       const ht = await getHedefTakipStageTotals(
@@ -286,7 +310,7 @@ export default function HomePage() {
     }
   }
 
-  function handleCellChange(workerId: number, field: "t1000" | "t1300" | "t1600" | "t1830", value: number) {
+  function handleCellChange(workerId: number, field: ProductionSlotKey, value: number) {
     const target = rows.find((row) => row.workerId === workerId);
     if (!target || target.absentForDay) return;
 
@@ -341,7 +365,7 @@ export default function HomePage() {
     dayProductModel: string
   ): { aoa: (string | number)[][]; headerRowIndex: number; lastColIdx: number } {
     const sorted = orderedExportRows(dayRows, teamMeta);
-    const headers = [...PRODUCTION_EXCEL_HEADERS];
+    const headers = [...getProductionExcelHeaders(dateIso)];
     const lastColIdx = headers.length - 1;
     const aoa: (string | number)[][] = [];
 
@@ -360,17 +384,22 @@ export default function HomePage() {
     aoa.push([...headers]);
 
     const headerRowIndex = aoa.length - 1;
-    let sum10 = 0, sum13 = 0, sum16 = 0, sum1830 = 0, sumTot = 0;
+    const slotCount = headers.length - 5;
+    const slotSums = new Array(slotCount).fill(0);
+    let sumTot = 0;
 
     sorted.forEach((row, index) => {
-      const t10 = row.t1000, t13 = row.t1300, t16 = row.t1600, t18 = row.t1830;
-      const tot = t10 + t13 + t16 + t18;
-      sum10 += t10; sum13 += t13; sum16 += t16; sum1830 += t18; sumTot += tot;
-      aoa.push([index + 1, row.name, resolveTeamLabel(row.team), row.process, t10, t13, t16, t18, tot]);
+      const vals = productionRowSlotValues(row, dateIso);
+      const tot = sumProductionRow(row);
+      vals.forEach((v, i) => {
+        slotSums[i] += v;
+      });
+      sumTot += tot;
+      aoa.push([index + 1, row.name, resolveTeamLabel(row.team), row.process, ...vals, tot]);
     });
 
     aoa.push([]);
-    aoa.push(["TOPLAM", "", "", "", sum10, sum13, sum16, sum1830, sumTot]);
+    aoa.push(["TOPLAM", "", "", "", ...slotSums, sumTot]);
     return { aoa, headerRowIndex, lastColIdx };
   }
 
@@ -379,7 +408,15 @@ export default function HomePage() {
     const { aoa, headerRowIndex, lastColIdx } = buildSheetAoa(dateIso, dayRows, dayProductName, dayProductModel);
     const worksheet = XLSX.utils.aoa_to_sheet(aoa);
     worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } }];
-    worksheet["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 22 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }];
+    const slotCols = lastColIdx - 4;
+    worksheet["!cols"] = [
+      { wch: 6 },
+      { wch: 30 },
+      { wch: 22 },
+      { wch: 20 },
+      ...Array.from({ length: slotCols }, () => ({ wch: 10 })),
+      { wch: 12 },
+    ];
     const lastTableRowIndex = headerRowIndex + Math.max(dayRows.length, 0);
     worksheet["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: headerRowIndex, c: 0 }, e: { r: lastTableRowIndex, c: lastColIdx } }) };
     const rowHeights: XLSX.RowInfo[] = [];
@@ -393,52 +430,72 @@ export default function HomePage() {
   function buildConsolidatedSheet(
     allDays: Array<{ date: string; rows: ProductionRow[]; productName: string; productModel: string }>
   ): XLSX.WorkSheet {
-    const TOPLU_HEADERS = ["Tarih", "Ad Soyad", "Bölüm", "Proses", "10:00", "13:00", "16:00", "18:30", "Günlük Toplam"] as const;
-    const lastColIdx = TOPLU_HEADERS.length - 1;
-    const aoa: (string | number)[][] = [];
+    let maxColsAcross = 9;
+    for (const { date } of allDays) {
+      maxColsAcross = Math.max(maxColsAcross, getConsolidatedProductionExcelHeaders(date).length);
+    }
 
-    // Başlık meta
+    const aoa: (string | number)[][] = [];
+    const merges: XLSX.Range[] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: maxColsAcross - 1 } }];
+
     aoa.push(["Yeşil İmaj Tekstil — Toplu Üretim Raporu"]);
     aoa.push(["Tarih aralığı", `${formatExportDateLabel(bulkExportStart)} — ${formatExportDateLabel(bulkExportEnd)}`]);
     aoa.push(["Gün sayısı", allDays.length]);
     aoa.push(["Dışa aktarım", new Date().toLocaleString("tr-TR")]);
     aoa.push([]);
-    aoa.push([...TOPLU_HEADERS]);
-    const headerRowIndex = aoa.length - 1;
 
-    let grandSum10 = 0, grandSum13 = 0, grandSum16 = 0, grandSum1830 = 0, grandSumTot = 0;
-    const merges: XLSX.Range[] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } }];
+    let grandSumTot = 0;
 
     for (const { date, rows: dayRows, productName: pn } of allDays) {
       const sorted = orderedExportRows(dayRows, teamMeta);
       if (sorted.length === 0) continue;
 
-      // Gün başlığı satırı
+      const headers = [...getConsolidatedProductionExcelHeaders(date)];
+      const lastColIdx = headers.length - 1;
+
       const dayLabelRow = aoa.length;
-      aoa.push([formatExportDateLabel(date) + (pn.trim() ? `  —  ${pn.trim()}` : ""), "", "", "", "", "", "", "", ""]);
+      const labelPad = new Array(headers.length).fill("");
+      labelPad[0] = formatExportDateLabel(date) + (pn.trim() ? `  —  ${pn.trim()}` : "");
+      aoa.push(labelPad);
       merges.push({ s: { r: dayLabelRow, c: 0 }, e: { r: dayLabelRow, c: lastColIdx } });
 
-      let daySum10 = 0, daySum13 = 0, daySum16 = 0, daySum1830 = 0, daySumTot = 0;
+      aoa.push(headers);
+
+      const slotCount = headers.length - 5;
+      const daySums = new Array(slotCount).fill(0);
+      let daySumTot = 0;
+
       sorted.forEach((row) => {
-        const t10 = row.t1000, t13 = row.t1300, t16 = row.t1600, t18 = row.t1830;
-        const tot = t10 + t13 + t16 + t18;
-        daySum10 += t10; daySum13 += t13; daySum16 += t16; daySum1830 += t18; daySumTot += tot;
-        aoa.push([formatExportDateLabel(date), row.name, resolveTeamLabel(row.team), row.process, t10, t13, t16, t18, tot]);
+        const vals = productionRowSlotValues(row, date);
+        const tot = sumProductionRow(row);
+        vals.forEach((v: number, i: number) => {
+          daySums[i] += v;
+        });
+        daySumTot += tot;
+        aoa.push([formatExportDateLabel(date), row.name, resolveTeamLabel(row.team), row.process, ...vals, tot]);
       });
-      grandSum10 += daySum10; grandSum13 += daySum13; grandSum16 += daySum16; grandSum1830 += daySum1830; grandSumTot += daySumTot;
-      aoa.push(["Gün toplamı", "", "", "", daySum10, daySum13, daySum16, daySum1830, daySumTot]);
+      grandSumTot += daySumTot;
+      aoa.push(["Gün toplamı", "", "", "", ...daySums, daySumTot]);
       aoa.push([]);
     }
 
-    aoa.push(["GENEL TOPLAM", "", "", "", grandSum10, grandSum13, grandSum16, grandSum1830, grandSumTot]);
+    const grandRow = new Array(maxColsAcross).fill("");
+    grandRow[0] = "GENEL TOPLAM";
+    grandRow[maxColsAcross - 1] = grandSumTot;
+    aoa.push(grandRow);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!merges"] = merges;
-    ws["!cols"] = [{ wch: 24 }, { wch: 30 }, { wch: 22 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 }];
-    ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: headerRowIndex, c: 0 }, e: { r: headerRowIndex + 1, c: lastColIdx } }) };
+    ws["!cols"] = Array.from({ length: maxColsAcross }, (_, i) => {
+      if (i === 0) return { wch: 24 };
+      if (i === 1) return { wch: 30 };
+      if (i === 2) return { wch: 22 };
+      if (i === 3) return { wch: 20 };
+      if (i === maxColsAcross - 1) return { wch: 14 };
+      return { wch: 10 };
+    });
     const rowHeights: XLSX.RowInfo[] = [];
     rowHeights[0] = { hpt: 26 };
-    rowHeights[headerRowIndex] = { hpt: 20 };
     ws["!rows"] = rowHeights;
     return ws;
   }
@@ -495,7 +552,7 @@ export default function HomePage() {
   function handleExportExcel() {
     const sorted = orderedExportRows(rows, teamMeta);
     /* Tablo: Sıra → Ad Soyad → Bölüm → Proses → saatler → Toplam */
-    const headers = [...PRODUCTION_EXCEL_HEADERS];
+    const headers = [...getProductionExcelHeaders(selectedDate)];
     const lastColIdx = headers.length - 1;
     const aoa: (string | number)[][] = [];
 
@@ -510,51 +567,33 @@ export default function HomePage() {
 
     const headerRowIndex = aoa.length - 1;
 
-    let sum10 = 0;
-    let sum13 = 0;
-    let sum16 = 0;
-    let sum1830 = 0;
+    const slotCount = headers.length - 5;
+    const slotSums = new Array(slotCount).fill(0);
     let sumTot = 0;
 
     sorted.forEach((row, index) => {
-      const t10 = row.t1000;
-      const t13 = row.t1300;
-      const t16 = row.t1600;
-      const t18 = row.t1830;
-      const tot = t10 + t13 + t16 + t18;
-      sum10 += t10;
-      sum13 += t13;
-      sum16 += t16;
-      sum1830 += t18;
+      const vals = productionRowSlotValues(row, selectedDate);
+      const tot = sumProductionRow(row);
+      vals.forEach((v: number, i: number) => {
+        slotSums[i] += v;
+      });
       sumTot += tot;
-      aoa.push([
-        index + 1,
-        row.name,
-        resolveTeamLabel(row.team),
-        row.process,
-        t10,
-        t13,
-        t16,
-        t18,
-        tot,
-      ]);
+      aoa.push([index + 1, row.name, resolveTeamLabel(row.team), row.process, ...vals, tot]);
     });
 
     aoa.push([]);
-    aoa.push(["TOPLAM", "", "", "", sum10, sum13, sum16, sum1830, sumTot]);
+    aoa.push(["TOPLAM", "", "", "", ...slotSums, sumTot]);
 
     const worksheet = XLSX.utils.aoa_to_sheet(aoa);
     worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } }];
 
+    const slotCols = headers.length - 5;
     worksheet["!cols"] = [
       { wch: 6 },
       { wch: 30 },
       { wch: 22 },
       { wch: 20 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
+      ...Array.from({ length: slotCols }, () => ({ wch: 10 })),
       { wch: 12 },
     ];
 
@@ -1188,6 +1227,7 @@ export default function HomePage() {
       {!loading && rows.length > 0 && role !== "admin" && hasPermission("topluEkle") ? (
         <BulkEntryPanel
           rows={rows}
+          selectedDate={selectedDate}
           onApply={async (entries) => {
             await saveProductionBulk({ date: selectedDate, entries });
             await loadDateData(selectedDate);

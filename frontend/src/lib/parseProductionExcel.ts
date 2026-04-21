@@ -5,6 +5,7 @@ import {
   PRODUCTION_EXCEL_SHEET_NAME,
 } from "@/lib/productionExcelFormat";
 
+/** Tüm üretim slotları (kullanılmayan düzen 0) */
 export type ParsedExcelProductionRow = {
   name: string;
   teamLabel: string;
@@ -13,6 +14,15 @@ export type ParsedExcelProductionRow = {
   t1300: number;
   t1600: number;
   t1830: number;
+  h0900: number;
+  h1000: number;
+  h1115: number;
+  h1215: number;
+  h1300: number;
+  h1445: number;
+  h1545: number;
+  h1700: number;
+  h1830: number;
 };
 
 export type ParsedProductionExcel = {
@@ -36,12 +46,10 @@ function cellNum(v: unknown): number {
   return Math.max(0, Math.round(n));
 }
 
-/** Türkçe başlık eşlemesi (Excel’de büyük/küçük harf farkı olabilir). */
 function normHeader(s: string): string {
   return cellStr(s).toLocaleLowerCase("tr-TR");
 }
 
-/** Dışa aktarılan tablo başlıkları — normalize edilmiş anahtar → tam eşleşme için beklenen tek biçim */
 const HEADER_KEYS = {
   ad: normHeader("Ad Soyad"),
   bolum: normHeader("Bölüm"),
@@ -52,10 +60,27 @@ const HEADER_KEYS = {
   t18: normHeader("18:30"),
 } as const;
 
+const NEW_SLOT_LABELS = [
+  "09:00",
+  "10:00",
+  "11:15",
+  "12:15",
+  "13:00",
+  "14:45",
+  "15:45",
+  "17:00",
+  "18:30",
+] as const;
+
 function headerColIndex(labels: unknown[], key: keyof typeof HEADER_KEYS): number {
   const nLabels = labels.map((c) => normHeader(cellStr(c)));
   const want = HEADER_KEYS[key];
   return nLabels.indexOf(want);
+}
+
+function headerColIndexLabel(labels: unknown[], label: string): number {
+  const nLabels = labels.map((c) => normHeader(cellStr(c)));
+  return nLabels.indexOf(normHeader(label));
 }
 
 function pickSheet(wb: XLSX.WorkBook): { sheet: XLSX.WorkSheet; sheetName: string } | null {
@@ -68,8 +93,25 @@ function pickSheet(wb: XLSX.WorkBook): { sheet: XLSX.WorkSheet; sheetName: strin
   return { sheet, sheetName: name };
 }
 
+const ZERO_ROW = (): Omit<ParsedExcelProductionRow, "name" | "teamLabel" | "process"> => ({
+  t1000: 0,
+  t1300: 0,
+  t1600: 0,
+  t1830: 0,
+  h0900: 0,
+  h1000: 0,
+  h1115: 0,
+  h1215: 0,
+  h1300: 0,
+  h1445: 0,
+  h1545: 0,
+  h1700: 0,
+  h1830: 0,
+});
+
 /**
  * Ana sayfa Excel export’u ile aynı yapı: sayfa "Üretim", başlık satırı Sıra|Ad Soyad|Bölüm|Proses|saatler|Toplam.
+ * 21.04.2026 sonrası dosyalarda 09:00 sütunu varsa yeni düzen okunur.
  */
 export function parseProductionExcelBuffer(buf: ArrayBuffer): ParsedProductionExcel {
   const warnings: string[] = [];
@@ -104,6 +146,7 @@ export function parseProductionExcelBuffer(buf: ArrayBuffer): ParsedProductionEx
   }
 
   let headerRow = -1;
+  let layout: "legacy" | "new" = "legacy";
   const col: Record<string, number> = {};
 
   for (let i = 0; i < aoa.length; i++) {
@@ -113,14 +156,38 @@ export function parseProductionExcelBuffer(buf: ArrayBuffer): ParsedProductionEx
     if (ad < 0) continue;
     const bolum = headerColIndex(row, "bolum");
     const proses = headerColIndex(row, "proses");
+    if (bolum < 0 || proses < 0) {
+      warnings.push("Tablo başlığı eksik (Bölüm veya Proses bulunamadı).");
+      continue;
+    }
+
+    const idx09 = headerColIndexLabel(row, "09:00");
+    if (idx09 >= 0) {
+      const newIdxs = NEW_SLOT_LABELS.map((lab) => headerColIndexLabel(row, lab));
+      if (newIdxs.some((ix) => ix < 0)) {
+        warnings.push("Yeni saat başlıkları eksik (09:00–18:30 dokuz sütun).");
+        continue;
+      }
+      layout = "new";
+      headerRow = i;
+      col.ad = ad;
+      col.bolum = bolum;
+      col.proses = proses;
+      NEW_SLOT_LABELS.forEach((lab, j) => {
+        col[`h${j}`] = newIdxs[j];
+      });
+      break;
+    }
+
     const t10 = headerColIndex(row, "t10");
     const t13 = headerColIndex(row, "t13");
     const t16 = headerColIndex(row, "t16");
     const t18 = headerColIndex(row, "t18");
-    if (bolum < 0 || proses < 0 || t10 < 0 || t13 < 0 || t16 < 0 || t18 < 0) {
+    if (t10 < 0 || t13 < 0 || t16 < 0 || t18 < 0) {
       warnings.push("Tablo başlığı eksik (Bölüm, Proses veya saat sütunları bulunamadı).");
       continue;
     }
+    layout = "legacy";
     headerRow = i;
     col.ad = ad;
     col.bolum = bolum;
@@ -155,15 +222,35 @@ export function parseProductionExcelBuffer(buf: ArrayBuffer): ParsedProductionEx
     const nameVal = cellStr(row[col.ad]);
     if (!nameVal) continue;
 
-    rows.push({
-      name: nameVal,
-      teamLabel: cellStr(row[col.bolum]),
-      process: cellStr(row[col.proses]),
-      t1000: cellNum(row[col.t10]),
-      t1300: cellNum(row[col.t13]),
-      t1600: cellNum(row[col.t16]),
-      t1830: cellNum(row[col.t18]),
-    });
+    const base = ZERO_ROW();
+    if (layout === "new") {
+      rows.push({
+        name: nameVal,
+        teamLabel: cellStr(row[col.bolum]),
+        process: cellStr(row[col.proses]),
+        ...base,
+        h0900: cellNum(row[col.h0]),
+        h1000: cellNum(row[col.h1]),
+        h1115: cellNum(row[col.h2]),
+        h1215: cellNum(row[col.h3]),
+        h1300: cellNum(row[col.h4]),
+        h1445: cellNum(row[col.h5]),
+        h1545: cellNum(row[col.h6]),
+        h1700: cellNum(row[col.h7]),
+        h1830: cellNum(row[col.h8]),
+      });
+    } else {
+      rows.push({
+        name: nameVal,
+        teamLabel: cellStr(row[col.bolum]),
+        process: cellStr(row[col.proses]),
+        ...base,
+        t1000: cellNum(row[col.t10]),
+        t1300: cellNum(row[col.t13]),
+        t1600: cellNum(row[col.t16]),
+        t1830: cellNum(row[col.t18]),
+      });
+    }
   }
 
   if (rows.length === 0) warnings.push("Tabloda veri satırı yok.");

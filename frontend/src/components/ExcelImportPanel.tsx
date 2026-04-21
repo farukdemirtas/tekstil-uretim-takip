@@ -113,6 +113,15 @@ function workersToMatchRows(workers: Worker[]): ProductionRow[] {
     t1300: 0,
     t1600: 0,
     t1830: 0,
+    h0900: 0,
+    h1000: 0,
+    h1115: 0,
+    h1215: 0,
+    h1300: 0,
+    h1445: 0,
+    h1545: 0,
+    h1700: 0,
+    h1830: 0,
   }));
 }
 
@@ -285,6 +294,15 @@ export default function ExcelImportPanel({ teamMeta, onImported, open: openProp,
           t1300: m.row.t1300,
           t1600: m.row.t1600,
           t1830: m.row.t1830,
+          h0900: m.row.h0900,
+          h1000: m.row.h1000,
+          h1115: m.row.h1115,
+          h1215: m.row.h1215,
+          h1300: m.row.h1300,
+          h1445: m.row.h1445,
+          h1545: m.row.h1545,
+          h1700: m.row.h1700,
+          h1830: m.row.h1830,
         })),
       });
       setOpen(false);

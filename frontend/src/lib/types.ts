@@ -16,10 +16,21 @@ export type ProductionRow = {
   name: string;
   team: Team;
   process: string;
+  /** Eski düzen (21.04.2026 öncesi) — 10:00 / 13:00 / 16:00 / 18:30 */
   t1000: number;
   t1300: number;
   t1600: number;
   t1830: number;
+  /** Yeni düzen (21.04.2026 ve sonrası) — dokuz saat dilimi */
+  h0900: number;
+  h1000: number;
+  h1115: number;
+  h1215: number;
+  h1300: number;
+  h1445: number;
+  h1545: number;
+  h1700: number;
+  h1830: number;
   /** Bu takvim günü sahada yok (satır soluk; üretim hücreleri kapalı) */
   absentForDay?: boolean;
   /** Personele özel not / açıklama (gün bazlı) */
@@ -61,6 +72,15 @@ export type WorkerProductionDayDetail = {
   t1300: number;
   t1600: number;
   t1830: number;
+  h0900?: number;
+  h1000?: number;
+  h1115?: number;
+  h1215?: number;
+  h1300?: number;
+  h1445?: number;
+  h1545?: number;
+  h1700?: number;
+  h1830?: number;
 };
 
 export type HourFilter = "" | "t1000" | "t1300" | "t1600" | "t1830";

@@ -19,6 +19,12 @@ import { hasPermission } from "@/lib/permissions";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { rankTercileStyles } from "@/lib/rankTercile";
+import {
+  aggregateDisplaySlots,
+  DISPLAY_SLOT_CHART_LABELS,
+  DISPLAY_SLOT_FILTER_LABELS,
+  displaySlotLabelForHourFilter,
+} from "@/lib/displaySlotAggregation";
 import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import type { WorkerHourlyBreakdown } from "@/lib/api";
 import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
@@ -188,14 +194,6 @@ export default function AnalysisPage() {
     return workerDailyRows.filter((row) => row.name.toLocaleLowerCase("tr").includes(query));
   }, [workerDailyRows, workerSearch]);
 
-  function hourLabel(hour: HourFilter) {
-    if (hour === "t1000") return "10:00";
-    if (hour === "t1300") return "13:00";
-    if (hour === "t1600") return "16:00";
-    if (hour === "t1830") return "18:30";
-    return "TÜM SAATLER";
-  }
-
   function exportExcel() {
     const topSheet = displayRows.map((row, index) => {
       const base: Record<string, string | number> = {
@@ -238,7 +236,7 @@ export default function AnalysisPage() {
     doc.text(`Tarih Aralığı: ${startDate} - ${endDate}`, 14, 20);
     doc.text(`Grup Filtresi: ${resolveTeamLabel(teamFilter)}`, 14, 25);
     doc.text(`Proses Filtresi: ${resolveProcessFilterLabel()}`, 14, 30);
-    doc.text(`Saat Filtresi: ${hourLabel(hourFilter)}`, 14, 35);
+    doc.text(`Saat Filtresi: ${displaySlotLabelForHourFilter(hourFilter)}`, 14, 35);
 
     const pdfHead = groupMeta
       ? [["# (proses içi)", "Genel", "Ad Soyad", "Grup", "Proses", "Çalışılan Gün", "Toplam Üretim"]]
@@ -383,10 +381,10 @@ export default function AnalysisPage() {
               {(
                 [
                   { key: "" as HourFilter, label: "Tümü" },
-                  { key: "t1000" as const, label: "10:00" },
-                  { key: "t1300" as const, label: "13:00" },
-                  { key: "t1600" as const, label: "16:00" },
-                  { key: "t1830" as const, label: "18:30" },
+                  { key: "t1000" as const, label: DISPLAY_SLOT_FILTER_LABELS[0] },
+                  { key: "t1300" as const, label: DISPLAY_SLOT_FILTER_LABELS[1] },
+                  { key: "t1600" as const, label: DISPLAY_SLOT_FILTER_LABELS[2] },
+                  { key: "t1830" as const, label: DISPLAY_SLOT_FILTER_LABELS[3] },
                 ] as const
               ).map(({ key, label }) => (
                 <button
@@ -521,12 +519,13 @@ export default function AnalysisPage() {
           : `#${globalRank}. sıra`;
 
         const isSingleAnalysisDay = startDate === endDate;
-        const hourlyForShift: WorkerHourlyBreakdown = hourlyData ?? {
+        const hourlyRaw: WorkerHourlyBreakdown = hourlyData ?? {
           t1000: 0,
           t1300: 0,
           t1600: 0,
           t1830: 0,
         };
+        const hourlyForShift = aggregateDisplaySlots(hourlyRaw);
         const shiftAvgs =
           isSingleAnalysisDay && !hourlyLoading
             ? computeShiftHourAverages(hourlyForShift, worker.totalProduction)
@@ -633,21 +632,22 @@ export default function AnalysisPage() {
               {hourlyLoading ? (
                 <div className="text-xs text-slate-400">Yükleniyor...</div>
               ) : hourlyData ? (() => {
+                const agg = aggregateDisplaySlots(hourlyData);
                 const slots = [
-                  { label: "10:00", key: "t1000" as const, color: "bg-violet-500" },
-                  { label: "13:00", key: "t1300" as const, color: "bg-blue-500"   },
-                  { label: "16:00", key: "t1600" as const, color: "bg-emerald-500" },
-                  { label: "18:30", key: "t1830" as const, color: "bg-amber-500"  },
+                  { label: DISPLAY_SLOT_CHART_LABELS[0], key: "t1000" as const, color: "bg-violet-500" },
+                  { label: DISPLAY_SLOT_CHART_LABELS[1], key: "t1300" as const, color: "bg-blue-500" },
+                  { label: DISPLAY_SLOT_CHART_LABELS[2], key: "t1600" as const, color: "bg-emerald-500" },
+                  { label: DISPLAY_SLOT_CHART_LABELS[3], key: "t1830" as const, color: "bg-amber-500" },
                 ];
-                const slotMax = Math.max(...slots.map((s) => hourlyData[s.key]), 1);
+                const slotMax = Math.max(...slots.map((s) => agg[s.key]), 1);
                 return (
                   <div className="space-y-1.5">
                     {slots.map((s) => {
-                      const val   = hourlyData[s.key];
+                      const val   = agg[s.key];
                       const pct   = Math.round((val / slotMax) * 100);
                       return (
-                        <div key={s.key} className="flex items-center gap-2 text-xs">
-                          <span className="w-10 shrink-0 text-right text-slate-500 dark:text-slate-400">{s.label}</span>
+                        <div key={s.key} className="flex items-center gap-2 text-[10px] leading-tight sm:text-xs">
+                          <span className="w-[7.5rem] shrink-0 text-right text-slate-500 dark:text-slate-400 sm:w-36">{s.label}</span>
                           <div className="flex-1 rounded bg-slate-100 dark:bg-slate-700" style={{ height: 14 }}>
                             <div
                               className={`${s.color} rounded transition-all duration-500`}
@@ -696,7 +696,7 @@ export default function AnalysisPage() {
       <section className="overflow-auto rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <h2 className="mb-3 text-base font-semibold">Top İşçi Tablosu</h2>
         <p className="mb-3 text-sm text-slate-600">
-          Gösterilen üretim: {hourLabel(hourFilter)}
+          Gösterilen üretim: {displaySlotLabelForHourFilter(hourFilter)}
           {groupByProcess && " · Sıra ve renkler proses grubuna göre"}
         </p>
         <table className="w-full min-w-[760px] border-collapse text-sm">

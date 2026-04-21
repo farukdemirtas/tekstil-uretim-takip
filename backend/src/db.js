@@ -194,6 +194,31 @@ export function initDb() {
           }
         });
       }
+      /* 2026-04-21+ ana sayfa dokuz saat dilimi (eski dört sütun korunur) */
+      const slotCols = [
+        "h0900",
+        "h1000",
+        "h1115",
+        "h1215",
+        "h1300",
+        "h1445",
+        "h1545",
+        "h1700",
+        "h1830",
+      ];
+      db.serialize(() => {
+        for (const col of slotCols) {
+          db.run(`ALTER TABLE production_entries ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0`, (e) => {
+            if (e) {
+              const msg = String(e.message || e);
+              if (!msg.toLowerCase().includes("duplicate column")) {
+                // eslint-disable-next-line no-console
+                console.error(`[tekstil-db] production_entries ${col} migration:`, msg);
+              }
+            }
+          });
+        }
+      });
     });
 
     db.run(`

@@ -79,7 +79,22 @@ const AUTH_PASS = process.env.APP_PASSWORD || "admin55";
 // Burada signing secret olarak kullanıyoruz.
 const AUTH_TOKEN = process.env.APP_TOKEN || "yeva-local-token";
 const TOKEN_SECRET = process.env.APP_TOKEN_SECRET || AUTH_TOKEN;
-const VALID_HOURS = ["", "t1000", "t1300", "t1600", "t1830"];
+const VALID_HOURS = [
+  "",
+  "t1000",
+  "t1300",
+  "t1600",
+  "t1830",
+  "h0900",
+  "h1000",
+  "h1115",
+  "h1215",
+  "h1300",
+  "h1445",
+  "h1545",
+  "h1700",
+  "h1830",
+];
 
 initDb();
 
@@ -997,7 +1012,24 @@ app.get("/api/analytics/worker-daily", requireAnyPermission(["analysis", "ekran2
 });
 
 app.post("/api/production", async (req, res) => {
-  const { workerId, date, t1000 = 0, t1300 = 0, t1600 = 0, t1830 = 0 } = req.body;
+  const b = req.body || {};
+  const {
+    workerId,
+    date,
+    t1000 = 0,
+    t1300 = 0,
+    t1600 = 0,
+    t1830 = 0,
+    h0900 = 0,
+    h1000 = 0,
+    h1115 = 0,
+    h1215 = 0,
+    h1300 = 0,
+    h1445 = 0,
+    h1545 = 0,
+    h1700 = 0,
+    h1830 = 0,
+  } = b;
   if (!workerId || !date) {
     return res.status(400).json({ message: "workerId ve date zorunlu" });
   }
@@ -1005,24 +1037,52 @@ app.post("/api/production", async (req, res) => {
   try {
     const wid = Number(workerId);
     const dateStr = String(date);
-    const t1000n = Number(t1000) || 0;
-    const t1300n = Number(t1300) || 0;
-    const t1600n = Number(t1600) || 0;
-    const t1830n = Number(t1830) || 0;
+    const z = (n) => Number(n) || 0;
+    const t1000n = z(t1000);
+    const t1300n = z(t1300);
+    const t1600n = z(t1600);
+    const t1830n = z(t1830);
+    const h0900n = z(h0900);
+    const h1000n = z(h1000);
+    const h1115n = z(h1115);
+    const h1215n = z(h1215);
+    const h1300n = z(h1300);
+    const h1445n = z(h1445);
+    const h1545n = z(h1545);
+    const h1700n = z(h1700);
+    const h1830n = z(h1830);
     const prev = await getProductionEntrySlots(wid, dateStr);
     const unchanged =
       prev !== null &&
       prev.t1000 === t1000n &&
       prev.t1300 === t1300n &&
       prev.t1600 === t1600n &&
-      prev.t1830 === t1830n;
+      prev.t1830 === t1830n &&
+      prev.h0900 === h0900n &&
+      prev.h1000 === h1000n &&
+      prev.h1115 === h1115n &&
+      prev.h1215 === h1215n &&
+      prev.h1300 === h1300n &&
+      prev.h1445 === h1445n &&
+      prev.h1545 === h1545n &&
+      prev.h1700 === h1700n &&
+      prev.h1830 === h1830n;
     await upsertEntry({
       workerId: wid,
       date: dateStr,
       t1000: t1000n,
       t1300: t1300n,
       t1600: t1600n,
-      t1830: t1830n
+      t1830: t1830n,
+      h0900: h0900n,
+      h1000: h1000n,
+      h1115: h1115n,
+      h1215: h1215n,
+      h1300: h1300n,
+      h1445: h1445n,
+      h1545: h1545n,
+      h1700: h1700n,
+      h1830: h1830n,
     });
     if (!unchanged) {
       const workerName = await getWorkerNameById(wid);
@@ -1044,13 +1104,23 @@ app.post("/api/production/bulk", requirePermission("topluEkle"), async (req, res
     return res.status(400).json({ message: "date ve entries (array) zorunlu" });
   }
 
+  const z = (n) => Number(n) || 0;
   const normalized = entries.map((entry) => ({
     workerId: Number(entry.workerId),
     date: String(date),
-    t1000: Number(entry.t1000) || 0,
-    t1300: Number(entry.t1300) || 0,
-    t1600: Number(entry.t1600) || 0,
-    t1830: Number(entry.t1830) || 0
+    t1000: z(entry.t1000),
+    t1300: z(entry.t1300),
+    t1600: z(entry.t1600),
+    t1830: z(entry.t1830),
+    h0900: z(entry.h0900),
+    h1000: z(entry.h1000),
+    h1115: z(entry.h1115),
+    h1215: z(entry.h1215),
+    h1300: z(entry.h1300),
+    h1445: z(entry.h1445),
+    h1545: z(entry.h1545),
+    h1700: z(entry.h1700),
+    h1830: z(entry.h1830),
   }));
 
   if (normalized.some((entry) => !entry.workerId)) {

@@ -5,6 +5,12 @@ import { DEFAULT_DATA_ENTRY_PERMISSIONS, permissionsJsonForDb } from "./permissi
 
 const DEFAULT_PERMS_JSON = permissionsJsonForDb(DEFAULT_DATA_ENTRY_PERMISSIONS);
 
+/** Tek satır üretim toplamı: eski dört (10:00–18:30) + yeni dokuz saat dilimi */
+const PRODUCTION_SUM_SQL =
+  "COALESCE(p.t1000, 0) + COALESCE(p.t1300, 0) + COALESCE(p.t1600, 0) + COALESCE(p.t1830, 0) + " +
+  "COALESCE(p.h0900, 0) + COALESCE(p.h1000, 0) + COALESCE(p.h1115, 0) + COALESCE(p.h1215, 0) + " +
+  "COALESCE(p.h1300, 0) + COALESCE(p.h1445, 0) + COALESCE(p.h1545, 0) + COALESCE(p.h1700, 0) + COALESCE(p.h1830, 0)";
+
 function hashPassword(password, salt) {
   return pbkdf2Sync(password, salt, 310000, 64, "sha512").toString("hex");
 }
@@ -335,6 +341,15 @@ export function getDailyEntries(date) {
         COALESCE(p.t1300, 0) AS t1300,
         COALESCE(p.t1600, 0) AS t1600,
         COALESCE(p.t1830, 0) AS t1830,
+        COALESCE(p.h0900, 0) AS h0900,
+        COALESCE(p.h1000, 0) AS h1000,
+        COALESCE(p.h1115, 0) AS h1115,
+        COALESCE(p.h1215, 0) AS h1215,
+        COALESCE(p.h1300, 0) AS h1300,
+        COALESCE(p.h1445, 0) AS h1445,
+        COALESCE(p.h1545, 0) AS h1545,
+        COALESCE(p.h1700, 0) AS h1700,
+        COALESCE(p.h1830, 0) AS h1830,
         COALESCE(p.note, '') AS note,
         CASE WHEN EXISTS (
           SELECT 1 FROM worker_roster_day_hide h
@@ -404,9 +419,11 @@ export async function copyRosterToFutureWeekdays(sourceDate, endDate) {
       /* Yalnızca kaynak gün listesindeki id'ler; hedef güne göre created/deleted filtreleri
          bazen tüm satırları eliyordu (deleted_at hedef günle çakışması, changes=0 no-op UPSERT vb.) */
       await dbRun(
-        `INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830)
+        `INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830)
          SELECT w.id, ?,
-                COALESCE(src.t1000, 0), COALESCE(src.t1300, 0), COALESCE(src.t1600, 0), COALESCE(src.t1830, 0)
+                COALESCE(src.t1000, 0), COALESCE(src.t1300, 0), COALESCE(src.t1600, 0), COALESCE(src.t1830, 0),
+                COALESCE(src.h0900, 0), COALESCE(src.h1000, 0), COALESCE(src.h1115, 0), COALESCE(src.h1215, 0),
+                COALESCE(src.h1300, 0), COALESCE(src.h1445, 0), COALESCE(src.h1545, 0), COALESCE(src.h1700, 0), COALESCE(src.h1830, 0)
          FROM workers w
          LEFT JOIN production_entries src ON src.worker_id = w.id AND src.production_date = ?
          WHERE w.id IN (${idPlaceholders})
@@ -414,7 +431,16 @@ export async function copyRosterToFutureWeekdays(sourceDate, endDate) {
            t1000 = excluded.t1000,
            t1300 = excluded.t1300,
            t1600 = excluded.t1600,
-           t1830 = excluded.t1830`,
+           t1830 = excluded.t1830,
+           h0900 = excluded.h0900,
+           h1000 = excluded.h1000,
+           h1115 = excluded.h1115,
+           h1215 = excluded.h1215,
+           h1300 = excluded.h1300,
+           h1445 = excluded.h1445,
+           h1545 = excluded.h1545,
+           h1700 = excluded.h1700,
+           h1830 = excluded.h1830`,
         [dayIso, sourceDate, ...ids]
       );
       const hd = await dbRun(
@@ -509,35 +535,89 @@ export function upsertDayProductMeta({ date, productName, productModel, modelId,
 export function getProductionEntrySlots(workerId, date) {
   return new Promise((resolve, reject) => {
     db.get(
-      `SELECT t1000, t1300, t1600, t1830 FROM production_entries WHERE worker_id = ? AND production_date = ?`,
+      `SELECT t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830
+       FROM production_entries WHERE worker_id = ? AND production_date = ?`,
       [workerId, date],
       (err, row) => {
         if (err) return reject(err);
         if (!row) return resolve(null);
+        const z = (n) => Number(n) || 0;
         resolve({
-          t1000: Number(row.t1000) || 0,
-          t1300: Number(row.t1300) || 0,
-          t1600: Number(row.t1600) || 0,
-          t1830: Number(row.t1830) || 0,
+          t1000: z(row.t1000),
+          t1300: z(row.t1300),
+          t1600: z(row.t1600),
+          t1830: z(row.t1830),
+          h0900: z(row.h0900),
+          h1000: z(row.h1000),
+          h1115: z(row.h1115),
+          h1215: z(row.h1215),
+          h1300: z(row.h1300),
+          h1445: z(row.h1445),
+          h1545: z(row.h1545),
+          h1700: z(row.h1700),
+          h1830: z(row.h1830),
         });
       }
     );
   });
 }
 
-export function upsertEntry({ workerId, date, t1000, t1300, t1600, t1830 }) {
+export function upsertEntry(payload) {
+  const {
+    workerId,
+    date,
+    t1000 = 0,
+    t1300 = 0,
+    t1600 = 0,
+    t1830 = 0,
+    h0900 = 0,
+    h1000 = 0,
+    h1115 = 0,
+    h1215 = 0,
+    h1300 = 0,
+    h1445 = 0,
+    h1545 = 0,
+    h1700 = 0,
+    h1830 = 0,
+  } = payload;
+  const z = (n) => Number(n) || 0;
   return new Promise((resolve, reject) => {
     db.run(
       `
-      INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(worker_id, production_date) DO UPDATE SET
         t1000 = excluded.t1000,
         t1300 = excluded.t1300,
         t1600 = excluded.t1600,
-        t1830 = excluded.t1830
+        t1830 = excluded.t1830,
+        h0900 = excluded.h0900,
+        h1000 = excluded.h1000,
+        h1115 = excluded.h1115,
+        h1215 = excluded.h1215,
+        h1300 = excluded.h1300,
+        h1445 = excluded.h1445,
+        h1545 = excluded.h1545,
+        h1700 = excluded.h1700,
+        h1830 = excluded.h1830
       `,
-      [workerId, date, t1000, t1300, t1600, t1830],
+      [
+        workerId,
+        date,
+        z(t1000),
+        z(t1300),
+        z(t1600),
+        z(t1830),
+        z(h0900),
+        z(h1000),
+        z(h1115),
+        z(h1215),
+        z(h1300),
+        z(h1445),
+        z(h1545),
+        z(h1700),
+        z(h1830),
+      ],
       (err) => {
         if (err) return reject(err);
         resolve(true);
@@ -571,24 +651,43 @@ export function upsertEntriesBulk(entries) {
 
       const stmt = db.prepare(
         `
-        INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(worker_id, production_date) DO UPDATE SET
           t1000 = excluded.t1000,
           t1300 = excluded.t1300,
           t1600 = excluded.t1600,
-          t1830 = excluded.t1830
+          t1830 = excluded.t1830,
+          h0900 = excluded.h0900,
+          h1000 = excluded.h1000,
+          h1115 = excluded.h1115,
+          h1215 = excluded.h1215,
+          h1300 = excluded.h1300,
+          h1445 = excluded.h1445,
+          h1545 = excluded.h1545,
+          h1700 = excluded.h1700,
+          h1830 = excluded.h1830
         `
       );
 
+      const z = (n) => Number(n) || 0;
       for (const entry of entries) {
         stmt.run([
           entry.workerId,
           entry.date,
-          entry.t1000,
-          entry.t1300,
-          entry.t1600,
-          entry.t1830
+          z(entry.t1000),
+          z(entry.t1300),
+          z(entry.t1600),
+          z(entry.t1830),
+          z(entry.h0900),
+          z(entry.h1000),
+          z(entry.h1115),
+          z(entry.h1215),
+          z(entry.h1300),
+          z(entry.h1445),
+          z(entry.h1545),
+          z(entry.h1700),
+          z(entry.h1830),
         ]);
       }
 
@@ -607,11 +706,37 @@ export function upsertEntriesBulk(entries) {
 }
 
 function getHourExpression(hourColumn = "") {
-  if (hourColumn === "t1000") return "COALESCE(p.t1000, 0)";
-  if (hourColumn === "t1300") return "COALESCE(p.t1300, 0)";
-  if (hourColumn === "t1600") return "COALESCE(p.t1600, 0)";
-  if (hourColumn === "t1830") return "COALESCE(p.t1830, 0)";
-  return "COALESCE(p.t1000, 0) + COALESCE(p.t1300, 0) + COALESCE(p.t1600, 0) + COALESCE(p.t1830, 0)";
+  /* Görünür dilimler: legacy t* + yeni h* grupları (09+10, 11–13, 14–15, 17+18) */
+  if (hourColumn === "t1000") {
+    return (
+      "(COALESCE(p.t1000, 0) + COALESCE(p.h0900, 0) + COALESCE(p.h1000, 0))"
+    );
+  }
+  if (hourColumn === "t1300") {
+    return (
+      "(COALESCE(p.t1300, 0) + COALESCE(p.h1115, 0) + COALESCE(p.h1215, 0) + COALESCE(p.h1300, 0))"
+    );
+  }
+  if (hourColumn === "t1600") {
+    return (
+      "(COALESCE(p.t1600, 0) + COALESCE(p.h1445, 0) + COALESCE(p.h1545, 0))"
+    );
+  }
+  if (hourColumn === "t1830") {
+    return (
+      "(COALESCE(p.t1830, 0) + COALESCE(p.h1700, 0) + COALESCE(p.h1830, 0))"
+    );
+  }
+  if (hourColumn === "h0900") return "COALESCE(p.h0900, 0)";
+  if (hourColumn === "h1000") return "COALESCE(p.h1000, 0)";
+  if (hourColumn === "h1115") return "COALESCE(p.h1115, 0)";
+  if (hourColumn === "h1215") return "COALESCE(p.h1215, 0)";
+  if (hourColumn === "h1300") return "COALESCE(p.h1300, 0)";
+  if (hourColumn === "h1445") return "COALESCE(p.h1445, 0)";
+  if (hourColumn === "h1545") return "COALESCE(p.h1545, 0)";
+  if (hourColumn === "h1700") return "COALESCE(p.h1700, 0)";
+  if (hourColumn === "h1830") return "COALESCE(p.h1830, 0)";
+  return PRODUCTION_SUM_SQL;
 }
 
 export function getTopWorkersAnalytics({ startDate, endDate, team = "", process = "", limit = 20, hourColumn = "" }) {
@@ -733,10 +858,7 @@ export function getRangeStageTotals(startDate, endDate) {
         SELECT
           w.team,
           SUM(
-            COALESCE(p.t1000, 0) +
-            COALESCE(p.t1300, 0) +
-            COALESCE(p.t1600, 0) +
-            COALESCE(p.t1830, 0)
+            ${PRODUCTION_SUM_SQL}
           ) AS total
         FROM production_entries p
         JOIN workers w ON w.id = p.worker_id
@@ -761,7 +883,7 @@ export function getRangeStageTotals(startDate, endDate) {
 const LEGACY_HEDEF_LABELS = ["Sağ ön", "Sol ön", "Yaka hazırlık", "Arka hazırlık", "Bitim"];
 
 function hedefLineSumSql() {
-  return "COALESCE(p.t1000, 0) + COALESCE(p.t1300, 0) + COALESCE(p.t1600, 0) + COALESCE(p.t1830, 0)";
+  return PRODUCTION_SUM_SQL;
 }
 
 /** Tek bölüm+proses satırı için tarih aralığı üretim toplamı (0.5 çarpan opsiyonel). */
@@ -1061,11 +1183,11 @@ export function getWorkerComparisonData({ worker1Id, worker2Id, startDate, endDa
         w.name,
         w.team,
         w.process,
-        COALESCE(SUM(p.t1000), 0) AS t1000,
-        COALESCE(SUM(p.t1300), 0) AS t1300,
-        COALESCE(SUM(p.t1600), 0) AS t1600,
-        COALESCE(SUM(p.t1830), 0) AS t1830,
-        COALESCE(SUM(COALESCE(p.t1000,0) + COALESCE(p.t1300,0) + COALESCE(p.t1600,0) + COALESCE(p.t1830,0)), 0) AS total,
+        COALESCE(SUM(p.t1000), 0) + COALESCE(SUM(p.h0900), 0) + COALESCE(SUM(p.h1000), 0) AS t1000,
+        COALESCE(SUM(p.t1300), 0) + COALESCE(SUM(p.h1115), 0) + COALESCE(SUM(p.h1215), 0) + COALESCE(SUM(p.h1300), 0) AS t1300,
+        COALESCE(SUM(p.t1600), 0) + COALESCE(SUM(p.h1445), 0) + COALESCE(SUM(p.h1545), 0) AS t1600,
+        COALESCE(SUM(p.t1830), 0) + COALESCE(SUM(p.h1700), 0) + COALESCE(SUM(p.h1830), 0) AS t1830,
+        COALESCE(SUM(${PRODUCTION_SUM_SQL}), 0) AS total,
         COUNT(DISTINCT p.production_date) AS activeDays
       FROM workers w
       LEFT JOIN production_entries p
@@ -1086,7 +1208,7 @@ export function getWorkerComparisonData({ worker1Id, worker2Id, startDate, endDa
           SELECT
             p.production_date AS date,
             w.id AS workerId,
-            COALESCE(p.t1000,0) + COALESCE(p.t1300,0) + COALESCE(p.t1600,0) + COALESCE(p.t1830,0) AS production
+            (${PRODUCTION_SUM_SQL}) AS production
           FROM production_entries p
           JOIN workers w ON w.id = p.worker_id
           WHERE p.worker_id IN (?, ?)
@@ -1142,17 +1264,29 @@ export function getWorkerProductionDailyDetail({
 }) {
   return new Promise((resolve, reject) => {
     const mapRows = (rows) =>
-      (rows || []).map((row) => ({
-        workerId: Number(row.workerId) || 0,
-        productionDate: String(row.productionDate),
-        name: String(row.name || ""),
-        team: String(row.team || ""),
-        process: String(row.process || ""),
-        t1000: Number(row.t1000) || 0,
-        t1300: Number(row.t1300) || 0,
-        t1600: Number(row.t1600) || 0,
-        t1830: Number(row.t1830) || 0,
-      }));
+      (rows || []).map((row) => {
+        const z = (n) => Number(n) || 0;
+        return {
+          workerId: Number(row.workerId) || 0,
+          productionDate: String(row.productionDate),
+          name: String(row.name || ""),
+          team: String(row.team || ""),
+          process: String(row.process || ""),
+          t1000: z(row.t1000),
+          t1300: z(row.t1300),
+          t1600: z(row.t1600),
+          t1830: z(row.t1830),
+          h0900: z(row.h0900),
+          h1000: z(row.h1000),
+          h1115: z(row.h1115),
+          h1215: z(row.h1215),
+          h1300: z(row.h1300),
+          h1445: z(row.h1445),
+          h1545: z(row.h1545),
+          h1700: z(row.h1700),
+          h1830: z(row.h1830),
+        };
+      });
 
     const runQuery = (ids) => {
       const uniq = [...new Set(ids.map(Number).filter((n) => Number.isFinite(n) && n > 0))];
@@ -1169,7 +1303,16 @@ export function getWorkerProductionDailyDetail({
           COALESCE(p.t1000, 0) AS t1000,
           COALESCE(p.t1300, 0) AS t1300,
           COALESCE(p.t1600, 0) AS t1600,
-          COALESCE(p.t1830, 0) AS t1830
+          COALESCE(p.t1830, 0) AS t1830,
+          COALESCE(p.h0900, 0) AS h0900,
+          COALESCE(p.h1000, 0) AS h1000,
+          COALESCE(p.h1115, 0) AS h1115,
+          COALESCE(p.h1215, 0) AS h1215,
+          COALESCE(p.h1300, 0) AS h1300,
+          COALESCE(p.h1445, 0) AS h1445,
+          COALESCE(p.h1545, 0) AS h1545,
+          COALESCE(p.h1700, 0) AS h1700,
+          COALESCE(p.h1830, 0) AS h1830
         FROM production_entries p
         JOIN workers w ON w.id = p.worker_id
         WHERE p.worker_id IN (${ph})
@@ -1215,7 +1358,16 @@ export function getWorkerHourlyBreakdown({ workerId, startDate, endDate }) {
         COALESCE(SUM(p.t1000), 0) AS t1000,
         COALESCE(SUM(p.t1300), 0) AS t1300,
         COALESCE(SUM(p.t1600), 0) AS t1600,
-        COALESCE(SUM(p.t1830), 0) AS t1830
+        COALESCE(SUM(p.t1830), 0) AS t1830,
+        COALESCE(SUM(p.h0900), 0) AS h0900,
+        COALESCE(SUM(p.h1000), 0) AS h1000,
+        COALESCE(SUM(p.h1115), 0) AS h1115,
+        COALESCE(SUM(p.h1215), 0) AS h1215,
+        COALESCE(SUM(p.h1300), 0) AS h1300,
+        COALESCE(SUM(p.h1445), 0) AS h1445,
+        COALESCE(SUM(p.h1545), 0) AS h1545,
+        COALESCE(SUM(p.h1700), 0) AS h1700,
+        COALESCE(SUM(p.h1830), 0) AS h1830
       FROM production_entries p
       JOIN workers w ON w.id = p.worker_id
       WHERE p.worker_id = ?
@@ -1226,11 +1378,21 @@ export function getWorkerHourlyBreakdown({ workerId, startDate, endDate }) {
       [workerId, startDate, endDate],
       (err, row) => {
         if (err) return reject(err);
+        const z = (n) => Number(n) || 0;
         resolve({
-          t1000: Number(row?.t1000) || 0,
-          t1300: Number(row?.t1300) || 0,
-          t1600: Number(row?.t1600) || 0,
-          t1830: Number(row?.t1830) || 0,
+          t1000: z(row?.t1000),
+          t1300: z(row?.t1300),
+          t1600: z(row?.t1600),
+          t1830: z(row?.t1830),
+          h0900: z(row?.h0900),
+          h1000: z(row?.h1000),
+          h1115: z(row?.h1115),
+          h1215: z(row?.h1215),
+          h1300: z(row?.h1300),
+          h1445: z(row?.h1445),
+          h1545: z(row?.h1545),
+          h1700: z(row?.h1700),
+          h1830: z(row?.h1830),
         });
       }
     );

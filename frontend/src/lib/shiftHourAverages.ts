@@ -1,10 +1,11 @@
 import type { WorkerHourlyBreakdown } from "@/lib/api";
+import { DISPLAY_SLOT_SHORT_LABELS } from "@/lib/displaySlotAggregation";
 
 const SLOT_KEYS = [
-  { key: "t1000" as const, label: "10:00" },
-  { key: "t1300" as const, label: "13:00" },
-  { key: "t1600" as const, label: "16:00" },
-  { key: "t1830" as const, label: "18:30" },
+  { key: "t1000" as const, label: DISPLAY_SLOT_SHORT_LABELS[0] },
+  { key: "t1300" as const, label: DISPLAY_SLOT_SHORT_LABELS[1] },
+  { key: "t1600" as const, label: DISPLAY_SLOT_SHORT_LABELS[2] },
+  { key: "t1830" as const, label: DISPLAY_SLOT_SHORT_LABELS[3] },
 ];
 
 /** Vardiya başlangıcı (saat). */
@@ -12,11 +13,11 @@ export const SHIFT_DAY_START_HOUR = 8;
 /** Günlük ortalama kutusu paydası (ör. 900 ÷ 9 = 100). */
 export const SHIFT_NOMINAL_HOURS = 9;
 
-/** Saat dilimi başlangıcı (ondalık saat). 18:30 → 18.5 → 08:00’e kadar 10.5 saat. */
+/** Grubun “son üretim” zamanı (ondalık saat) — vardiya penceresi ipucu için. */
 const SLOT_START_HOUR: Record<(typeof SLOT_KEYS)[number]["key"], number> = {
   t1000: 10,
   t1300: 13,
-  t1600: 16,
+  t1600: 15.75,
   t1830: 18.5,
 };
 

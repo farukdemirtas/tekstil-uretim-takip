@@ -11,6 +11,7 @@ import {
 import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
+import { DISPLAY_SLOT_FILTER_LABELS } from "@/lib/displaySlotAggregation";
 import { rankTercileStyles } from "@/lib/rankTercile";
 import type { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics } from "@/lib/types";
 
@@ -51,10 +52,10 @@ function formatDateTr(dateStr: string) {
 }
 
 function hourLabel(hour: HourFilter) {
-  if (hour === "t1000") return "10:00";
-  if (hour === "t1300") return "13:00";
-  if (hour === "t1600") return "16:00";
-  if (hour === "t1830") return "18:30";
+  if (hour === "t1000") return DISPLAY_SLOT_FILTER_LABELS[0];
+  if (hour === "t1300") return DISPLAY_SLOT_FILTER_LABELS[1];
+  if (hour === "t1600") return DISPLAY_SLOT_FILTER_LABELS[2];
+  if (hour === "t1830") return DISPLAY_SLOT_FILTER_LABELS[3];
   return "Tüm saatler";
 }
 
@@ -619,10 +620,10 @@ export default function Ekran2Page() {
                 {(
                   [
                     { h: "" as HourFilter, l: "Tümü" },
-                    { h: "t1000" as HourFilter, l: "10:00" },
-                    { h: "t1300" as HourFilter, l: "13:00" },
-                    { h: "t1600" as HourFilter, l: "16:00" },
-                    { h: "t1830" as HourFilter, l: "18:30" },
+                    { h: "t1000" as HourFilter, l: DISPLAY_SLOT_FILTER_LABELS[0] },
+                    { h: "t1300" as HourFilter, l: DISPLAY_SLOT_FILTER_LABELS[1] },
+                    { h: "t1600" as HourFilter, l: DISPLAY_SLOT_FILTER_LABELS[2] },
+                    { h: "t1830" as HourFilter, l: DISPLAY_SLOT_FILTER_LABELS[3] },
                   ] as const
                 ).map(({ h, l }) => (
                   <button
