@@ -1135,7 +1135,8 @@ app.get("/api/repairs/history", requireAuth, async (req, res) => {
 });
 
 /* ── Proses Veri Satırları ─────────────────────────────── */
-app.get("/api/proses-veri/:modelCode", requirePermission("veriSayfasi"), async (req, res) => {
+/* Okuma: giriş yapmış herkes (ana sayfada Dk/Saat/Günlük gösterimi). Yazma: veriSayfasi. */
+app.get("/api/proses-veri/:modelCode", requireAuth, async (req, res) => {
   const { modelCode } = req.params;
   try {
     const rows = await getProsesVeriRows(String(modelCode));

@@ -969,10 +969,7 @@ export async function getProsesVeriRowsFromServer(modelCode: string): Promise<Pr
     cache: "no-store",
     headers: authHeaders(),
   });
-  if (!res.ok) {
-    if (res.status === 403) return []; // yetkisiz — boş dön
-    throw new Error("Proses veri alınamadı");
-  }
+  if (!res.ok) throw new Error("Proses veri alınamadı");
   return res.json() as Promise<ProsesVeriRow[]>;
 }
 

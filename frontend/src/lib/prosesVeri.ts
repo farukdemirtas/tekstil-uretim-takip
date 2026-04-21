@@ -110,6 +110,8 @@ export function setProcessDkAndSyncRows(
   processName: string,
   dkAdet: string,
   modelKey?: string | null,
+  /** localStorage’da satır yokken ilk satırı oluşturmak için (bölüm etiketi) */
+  teamLabelForNewRow?: string,
 ): void {
   // dk haritasını güncelle
   const map = getProsesMap(modelKey);
@@ -122,7 +124,18 @@ export function setProcessDkAndSyncRows(
   const rowsKey = resolveRowsKey(modelKey);
   try {
     const raw = window.localStorage.getItem(rowsKey);
-    if (!raw) return;
+    if (!raw) {
+      if (!dkAdet || Number(dkAdet) <= 0) return;
+      const row = {
+        id: Date.now(),
+        teamCode,
+        teamLabel: teamLabelForNewRow ?? teamCode,
+        processName,
+        dkAdet,
+      };
+      window.localStorage.setItem(rowsKey, JSON.stringify([row]));
+      return;
+    }
     const rows = JSON.parse(raw) as Array<Record<string, unknown>>;
     if (!Array.isArray(rows)) return;
     const updated = rows.map((r) =>
@@ -132,6 +145,55 @@ export function setProcessDkAndSyncRows(
     );
     window.localStorage.setItem(rowsKey, JSON.stringify(updated));
   } catch { /* quota / parse hatası */ }
+}
+
+/** Sunucuya PUT için satırlar (ProductionTable kaydı sonrası) */
+export function getStoredRowsForServerSave(modelKey?: string | null): Array<{
+  teamCode: string;
+  teamLabel: string;
+  processName: string;
+  dkAdet: string;
+}> {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(resolveRowsKey(modelKey));
+    if (!raw) return [];
+    const rows = JSON.parse(raw) as Array<{
+      teamCode: string;
+      teamLabel?: string;
+      processName: string;
+      dkAdet: string;
+    }>;
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r) => ({
+      teamCode: r.teamCode,
+      teamLabel: r.teamLabel ?? r.teamCode,
+      processName: r.processName,
+      dkAdet: String(r.dkAdet ?? ""),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Sunucudan gelen satırlarla tarayıcı önbelleğini güncelle (tüm kullanıcılar aynı veriyi görsün) */
+export function replaceLocalProsesCacheFromServerRows(
+  modelKey: string,
+  rows: Array<{ id: number; teamCode: string; teamLabel: string; processName: string; dkAdet: string }>,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(rowsKeyForModel(modelKey), JSON.stringify(rows));
+    const map: ProsesMap = {};
+    for (const r of rows) {
+      if (r.dkAdet && Number(r.dkAdet) > 0) {
+        map[makeProsesKey(r.teamCode, r.processName)] = String(r.dkAdet);
+      }
+    }
+    setProsesMap(map, modelKey);
+  } catch {
+    /* quota */
+  }
 }
 
 /* ── Hesaplama yardımcısı ────────────────────────────────── */

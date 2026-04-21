@@ -1,9 +1,18 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { getProcesses, getTeams } from "@/lib/api";
+import { getProcesses, getTeams, getProsesVeriRowsFromServer, saveProsesVeriRowsToServer } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
-import { calcFromDk, getProsesMap, makeProsesKey, setProcessDkAndSyncRows, dkKeyForModel, type ProsesMap } from "@/lib/prosesVeri";
+import {
+  calcFromDk,
+  getProsesMap,
+  makeProsesKey,
+  setProcessDkAndSyncRows,
+  dkKeyForModel,
+  getStoredRowsForServerSave,
+  replaceLocalProsesCacheFromServerRows,
+  type ProsesMap,
+} from "@/lib/prosesVeri";
 
 type ProductionTableProps = {
   rows: ProductionRow[];
@@ -121,7 +130,25 @@ export default function ProductionTable({
   const [dkEditValue, setDkEditValue] = useState("");
 
   useEffect(() => {
-    setProsesMapState(getProsesMap(modelKey));
+    let cancelled = false;
+    async function loadFromServer() {
+      if (!modelKey) {
+        setProsesMapState(getProsesMap(undefined));
+        return;
+      }
+      try {
+        const serverRows = await getProsesVeriRowsFromServer(modelKey);
+        if (cancelled) return;
+        if (serverRows.length > 0) {
+          replaceLocalProsesCacheFromServerRows(modelKey, serverRows);
+        }
+        setProsesMapState(getProsesMap(modelKey));
+      } catch {
+        if (!cancelled) setProsesMapState(getProsesMap(modelKey));
+      }
+    }
+    void loadFromServer();
+
     function onStorage(e: StorageEvent) {
       const modelSpecificKey = modelKey ? dkKeyForModel(modelKey) : null;
       if (e.key === "proses_dk_adet_v1" || (modelSpecificKey && e.key === modelSpecificKey)) {
@@ -129,7 +156,10 @@ export default function ProductionTable({
       }
     }
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", onStorage);
+    };
   }, [modelKey]);
 
   useEffect(() => {
@@ -145,6 +175,11 @@ export default function ProductionTable({
   }, []);
 
   const teamLabel = (code: string) => teamLabels[code] ?? FALLBACK_LABELS[code] ?? code;
+
+  function persistProsesServerSnapshot() {
+    if (!modelKey) return;
+    void saveProsesVeriRowsToServer(modelKey, getStoredRowsForServerSave(modelKey)).catch(() => {});
+  }
 
   const canDelete = Boolean(canDeleteWorkers);
 
@@ -258,8 +293,9 @@ export default function ProductionTable({
                 onChange={(e) => setDkEditValue(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue, modelKey);
+                    setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue, modelKey, teamLabel(dkEditTeam));
                     setProsesMapState(getProsesMap(modelKey));
+                    persistProsesServerSnapshot();
                     setDkEditProcess(null);
                   }
                   if (e.key === "Escape") setDkEditProcess(null);
@@ -293,8 +329,9 @@ export default function ProductionTable({
               <button
                 type="button"
                 onClick={() => {
-                  setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue, modelKey);
+                  setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue, modelKey, teamLabel(dkEditTeam));
                   setProsesMapState(getProsesMap(modelKey));
+                  persistProsesServerSnapshot();
                   setDkEditProcess(null);
                 }}
                 className="rounded-xl border border-emerald-500 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
