@@ -12,7 +12,12 @@ import {
 } from "@/lib/api";
 
 import { getProsesMap, makeProsesKey } from "@/lib/prosesVeri";
-import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
+import { clampToWeekdayIso, todayIsoTurkey } from "@/lib/businessCalendar";
+
+/** EKRAN1 / EKRAN3 ile aynı: TR takvim günü, hafta sonu → son hafta içi (sorgu tarihleri) */
+function workdayIsoTurkey(): string {
+  return clampToWeekdayIso(todayIsoTurkey());
+}
 import { hasPermission } from "@/lib/permissions";
 import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker";
 
@@ -93,8 +98,8 @@ const STAGE_TEXT = [
 export default function Ekran1IcerikPage() {
   const [target, setTarget] = useState(5000);
   const [stages, setStages] = useState<HedefStageLineDto[]>([]);
-  const [startDate, setStartDate] = useState(todayWeekdayIso());
-  const [endDate, setEndDate] = useState(todayWeekdayIso());
+  const [startDate, setStartDate] = useState(() => workdayIsoTurkey());
+  const [endDate, setEndDate] = useState(() => workdayIsoTurkey());
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
@@ -233,9 +238,9 @@ export default function Ekran1IcerikPage() {
     }
     setHasToken(true);
     setAuthToken(token);
+    const today = workdayIsoTurkey();
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
-      const today = clampToWeekdayIso(todayWeekdayIso());
       if (raw) {
         const saved = JSON.parse(raw) as {
           target?: number;
@@ -245,8 +250,6 @@ export default function Ekran1IcerikPage() {
           modelId?: number | null;
         };
         if (Number.isFinite(Number(saved.target))) setTarget(Number(saved.target));
-        setStartDate(today);
-        setEndDate(today);
         if (saved.modelId != null && Number.isFinite(Number(saved.modelId))) {
           setModelId(Number(saved.modelId));
         }
@@ -262,6 +265,9 @@ export default function Ekran1IcerikPage() {
         );
       }
     } catch { /* ignore */ }
+    // Her açılış: tek güne kilit (EKRAN3’teki «bugün» gibi). Gece 00:00 TR reload sonrası yeni gün → API’de veri yoksa 0.
+    setStartDate(today);
+    setEndDate(today);
   }, []);
 
   useEffect(() => {
@@ -274,6 +280,23 @@ export default function Ekran1IcerikPage() {
     const id = setInterval(() => void fetchData(true), AUTO_REFRESH_MS);
     return () => clearInterval(id);
   }, [hasToken, fetchData]);
+
+  /**
+   * TR takvim günü değişince tam yenileme: state + localStorage sıfırdan, `fetchData` o güne ait veriyi çeker.
+   * Yeni günde üretim yoksa aşamalar/gerçekleşen 0 — ana sayfaya veri girildikçe dolar (EKRAN3’teki günlük mantıkla uyumlu).
+   */
+  useEffect(() => {
+    if (!hasToken) return;
+    let lastDay = todayIsoTurkey();
+    const id = window.setInterval(() => {
+      const d = todayIsoTurkey();
+      if (d !== lastDay) {
+        lastDay = d;
+        window.location.reload();
+      }
+    }, 8_000);
+    return () => clearInterval(id);
+  }, [hasToken]);
 
   function toggleFullscreen() {
     if (document.fullscreenElement) {
@@ -328,40 +351,41 @@ export default function Ekran1IcerikPage() {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 flex flex-row overflow-hidden bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900"
+      className="fixed inset-0 flex flex-row overflow-hidden bg-slate-100 text-neutral-900 [color-scheme:light]"
     >
-      {/* Arka plan efekti */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(16,185,129,0.08),transparent)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_40%_at_100%_100%,rgba(56,189,248,0.05),transparent)]" />
+      {/* Hafif dekor (kontrastı düşürmez) */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
 
       {/* Sol ticker */}
-      <div className="hidden w-52 shrink-0 border-r border-slate-200 bg-white/90 py-3 lg:flex lg:flex-col xl:w-60">
+      <div className="relative z-10 hidden w-52 shrink-0 border-r-2 border-slate-200 bg-white py-3 lg:flex lg:flex-col xl:w-60">
         <EfficiencyTicker items={leftItems} />
       </div>
 
       {/* Ana içerik: üst sabit, alt aşamalar kalan yükseklikte kayar (TV’de kesilme olmasın) */}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,120rem)] flex-col gap-3 px-3 py-2 sm:gap-4 sm:px-5 sm:py-3 md:gap-5 md:px-8 md:py-4 min-[1920px]:gap-5 min-[1920px]:px-10 min-[1920px]:py-5">
 
-          {/* Header */}
-          <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
+          {/* Header — opak zemin, TV’de saydam/ soluk okuma yok */}
+          <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-slate-300 bg-white px-5 py-3.5 shadow-md">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-lg bg-gradient-to-r from-emerald-500 to-teal-400 px-3 py-1 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-emerald-500/20">
+              <span className="rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-1 text-xs font-black uppercase tracking-widest text-white shadow">
                 EKRAN1
               </span>
               <div>
-                <p className="text-base font-bold text-slate-900 md:text-lg">
+                <p className="text-base font-extrabold text-neutral-950 md:text-lg">
                   {isSingleDay ? formatDateTr(startDate) : `${formatDateTr(startDate)} — ${formatDateTr(endDate)}`}
                 </p>
                 {lastUpdated && (
-                  <p className="text-[11px] text-slate-400">Son güncelleme {lastUpdated} · 30 sn yenileme</p>
+                  <p className="text-[11px] font-semibold text-slate-700">
+                    Son güncelleme {lastUpdated} · 30 sn yenileme
+                  </p>
                 )}
               </div>
             </div>
             <button
               type="button"
               onClick={() => void toggleFullscreen()}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="rounded-xl border-2 border-slate-300 bg-slate-100 px-4 py-2 text-sm font-bold text-slate-900 shadow-sm transition hover:bg-slate-200"
             >
               Tam ekran
             </button>
@@ -414,10 +438,10 @@ export default function Ekran1IcerikPage() {
                   </div>
                 </div>
                 <div className="flex justify-center sm:justify-end">
-                  <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-white px-5 py-2 shadow-md sm:min-w-[7rem] sm:px-6 sm:py-3 md:min-w-[8.5rem]">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Oran</span>
+                  <div className="flex min-w-[5.5rem] flex-col items-center rounded-2xl border-2 border-slate-800 bg-slate-900 px-4 py-2.5 shadow-lg ring-1 ring-slate-950/20 sm:min-w-[7.5rem] sm:px-6 sm:py-3 md:min-w-[9rem]">
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-300">Oran</span>
                     <span
-                      className="font-black tabular-nums leading-none text-slate-900"
+                      className="font-black tabular-nums leading-none text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.4)]"
                       style={{ fontSize: "clamp(2rem, 6vw, 4.25rem)" }}
                     >
                       %{genelPercent.toFixed(0)}
@@ -502,7 +526,7 @@ export default function Ekran1IcerikPage() {
       </div>
 
       {/* Sağ ticker */}
-      <div className="hidden w-52 shrink-0 border-l border-slate-200 bg-white/90 py-3 lg:flex lg:flex-col xl:w-60">
+      <div className="relative z-10 hidden w-52 shrink-0 border-l-2 border-slate-200 bg-white py-3 lg:flex lg:flex-col xl:w-60">
         <EfficiencyTicker items={rightItems} />
       </div>
     </div>

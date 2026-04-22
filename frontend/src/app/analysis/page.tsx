@@ -528,7 +528,7 @@ export default function AnalysisPage() {
         const hourlyForShift = aggregateDisplaySlots(hourlyRaw);
         const shiftAvgs =
           isSingleAnalysisDay && !hourlyLoading
-            ? computeShiftHourAverages(hourlyForShift, worker.totalProduction)
+            ? computeShiftHourAverages(hourlyRaw, worker.totalProduction)
             : null;
 
         const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
@@ -593,7 +593,7 @@ export default function AnalysisPage() {
               <div className="mb-3 grid grid-cols-2 gap-2 text-center">
                 <div
                   className="rounded-lg bg-sky-50 p-2 dark:bg-sky-950/25"
-                  title="08:00 ile son üretim girilen saat dilimi başlangıcı arası; toplam bu süreye bölünür (18:30 son giriş → 10,5 saat)."
+                  title="09:00 ile son adet girilen ölçüm saati arası; toplam bu süreye bölünür (ör. son giriş 18:30 → 9,5 saat)."
                 >
                   <div className="text-lg font-bold tabular-nums text-sky-700 dark:text-sky-300">
                     {shiftAvgs.perHourInWindow}

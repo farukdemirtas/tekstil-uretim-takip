@@ -75,7 +75,7 @@ export function Ekran3WorkerCard({
   const noTodayData = singleDayMode && worker.totalProduction === 0;
   const raw = hourly ?? { t1000: 0, t1300: 0, t1600: 0, t1830: 0 };
   const h = aggregateDisplaySlots(raw);
-  const singleAvgs = singleDayMode ? computeShiftHourAverages(h, worker.totalProduction) : null;
+  const singleAvgs = singleDayMode ? computeShiftHourAverages(raw, worker.totalProduction) : null;
 
   const hasMultiDay = multiDayActiveDays > 0;
   const multiDayDailyAvg = hasMultiDay
