@@ -94,6 +94,8 @@ export type AppPermissions = {
   ekran1: boolean;
   ekran2: boolean;
   ekran3: boolean;
+  /** Fabrika TV özeti — günlük toplamlar, bölüm, üretken personel */
+  ekran4: boolean;
   loglar: boolean;
   topluListeKaldir: boolean;
   /** Excel’den yapıştırma ile toplu üretim kaydı */

@@ -33,6 +33,7 @@ export default function ThemeToggle() {
     pathname.startsWith("/ekran1") ||
     pathname.startsWith("/ekran2") ||
     pathname.startsWith("/ekran3") ||
+    pathname.startsWith("/ekran4") ||
     pathname.startsWith("/proses-kontrol") ||
     pathname.startsWith("/hata-rapor")
   ) return null;

@@ -82,7 +82,9 @@ export default function PersonnelNamesSection() {
   return (
     <div className="flex flex-col gap-5">
       <p className="text-sm text-slate-600 dark:text-slate-300">
-        Ana ekrandaki <strong>Çalışan Ekle</strong> formu bu listeden beslenir. İsimleri büyük harfle saklarız.
+        Ana ekrandaki <strong>Çalışan Ekle</strong> formu bu listeden beslenir. İsimleri büyük harfle saklarız. Burada bir
+        ismi güncellediğinizde aynı isme sahip tüm çalışan kayıtları (veri girişi listeleri, üretim ve TV ekranlarındaki
+        isimler) birlikte güncellenir.
       </p>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">

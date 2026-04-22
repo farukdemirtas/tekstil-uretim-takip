@@ -26,6 +26,7 @@ import {
   getHedefTakipStageTotals,
   getWorkerComparisonData,
   getWorkerHourlyBreakdown,
+  getWorkerHourlyBreakdownsForDate,
   getWorkerProductionDailyDetail,
   getWorkerDailyAnalytics,
   createUser,
@@ -811,7 +812,7 @@ app.get("/api/analytics/worker-comparison", requirePermission("karsilastirma"), 
   }
 });
 
-app.get("/api/analytics/worker-hourly", requireAnyPermission(["analysis", "ekran2", "ekran3"]), async (req, res) => {
+app.get("/api/analytics/worker-hourly", requireAnyPermission(["analysis", "ekran2", "ekran3", "ekran4"]), async (req, res) => {
   const { workerId, startDate, endDate } = req.query;
   if (!workerId || !startDate || !endDate) {
     return res.status(400).json({ message: "workerId, startDate ve endDate zorunlu" });
@@ -827,6 +828,23 @@ app.get("/api/analytics/worker-hourly", requireAnyPermission(["analysis", "ekran
     res.status(500).json({ message: "Saatlik veri alınamadı", error: String(error) });
   }
 });
+
+app.get(
+  "/api/analytics/workers-hourly-day",
+  requireAnyPermission(["analysis", "ekran2", "ekran3", "ekran4"]),
+  async (req, res) => {
+    const { date } = req.query;
+    if (!date) {
+      return res.status(400).json({ message: "date zorunlu (YYYY-MM-DD)" });
+    }
+    try {
+      const rows = await getWorkerHourlyBreakdownsForDate(String(date));
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ message: "Günlük saatlik toplu veri alınamadı", error: String(error) });
+    }
+  }
+);
 
 app.get("/api/analytics/worker-production-detail", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
   const { workerId, startDate, endDate, includeSameNameWorkers } = req.query;
@@ -918,7 +936,7 @@ app.get("/api/production", async (req, res) => {
 
 app.get(
   "/api/analytics/top-workers",
-  requireAnyPermission(["analysis", "ekran2", "ekran3", "ekran1"]),
+  requireAnyPermission(["analysis", "ekran2", "ekran3", "ekran1", "ekran4"]),
   async (req, res) => {
   const { startDate, endDate, team = "", process = "", limit = "20", hour = "" } = req.query;
   if (!startDate || !endDate) {
@@ -952,7 +970,7 @@ app.get(
   }
 });
 
-app.get("/api/analytics/daily-trend", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
+app.get("/api/analytics/daily-trend", requireAnyPermission(["analysis", "ekran2", "ekran4"]), async (req, res) => {
   const { startDate, endDate, team = "", process = "", hour = "" } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });

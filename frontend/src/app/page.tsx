@@ -830,7 +830,10 @@ export default function HomePage() {
               Hedef Takip
             </button>
           ) : null}
-          {hasPermission("ekran1") || hasPermission("ekran2") || hasPermission("ekran3") ? (
+          {hasPermission("ekran1") ||
+          hasPermission("ekran2") ||
+          hasPermission("ekran3") ||
+          hasPermission("ekran4") ? (
             <Link href="/ekran1" className="btn-nav" target="_blank" rel="noopener noreferrer">
               TV Ekranları
             </Link>

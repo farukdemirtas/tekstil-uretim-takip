@@ -740,6 +740,24 @@ export async function getWorkerHourlyBreakdown(params: {
   return res.json();
 }
 
+export type WorkerHourlyBreakdownRow = WorkerHourlyBreakdown & {
+  workerId: number;
+  name: string;
+  team: string;
+  process: string;
+};
+
+/** Belirli bir gün için tüm çalışanların saatlik dilim toplamları (tek istek). */
+export async function getWorkerHourlyBreakdownsForDate(date: string): Promise<WorkerHourlyBreakdownRow[]> {
+  const q = new URLSearchParams({ date }).toString();
+  const res = await apiFetch(`${apiBase()}/analytics/workers-hourly-day?${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Günlük saatlik toplu veri alınamadı");
+  return res.json();
+}
+
 export async function getDailyTrendAnalytics(params: {
   startDate: string;
   endDate: string;

@@ -7,6 +7,7 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   ekran1: true,
   ekran2: false,
   ekran3: false,
+  ekran4: false,
   loglar: false,
   /** Ana sayfada “tüm personeli listeden kaldır” (gün / gün ve sonrası) */
   topluListeKaldir: false,

@@ -44,11 +44,40 @@ export function addWorkerName(name) {
   });
 }
 
+/**
+ * İsim havuzu güncellemesi: aynı metne sahip tüm `workers` satırlarını da yeniler
+ * (ana ekran listesi, veri girişi, TV/ekran özetleri `workers.name` üzerinden gider).
+ */
 export function updateWorkerName(id, name) {
+  const newName = name.trim().toUpperCase();
   return new Promise((resolve, reject) => {
-    db.run("UPDATE worker_names SET name = ? WHERE id = ?", [name.trim().toUpperCase(), id], function (err) {
+    db.get("SELECT name FROM worker_names WHERE id = ?", [id], (err, row) => {
       if (err) return reject(err);
-      resolve({ updated: this.changes > 0 });
+      if (!row) return resolve({ updated: false, workersRenamed: 0 });
+      const oldName = String(row.name);
+      if (oldName === newName) return resolve({ updated: true, workersRenamed: 0 });
+
+      db.run("BEGIN", (bErr) => {
+        if (bErr) return reject(bErr);
+        db.run("UPDATE worker_names SET name = ? WHERE id = ?", [newName, id], function (e1) {
+          if (e1) {
+            return db.run("ROLLBACK", () => reject(e1));
+          }
+          if (this.changes === 0) {
+            return db.run("ROLLBACK", () => resolve({ updated: false, workersRenamed: 0 }));
+          }
+          db.run("UPDATE workers SET name = ? WHERE name = ?", [newName, oldName], function (e2) {
+            const n = e2 ? 0 : this.changes;
+            if (e2) {
+              return db.run("ROLLBACK", () => reject(e2));
+            }
+            db.run("COMMIT", (e3) => {
+              if (e3) return reject(e3);
+              resolve({ updated: true, workersRenamed: n });
+            });
+          });
+        });
+      });
     });
   });
 }
@@ -1394,6 +1423,67 @@ export function getWorkerHourlyBreakdown({ workerId, startDate, endDate }) {
           h1700: z(row?.h1700),
           h1830: z(row?.h1830),
         });
+      }
+    );
+  });
+}
+
+/** Tek gün: tüm çalışanların saatlik kolon toplamları (EKRAN4 toplu ortalama için). */
+export function getWorkerHourlyBreakdownsForDate(productionDate) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `
+      SELECT
+        w.id AS workerId,
+        w.name,
+        w.team,
+        w.process,
+        COALESCE(SUM(p.t1000), 0) AS t1000,
+        COALESCE(SUM(p.t1300), 0) AS t1300,
+        COALESCE(SUM(p.t1600), 0) AS t1600,
+        COALESCE(SUM(p.t1830), 0) AS t1830,
+        COALESCE(SUM(p.h0900), 0) AS h0900,
+        COALESCE(SUM(p.h1000), 0) AS h1000,
+        COALESCE(SUM(p.h1115), 0) AS h1115,
+        COALESCE(SUM(p.h1215), 0) AS h1215,
+        COALESCE(SUM(p.h1300), 0) AS h1300,
+        COALESCE(SUM(p.h1445), 0) AS h1445,
+        COALESCE(SUM(p.h1545), 0) AS h1545,
+        COALESCE(SUM(p.h1700), 0) AS h1700,
+        COALESCE(SUM(p.h1830), 0) AS h1830h
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.production_date = ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      GROUP BY w.id, w.name, w.team, w.process
+      ORDER BY w.name ASC
+      `,
+      [String(productionDate)],
+      (err, rows) => {
+        if (err) return reject(err);
+        const z = (n) => Number(n) || 0;
+        resolve(
+          (rows || []).map((row) => ({
+            workerId: z(row.workerId),
+            name: String(row.name || ""),
+            team: String(row.team || ""),
+            process: String(row.process || ""),
+            t1000: z(row.t1000),
+            t1300: z(row.t1300),
+            t1600: z(row.t1600),
+            t1830: z(row.t1830),
+            h0900: z(row.h0900),
+            h1000: z(row.h1000),
+            h1115: z(row.h1115),
+            h1215: z(row.h1215),
+            h1300: z(row.h1300),
+            h1445: z(row.h1445),
+            h1545: z(row.h1545),
+            h1700: z(row.h1700),
+            h1830: z(row.h1830h)
+          }))
+        );
       }
     );
   });

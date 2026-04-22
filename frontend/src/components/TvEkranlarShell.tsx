@@ -6,24 +6,27 @@ import { useEffect, useMemo, useState } from "react";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "1" | "2" | "3";
+type TabId = "1" | "2" | "3" | "4";
 
 const IFRAME_SRC: Record<TabId, string> = {
   "1": "/ekran1/icerik",
   "2": "/ekran2/icerik",
   "3": "/ekran3/icerik",
+  "4": "/ekran4/icerik",
 };
 
 const ROUTE: Record<TabId, string> = {
   "1": "/ekran1",
   "2": "/ekran2",
   "3": "/ekran3",
+  "4": "/ekran4",
 };
 
-function firstAllowedRoute(can1: boolean, can2: boolean, can3: boolean): string | null {
+function firstAllowedRoute(can1: boolean, can2: boolean, can3: boolean, can4: boolean): string | null {
   if (can1) return ROUTE["1"];
   if (can2) return ROUTE["2"];
   if (can3) return ROUTE["3"];
+  if (can4) return ROUTE["4"];
   return null;
 }
 
@@ -34,9 +37,13 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
   const can1 = isAdminRole() || hasPermission("ekran1");
   const can2 = isAdminRole() || hasPermission("ekran2");
   const can3 = isAdminRole() || hasPermission("ekran3");
+  const can4 = isAdminRole() || hasPermission("ekran4");
 
   const allowedForActive =
-    (active === "1" && can1) || (active === "2" && can2) || (active === "3" && can3);
+    (active === "1" && can1) ||
+    (active === "2" && can2) ||
+    (active === "3" && can3) ||
+    (active === "4" && can4);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -45,26 +52,27 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
       return;
     }
     setAuthToken(token);
-    if (!can1 && !can2 && !can3) {
+    if (!can1 && !can2 && !can3 && !can4) {
       window.location.href = "/";
       return;
     }
     if (!allowedForActive) {
-      const fallback = firstAllowedRoute(can1, can2, can3);
+      const fallback = firstAllowedRoute(can1, can2, can3, can4);
       if (fallback) router.replace(fallback);
       else window.location.href = "/";
       return;
     }
     setReady(true);
-  }, [can1, can2, can3, allowedForActive, router]);
+  }, [can1, can2, can3, can4, allowedForActive, router]);
 
   const tabs = useMemo(() => {
     const t: { id: TabId; label: string; href: string }[] = [];
     if (can1) t.push({ id: "1", label: "EKRAN1", href: ROUTE["1"] });
     if (can2) t.push({ id: "2", label: "EKRAN2", href: ROUTE["2"] });
     if (can3) t.push({ id: "3", label: "EKRAN3", href: ROUTE["3"] });
+    if (can4) t.push({ id: "4", label: "EKRAN4", href: ROUTE["4"] });
     return t;
-  }, [can1, can2, can3]);
+  }, [can1, can2, can3, can4]);
 
   if (!ready || !allowedForActive) {
     return (
