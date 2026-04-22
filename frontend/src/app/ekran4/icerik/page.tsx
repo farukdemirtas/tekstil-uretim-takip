@@ -950,11 +950,11 @@ export default function Ekran4IcerikPage() {
             {slide === 4 && (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-slate-100/90 via-white to-emerald-50/30 p-2 shadow-[0_20px_60px_rgba(15,23,42,0.1)] min-[1920px]:p-4">
                 <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/60 bg-white/90 shadow-[0_8px_40px_rgba(16,185,129,0.12)] ring-1 ring-emerald-200/40 backdrop-blur-sm">
-                  <div className="shrink-0 bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-600 px-4 py-3 min-[1920px]:px-6 min-[1920px]:py-4">
-                    <h2 className="text-base font-black uppercase leading-tight tracking-wide text-white sm:text-lg min-[1920px]:text-xl min-[1920px]:tracking-[0.12em]">
+                  <div className="shrink-0 bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-600 px-4 py-3.5 min-[1920px]:px-6 min-[1920px]:py-4">
+                    <h2 className="text-lg font-black uppercase leading-tight tracking-wide text-white sm:text-xl min-[1920px]:text-2xl min-[1920px]:tracking-[0.12em]">
                       Son 7 iş günü — genel tamamlanan
                     </h2>
-                    <p className="mt-1 text-[11px] font-semibold leading-snug text-emerald-50/95 min-[1920px]:text-sm">
+                    <p className="mt-1.5 text-xs font-semibold leading-snug text-emerald-50/95 min-[1920px]:text-base min-[1920px]:leading-snug">
                       Günlük özet ile aynı metrik: aşama adetlerinin minimumu (adet)
                     </p>
                   </div>
@@ -964,23 +964,23 @@ export default function Ekran4IcerikPage() {
                       <p className="text-center text-base font-medium text-slate-500 min-[1920px]:text-lg">Veri yok.</p>
                     ) : (
                       <>
-                        <div className="relative shrink-0 overflow-hidden rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-emerald-500/[0.12] via-white to-cyan-50/90 p-4 shadow-[0_12px_40px_rgba(16,185,129,0.18)] ring-1 ring-emerald-100/80 min-[1920px]:rounded-3xl min-[1920px]:p-6 min-[1920px]:shadow-[0_20px_50px_rgba(16,185,129,0.2)]">
+                        <div className="relative shrink-0 overflow-hidden rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-emerald-500/[0.12] via-white to-cyan-50/90 p-4 shadow-[0_12px_40px_rgba(16,185,129,0.18)] ring-1 ring-emerald-100/80 min-[1920px]:rounded-3xl min-[1920px]:p-7 min-[1920px]:shadow-[0_20px_50px_rgba(16,185,129,0.2)]">
                           <div className="absolute -right-6 -top-6 h-32 w-32 rounded-full bg-gradient-to-br from-emerald-400/25 to-cyan-400/10 blur-2xl min-[1920px]:h-40 min-[1920px]:w-40" aria-hidden />
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700/90 min-[1920px]:text-xs min-[1920px]:tracking-[0.25em]">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-800 min-[1920px]:text-base min-[1920px]:tracking-[0.2em]">
                             Bugün — genel tamamlanan
                           </p>
-                          <p className="mt-0.5 text-xs font-semibold text-slate-500 min-[1920px]:text-sm">
+                          <p className="mt-1 text-sm font-semibold text-slate-600 min-[1920px]:mt-1.5 min-[1920px]:text-lg">
                             {formatTrLongWeekday(todayIso)}
                           </p>
-                          <div className="mt-2 flex flex-wrap items-end justify-between gap-3 min-[1920px]:mt-3">
-                            <p className="font-black tabular-nums leading-none tracking-tight text-slate-950 text-5xl min-[1920px]:text-7xl min-[1920px]:[text-shadow:0_2px_0_rgba(16,185,129,0.2)]">
+                          <div className="mt-3 flex flex-wrap items-end justify-between gap-3 min-[1920px]:mt-4 min-[1920px]:gap-4">
+                            <p className="font-black tabular-nums leading-none tracking-tight text-slate-950 text-6xl min-[1920px]:text-8xl min-[1920px]:[text-shadow:0_3px_0_rgba(16,185,129,0.15)]">
                               {slide5Hero.today.toLocaleString("tr-TR")}
                             </p>
                             <div className="min-w-0 text-right">
-                              <p className="text-[10px] font-bold uppercase text-slate-400 min-[1920px]:text-xs">adet</p>
+                              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 min-[1920px]:text-sm">adet</p>
                               {slide5Hero.vsPrev != null && slide5Hero.prevDateLabel ? (
                                 <p
-                                  className={`mt-0.5 text-sm font-bold min-[1920px]:text-base ${
+                                  className={`mt-1 text-base font-bold min-[1920px]:text-xl ${
                                     slide5Hero.vsPrev > 0
                                       ? "text-emerald-600"
                                       : slide5Hero.vsPrev < 0
@@ -990,17 +990,20 @@ export default function Ekran4IcerikPage() {
                                 >
                                   {slide5Hero.vsPrev > 0 ? "↑" : slide5Hero.vsPrev < 0 ? "↓" : "→"}{" "}
                                   {slide5Hero.vsPrev > 0 ? "+" : ""}
-                                  {slide5Hero.vsPrev}% <span className="font-medium text-slate-400">önceki iş gününe göre</span>
+                                  {slide5Hero.vsPrev}%{" "}
+                                  <span className="font-semibold text-slate-500 min-[1920px]:text-lg min-[1920px]:text-slate-500">
+                                    önceki iş gününe göre
+                                  </span>
                                 </p>
                               ) : (
-                                <p className="mt-0.5 text-xs text-slate-400 min-[1920px]:text-sm">Önceki günle kıyas yok</p>
+                                <p className="mt-1 text-sm text-slate-400 min-[1920px]:text-base">Önceki günle kıyas yok</p>
                               )}
                             </div>
                           </div>
                         </div>
 
                         <div className="min-h-0 flex-1">
-                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 min-[1920px]:mb-2 min-[1920px]:text-xs min-[1920px]:tracking-[0.15em]">
+                          <p className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 min-[1920px]:mb-2 min-[1920px]:text-sm min-[1920px]:tracking-[0.15em]">
                             Önceki iş günleri
                           </p>
                           <ul className="grid max-h-[min(38vh,18rem)] min-h-0 auto-rows-min grid-cols-1 gap-1.5 overflow-y-auto pr-0.5 min-[1920px]:max-h-none min-[1920px]:gap-2 min-[1920px]:[grid-template-rows:repeat(6,minmax(0,1fr))] min-[1920px]:pr-1">
@@ -1012,7 +1015,7 @@ export default function Ekran4IcerikPage() {
                                   className="flex min-h-0 items-stretch overflow-hidden rounded-xl border border-slate-200/60 bg-slate-50/60 shadow-sm"
                                 >
                                   <div className="flex w-[6.5rem] shrink-0 items-center border-r border-slate-200/50 bg-white/90 px-2 py-1 min-[1920px]:w-[8.5rem] min-[1920px]:px-2.5 min-[1920px]:py-1.5">
-                                    <span className="line-clamp-2 text-[11px] font-bold leading-tight text-slate-600 min-[1920px]:text-sm">
+                                    <span className="line-clamp-2 text-xs font-bold leading-tight text-slate-600 min-[1920px]:text-base">
                                       {formatWorkdayRowLabel(p.iso, todayIso)}
                                     </span>
                                   </div>
@@ -1023,7 +1026,7 @@ export default function Ekran4IcerikPage() {
                                         style={{ width: `${pct}%` }}
                                       />
                                     </div>
-                                    <span className="w-14 shrink-0 text-right text-xs font-bold tabular-nums text-slate-800 min-[1920px]:w-16 min-[1920px]:text-base min-[1920px]:leading-none">
+                                    <span className="w-16 shrink-0 text-right text-sm font-bold tabular-nums text-slate-800 min-[1920px]:w-[4.5rem] min-[1920px]:text-lg min-[1920px]:leading-none">
                                       {p.total.toLocaleString("tr-TR")}
                                     </span>
                                   </div>

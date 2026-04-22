@@ -11,6 +11,9 @@ const PRODUCTION_SUM_SQL =
   "COALESCE(p.h0900, 0) + COALESCE(p.h1000, 0) + COALESCE(p.h1115, 0) + COALESCE(p.h1215, 0) + " +
   "COALESCE(p.h1300, 0) + COALESCE(p.h1445, 0) + COALESCE(p.h1545, 0) + COALESCE(p.h1700, 0) + COALESCE(p.h1830, 0)";
 
+/** Hedef / günlük özet: saat dilimleri + mesai dışı ek sayım (analiz tarafları `PRODUCTION_SUM_SQL` ile kalmalı) */
+const HEDEF_PRODUCTION_LINE_SQL = `(${PRODUCTION_SUM_SQL} + COALESCE(p.ek_sayim, 0))`;
+
 function hashPassword(password, salt) {
   return pbkdf2Sync(password, salt, 310000, 64, "sha512").toString("hex");
 }
@@ -379,6 +382,7 @@ export function getDailyEntries(date) {
         COALESCE(p.h1545, 0) AS h1545,
         COALESCE(p.h1700, 0) AS h1700,
         COALESCE(p.h1830, 0) AS h1830,
+        COALESCE(p.ek_sayim, 0) AS ekSayim,
         COALESCE(p.note, '') AS note,
         CASE WHEN EXISTS (
           SELECT 1 FROM worker_roster_day_hide h
@@ -564,7 +568,8 @@ export function upsertDayProductMeta({ date, productName, productModel, modelId,
 export function getProductionEntrySlots(workerId, date) {
   return new Promise((resolve, reject) => {
     db.get(
-      `SELECT t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830
+      `SELECT t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830,
+              COALESCE(ek_sayim, 0) AS ek_sayim
        FROM production_entries WHERE worker_id = ? AND production_date = ?`,
       [workerId, date],
       (err, row) => {
@@ -585,6 +590,7 @@ export function getProductionEntrySlots(workerId, date) {
           h1545: z(row.h1545),
           h1700: z(row.h1700),
           h1830: z(row.h1830),
+          ekSayim: z(row.ek_sayim),
         });
       }
     );
@@ -613,8 +619,8 @@ export function upsertEntry(payload) {
   return new Promise((resolve, reject) => {
     db.run(
       `
-      INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       ON CONFLICT(worker_id, production_date) DO UPDATE SET
         t1000 = excluded.t1000,
         t1300 = excluded.t1300,
@@ -655,6 +661,27 @@ export function upsertEntry(payload) {
   });
 }
 
+/** Sadece ek_sayim; saat dilimi upsert’leri `ek_sayim` sütununu değiştirmez. */
+export function upsertEkSayim({ workerId, date, ekSayim }) {
+  const wid = Number(workerId);
+  const z = Math.max(0, Math.floor(Number(ekSayim) || 0));
+  return new Promise((resolve, reject) => {
+    db.run(
+      `
+      INSERT INTO production_entries (worker_id, production_date, ek_sayim)
+      VALUES (?, ?, ?)
+      ON CONFLICT(worker_id, production_date) DO UPDATE SET
+        ek_sayim = excluded.ek_sayim
+      `,
+      [wid, String(date), z],
+      (err) => {
+        if (err) return reject(err);
+        resolve(true);
+      }
+    );
+  });
+}
+
 export function upsertWorkerNote({ workerId, date, note }) {
   return new Promise((resolve, reject) => {
     db.run(
@@ -680,8 +707,8 @@ export function upsertEntriesBulk(entries) {
 
       const stmt = db.prepare(
         `
-        INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ON CONFLICT(worker_id, production_date) DO UPDATE SET
           t1000 = excluded.t1000,
           t1300 = excluded.t1300,
@@ -887,7 +914,7 @@ export function getRangeStageTotals(startDate, endDate) {
         SELECT
           w.team,
           SUM(
-            ${PRODUCTION_SUM_SQL}
+            ${HEDEF_PRODUCTION_LINE_SQL}
           ) AS total
         FROM production_entries p
         JOIN workers w ON w.id = p.worker_id
@@ -912,7 +939,7 @@ export function getRangeStageTotals(startDate, endDate) {
 const LEGACY_HEDEF_LABELS = ["Sağ ön", "Sol ön", "Yaka hazırlık", "Arka hazırlık", "Bitim"];
 
 function hedefLineSumSql() {
-  return PRODUCTION_SUM_SQL;
+  return HEDEF_PRODUCTION_LINE_SQL;
 }
 
 /** Tek bölüm+proses satırı için tarih aralığı üretim toplamı (0.5 çarpan opsiyonel). */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
@@ -20,6 +20,7 @@ import {
   removeAllWorkersForDay,
   copyRosterToFutureDates,
   saveProduction,
+  saveEkSayim,
   saveProductionBulk,
   setAuthToken,
   unhideWorkerForCalendarDay,
@@ -91,6 +92,24 @@ function orderedExportRows(rows: ProductionRow[], teamMeta: Array<{ code: string
   return out;
 }
 
+/** ProductionTable ile aynı: bölüm sırası + her bölümde o günkü tablodaki satır sırası. */
+function rowsByTeamSections(
+  rows: ProductionRow[],
+  teamMeta: Array<{ code: string }>
+): { team: string; teamRows: ProductionRow[] }[] {
+  const inData = [...new Set(rows.map((r) => r.team))];
+  const order = teamMeta.length ? teamMeta.map((t) => t.code) : [...EXPORT_TEAM_FALLBACK];
+  const head = order.filter((t) => inData.includes(t));
+  const tail = inData.filter((t) => !order.includes(t));
+  const teams = [...head, ...tail];
+  return teams
+    .map((team) => ({
+      team,
+      teamRows: rows.filter((r) => r.team === team),
+    }))
+    .filter((s) => s.teamRows.length > 0);
+}
+
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<string>("");
@@ -126,10 +145,12 @@ export default function HomePage() {
   const [bulkExportEnd, setBulkExportEnd] = useState("");
   const [bulkExporting, setBulkExporting] = useState(false);
   const [bulkExportProgress, setBulkExportProgress] = useState<{ done: number; total: number } | null>(null);
+  const [ekSayimOpen, setEkSayimOpen] = useState(false);
 
   const rowsRef = useRef<ProductionRow[]>(rows);
   const selectedDateRef = useRef(selectedDate);
   const productionSaveTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const ekSayimSaveTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -142,6 +163,8 @@ export default function HomePage() {
     return () => {
       productionSaveTimersRef.current.forEach((t) => clearTimeout(t));
       productionSaveTimersRef.current.clear();
+      ekSayimSaveTimersRef.current.forEach((t) => clearTimeout(t));
+      ekSayimSaveTimersRef.current.clear();
     };
   }, []);
 
@@ -283,38 +306,91 @@ export default function HomePage() {
   }
 
   const PRODUCTION_SAVE_DEBOUNCE_MS = 320;
+  const EK_SAYIM_SAVE_DEBOUNCE_MS = 400;
+
+  /** Sunucu `ek_sayim` + saat dilimlerini aynı aşama toplamında birleştirir; bu çağrı Günlük Özet’i bu toplamla doldurur. */
+  async function refreshHedefStageTotals() {
+    const dateStr = selectedDateRef.current;
+    const mid = activeModelIdRef.current;
+    try {
+      const ht = await getHedefTakipStageTotals(dateStr, dateStr, mid ?? undefined);
+      setHedefStageTotals(ht);
+      setHedefStageError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Günlük özet yenilenemedi";
+      setHedefStageError(msg);
+    }
+  }
+
+  function cancelEkSayimDebounce(workerId: number) {
+    const timers = ekSayimSaveTimersRef.current;
+    const prev = timers.get(workerId);
+    if (prev) {
+      clearTimeout(prev);
+      timers.delete(workerId);
+    }
+  }
+
+  async function flushEkSayimSave(workerId: number) {
+    const dateStr = selectedDateRef.current;
+    const snap = rowsRef.current.find((r) => r.workerId === workerId);
+    if (!snap || snap.absentForDay) return;
+    const v = Math.max(0, Math.floor(Number(snap.ekSayim) || 0));
+    try {
+      await saveEkSayim({ workerId, date: dateStr, ekSayim: v });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ek adet kaydedilemedi");
+      return;
+    }
+    await refreshHedefStageTotals();
+  }
+
+  function handleEkSayimChange(workerId: number, value: number) {
+    const target = rowsRef.current.find((row) => row.workerId === workerId);
+    if (!target || target.absentForDay) return;
+    const nextVal = Math.max(0, Math.floor(value) || 0);
+    setRows((prev) =>
+      prev.map((row) => (row.workerId === workerId ? { ...row, ekSayim: nextVal } : row))
+    );
+    const timers = ekSayimSaveTimersRef.current;
+    const prevTimer = timers.get(workerId);
+    if (prevTimer) clearTimeout(prevTimer);
+    const scheduledDate = selectedDate;
+    const t = setTimeout(() => {
+      timers.delete(workerId);
+      if (selectedDateRef.current !== scheduledDate) return;
+      void flushEkSayimSave(workerId);
+    }, EK_SAYIM_SAVE_DEBOUNCE_MS);
+    timers.set(workerId, t);
+  }
 
   async function flushProductionSave(workerId: number) {
     const dateStr = selectedDateRef.current;
     const snap = rowsRef.current.find((r) => r.workerId === workerId);
     if (!snap || snap.absentForDay) return;
-    await saveProduction({
-      workerId,
-      date: dateStr,
-      t1000: snap.t1000,
-      t1300: snap.t1300,
-      t1600: snap.t1600,
-      t1830: snap.t1830,
-      h0900: snap.h0900,
-      h1000: snap.h1000,
-      h1115: snap.h1115,
-      h1215: snap.h1215,
-      h1300: snap.h1300,
-      h1445: snap.h1445,
-      h1545: snap.h1545,
-      h1700: snap.h1700,
-      h1830: snap.h1830,
-    });
     try {
-      const ht = await getHedefTakipStageTotals(
-        dateStr,
-        dateStr,
-        activeModelIdRef.current ?? undefined
-      );
-      setHedefStageTotals(ht);
-    } catch {
-      /* hedef özeti */
+      await saveProduction({
+        workerId,
+        date: dateStr,
+        t1000: snap.t1000,
+        t1300: snap.t1300,
+        t1600: snap.t1600,
+        t1830: snap.t1830,
+        h0900: snap.h0900,
+        h1000: snap.h1000,
+        h1115: snap.h1115,
+        h1215: snap.h1215,
+        h1300: snap.h1300,
+        h1445: snap.h1445,
+        h1545: snap.h1545,
+        h1700: snap.h1700,
+        h1830: snap.h1830,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Üretim kaydedilemedi");
+      return;
     }
+    await refreshHedefStageTotals();
   }
 
   function handleCellChange(workerId: number, field: ProductionSlotKey, value: number) {
@@ -343,6 +419,11 @@ export default function HomePage() {
     if (stages.length === 0) return 0;
     return Math.min(...stages.map((s) => v(s.total)));
   }, [hedefStageTotals]);
+
+  const ekSayimTeamSections = useMemo(
+    () => rowsByTeamSections(rows, teamMeta),
+    [rows, teamMeta]
+  );
 
   /** Başlangıç ve bitiş (dahil) arasındaki hafta içi günleri döner */
   function weekdaysInRange(startIso: string, endIso: string): string[] {
@@ -920,33 +1001,155 @@ export default function HomePage() {
 
       <WorkerForm onSubmit={handleAddWorker} />
 
-      {!loading && rows.length > 0 && (hasPermission("topluListeKaldir") || role === "admin") ? (
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {hasPermission("topluListeKaldir") ? (
+      {!loading && rows.length > 0 ? (
+        <>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {hasPermission("topluListeKaldir") || role === "admin" ? (
+              <>
+                {hasPermission("topluListeKaldir") ? (
+                  <button
+                    type="button"
+                    disabled={clearingAllWorkers}
+                    onClick={() => setBulkRemoveOpen(true)}
+                    className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/40"
+                  >
+                    {clearingAllWorkers
+                      ? "Siliniyor…"
+                      : selectedDate === todayWeekdayIso()
+                        ? "Tüm personeli sil… (bugün)"
+                        : "Tüm personeli sil… (seçili gün)"}
+                  </button>
+                ) : null}
+                {role === "admin" ? (
+                  <button
+                    type="button"
+                    disabled={copyRosterBusy}
+                    onClick={() => openCopyRosterModal()}
+                    className="rounded-xl border border-teal-200 bg-white px-3.5 py-2 text-sm font-medium text-teal-800 shadow-sm transition hover:bg-teal-50 disabled:opacity-50 dark:border-teal-800/50 dark:bg-slate-900 dark:text-teal-200 dark:hover:bg-teal-950/40"
+                  >
+                    {copyRosterBusy ? "Aktarılıyor…" : "Tüm personeli diğer günlere aktar"}
+                  </button>
+                ) : null}
+              </>
+            ) : null}
             <button
               type="button"
-              disabled={clearingAllWorkers}
-              onClick={() => setBulkRemoveOpen(true)}
-              className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/40"
+              onClick={() => {
+                setEkSayimOpen((o) => {
+                  const opening = !o;
+                  if (opening) void refreshHedefStageTotals();
+                  return opening;
+                });
+              }}
+              className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border text-slate-600 shadow-sm transition dark:text-slate-300 ${
+                ekSayimOpen
+                  ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+                  : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800"
+              }`}
+              title="Ek giriş (günlük özete yansır; saat toplamına eklenmez)"
+              aria-label="Ek giriş: personel ve adet"
+              aria-expanded={ekSayimOpen}
             >
-              {clearingAllWorkers
-                ? "Siliniyor…"
-                : selectedDate === todayWeekdayIso()
-                  ? "Tüm personeli sil… (bugün)"
-                  : "Tüm personeli sil… (seçili gün)"}
+              <svg
+                className="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M8.25 6.75h12M8.25 12h12M8.25 17.25h12" />
+                <path d="M3.75 6.75h.01v.01H3.75V6.75zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0zM3.75 12h.01v.01H3.75V12zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0zM3.75 17.25h.01v.01H3.75v-.01zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0z" />
+              </svg>
             </button>
+          </div>
+          {ekSayimOpen ? (
+            <div className="mt-3 space-y-3 rounded-xl border border-slate-200/90 bg-slate-50/40 p-4 dark:border-slate-600/50 dark:bg-slate-800/20">
+              <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                Aşağıdaki adetler kaydedildiğinde alttaki <strong className="font-medium text-slate-700 dark:text-slate-300">Günlük Özet</strong> kutularındaki
+                aşama toplamları ve <strong className="font-medium text-slate-700 dark:text-slate-300">Genel tamamlanan</strong> anında güncellenir (üretim
+                saatleri + bu ek adetler). Ana tablodaki saat toplamı ve analizler buna göre değişmez.
+              </p>
+              <div className="overflow-x-auto overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100">
+                <table className="w-full min-w-[280px] border-collapse text-sm">
+                  <thead className="bg-slate-800 text-white">
+                    <tr>
+                      <th className="px-3 py-2.5 text-left text-sm font-bold">Ad Soyad</th>
+                      <th className="w-[5.5rem] px-2 py-2.5 text-center text-sm font-bold">Adet</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ekSayimTeamSections.map(({ team, teamRows }) => (
+                      <Fragment key={team}>
+                        <tr className="bg-slate-200 dark:bg-slate-700">
+                          <td colSpan={2} className="px-3 py-2 text-left text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {resolveTeamLabel(team)}
+                          </td>
+                        </tr>
+                        {teamRows.map((row) => {
+                          const disabled = row.absentForDay === true;
+                          return (
+                            <tr
+                              key={row.workerId}
+                              className={
+                                disabled
+                                  ? "border-b border-slate-200 align-middle bg-slate-100/80 text-slate-500 opacity-80 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
+                                  : "border-b border-slate-200 align-middle hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/50"
+                              }
+                            >
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`font-medium ${
+                                      disabled ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"
+                                    }`}
+                                  >
+                                    {row.name}
+                                  </span>
+                                  {disabled ? (
+                                    <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                                      Sahada yok
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{row.process}</p>
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  disabled={disabled}
+                                  value={row.ekSayim ?? 0}
+                                  onChange={(e) => {
+                                    const n = e.target.value === "" ? 0 : Number(e.target.value);
+                                    handleEkSayimChange(
+                                      row.workerId,
+                                      Number.isFinite(n) ? n : 0
+                                    );
+                                  }}
+                                  onBlur={() => {
+                                    if (disabled) return;
+                                    cancelEkSayimDebounce(row.workerId);
+                                    void flushEkSayimSave(row.workerId);
+                                  }}
+                                  className="input-modern w-full max-w-[5.5rem] py-1.5 text-center text-sm tabular-nums disabled:cursor-not-allowed"
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : null}
-          {role === "admin" ? (
-            <button
-              type="button"
-              disabled={copyRosterBusy}
-              onClick={() => openCopyRosterModal()}
-              className="rounded-xl border border-teal-200 bg-white px-3.5 py-2 text-sm font-medium text-teal-800 shadow-sm transition hover:bg-teal-50 disabled:opacity-50 dark:border-teal-800/50 dark:bg-slate-900 dark:text-teal-200 dark:hover:bg-teal-950/40"
-            >
-              {copyRosterBusy ? "Aktarılıyor…" : "Tüm personeli diğer günlere aktar"}
-            </button>
-          ) : null}
-        </div>
+        </>
       ) : null}
 
       {copyRosterSuccess ? (

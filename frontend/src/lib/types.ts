@@ -31,6 +31,8 @@ export type ProductionRow = {
   h1545: number;
   h1700: number;
   h1830: number;
+  /** Mesai / ek süre sayımı — hedef & günlük özet toplamına eklenir; saatlik analizde yok. */
+  ekSayim: number;
   /** Bu takvim günü sahada yok (satır soluk; üretim hücreleri kapalı) */
   absentForDay?: boolean;
   /** Personele özel not / açıklama (gün bazlı) */

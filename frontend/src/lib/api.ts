@@ -356,6 +356,7 @@ function parseProductionRow(raw: unknown): ProductionRow | null {
     h1545: z("h1545"),
     h1700: z("h1700"),
     h1830: z("h1830"),
+    ekSayim: z("ekSayim"),
     absentForDay: absentForDay || undefined,
     note: typeof o.note === "string" && o.note ? o.note : undefined,
   };
@@ -456,6 +457,15 @@ export async function saveProduction(payload: {
     body: JSON.stringify(payload)
   });
   if (!response.ok) throw new Error("Üretim kaydedilemedi");
+}
+
+export async function saveEkSayim(payload: { workerId: number; date: string; ekSayim: number }): Promise<void> {
+  const response = await apiFetch(`${apiBase()}/production/ek-sayim`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error("Ek sayım kaydedilemedi");
 }
 
 export async function saveProductionBulk(payload: {

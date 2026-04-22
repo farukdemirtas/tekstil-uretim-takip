@@ -218,6 +218,20 @@ export function initDb() {
             }
           });
         }
+        if (!names.has("ek_sayim")) {
+          db.run(
+            "ALTER TABLE production_entries ADD COLUMN ek_sayim INTEGER NOT NULL DEFAULT 0",
+            (e) => {
+              if (e) {
+                const msg = String(e.message || e);
+                if (!msg.toLowerCase().includes("duplicate column")) {
+                  // eslint-disable-next-line no-console
+                  console.error("[tekstil-db] production_entries ek_sayim migration:", msg);
+                }
+              }
+            }
+          );
+        }
       });
     });
 

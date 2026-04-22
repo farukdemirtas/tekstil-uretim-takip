@@ -44,6 +44,7 @@ import {
   upsertEntriesBulk,
   upsertEntry,
   upsertWorkerNote,
+  upsertEkSayim,
   getProductionEntrySlots,
   getTeams,
   getProcesses,
@@ -880,6 +881,20 @@ app.get("/api/production/day-meta", async (req, res) => {
     res.json(meta);
   } catch (error) {
     res.status(500).json({ message: "Gün ürün bilgisi alınamadı", error: String(error) });
+  }
+});
+
+app.put("/api/production/ek-sayim", async (req, res) => {
+  const { workerId, date, ekSayim } = req.body || {};
+  if (!workerId || !date) {
+    return res.status(400).json({ message: "workerId ve date zorunlu" });
+  }
+  try {
+    const z = Math.max(0, Math.floor(Number(ekSayim) || 0));
+    await upsertEkSayim({ workerId: Number(workerId), date: String(date), ekSayim: z });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "Ek sayım kaydedilemedi", error: String(error) });
   }
 });
 

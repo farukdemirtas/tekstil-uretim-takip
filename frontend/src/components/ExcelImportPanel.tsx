@@ -122,6 +122,7 @@ function workersToMatchRows(workers: Worker[]): ProductionRow[] {
     h1545: 0,
     h1700: 0,
     h1830: 0,
+    ekSayim: 0,
   }));
 }
 

@@ -72,9 +72,12 @@ export default function AdminPanel({
 
   return (
     <div className="surface-card">
-      <h2 className="mb-4 text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">
-        Günlük Özet
-      </h2>
+      <div className="mb-4">
+        <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">Günlük Özet</h2>
+        <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+          Aşama toplamları, o günün üretim saatleri ile ek adet sütununu birlikte sayar.
+        </p>
+      </div>
       {stageError && (
         <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
           ⚠ {stageError}
