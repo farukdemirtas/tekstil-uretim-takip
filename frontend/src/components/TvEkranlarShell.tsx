@@ -65,6 +65,28 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
     setReady(true);
   }, [can1, can2, can3, can4, allowedForActive, router]);
 
+  /** iframe içi “Tam ekran” tüm pencereye yayılır; tam ekranda TV şeridini gizle */
+  const [shellFs, setShellFs] = useState(false);
+  useEffect(() => {
+    const onFs = () => setShellFs(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFs);
+    onFs();
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type !== "ekran-tv-toggle-fullscreen") return;
+      if (document.fullscreenElement) {
+        void document.exitFullscreen();
+      } else {
+        const el = document.documentElement;
+        if (el.requestFullscreen) void el.requestFullscreen();
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
   const tabs = useMemo(() => {
     const t: { id: TabId; label: string; href: string }[] = [];
     if (can1) t.push({ id: "1", label: "EKRAN1", href: ROUTE["1"] });
@@ -86,7 +108,12 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-slate-200 dark:bg-slate-950">
-      <header className="z-[101] flex min-h-0 shrink-0 flex-wrap items-center justify-between gap-1.5 border-b border-slate-300 bg-white px-2 py-1.5 shadow-sm sm:gap-2 sm:px-3 sm:py-2 dark:border-slate-600 dark:bg-slate-900">
+      <header
+        className={`z-[101] flex min-h-0 shrink-0 flex-wrap items-center justify-between gap-1.5 border-b border-slate-300 bg-white px-2 py-1.5 shadow-sm sm:gap-2 sm:px-3 sm:py-2 dark:border-slate-600 dark:bg-slate-900 ${
+          shellFs ? "hidden" : ""
+        }`}
+        aria-hidden={shellFs}
+      >
         <nav className="flex flex-wrap gap-1" aria-label="TV ekranları">
           {tabs.map((t) => {
             const on = active === t.id;

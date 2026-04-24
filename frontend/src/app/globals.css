@@ -139,3 +139,35 @@
 .ticker-scroll:hover {
   animation-play-state: paused;
 }
+
+/* EKRAN4 /ekran4/icerik — 50" / 4K TV: tüm rem tabanlı Tailwind sınıfları büyür, taşma kontrol edilir */
+html.ekran4-icerik {
+  font-size: 100%;
+}
+@media (min-width: 1920px) {
+  html.ekran4-icerik {
+    font-size: 106.25%;
+  }
+}
+@media (min-width: 2560px) {
+  html.ekran4-icerik {
+    font-size: 118.75%;
+  }
+}
+@media (min-width: 3200px) {
+  html.ekran4-icerik {
+    font-size: 135%;
+  }
+}
+@media (min-width: 3840px) {
+  html.ekran4-icerik {
+    font-size: 150%;
+  }
+}
+html.ekran4-icerik,
+html.ekran4-icerik body {
+  height: 100%;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
