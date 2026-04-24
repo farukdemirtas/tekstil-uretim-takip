@@ -71,6 +71,12 @@ function formatExportDateLabel(iso: string): string {
   }
 }
 
+function formatIsoTr(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}.${m}.${y}`;
+}
+
 /** Ana tablo ile aynı bölüm sırası (Ayarlardaki takım sırası veya varsayılan). */
 function productionRowSlotValues(row: ProductionRow, dateIso: string): number[] {
   if (isNewSlotLayout(dateIso)) {
@@ -799,9 +805,10 @@ export default function HomePage() {
       return;
     }
     const ok = window.confirm(
-      `Seçili gün (${selectedDate}) listesindeki ${rows.length} personel, bu tarihten sonraki hafta içi günlerden ` +
-        `${copyRosterEndDate} tarihine kadar aktarılacak:\n\n` +
-        `• Her hedef gün için kaynak gündeki üretim rakamları (10:00–18:30) kopyalanır; hedefte satır varsa güncellenir.\n` +
+      `Seçili gün (${selectedDate}) listesindeki ${rows.length} personel, kaynak gün hariç — ${copyRosterEndDate} (dahil) aralığındaki ` +
+        `her hafta içi güne aktarılacak:\n\n` +
+        `• Veri, seçili günden sonraki ilk iş gününden itibaren yazılır; belirli bir tarihe (ör. 27 Nisan) aktarım için bitiş o tarihi kapsamalıdır.\n` +
+        `• Her hedef gün için kaynak gündeki üretim rakamları kopyalanır; hedefte satır varsa güncellenir.\n` +
         `• Bu günlerdeki “sahada yok” işaretleri kaldırılır.\n\nDevam edilsin mi?`
     );
     if (!ok) return;
@@ -809,8 +816,16 @@ export default function HomePage() {
     try {
       const r = await copyRosterToFutureDates(selectedDate, copyRosterEndDate);
       setCopyRosterOpen(false);
+      const targets = r.targetDates ?? [];
+      if (targets.length > 0) {
+        setSelectedDate(targets[0]);
+      }
+      const hedefStr =
+        targets.length > 0
+          ? ` Hedef günler: ${targets.map(formatIsoTr).join(", ")}. İlk hedef gün takvime seçildi.`
+          : "";
       setCopyRosterSuccess(
-        `Aktarım tamam: ${r.weekdayCount} iş günü, ${r.workers} personel; ${r.entriesTouched} üretim satırı güncellendi; ${r.hidesCleared} sahada yok işareti kaldırıldı.`
+        `Aktarım tamam: ${r.weekdayCount} iş günü, ${r.workers} personel; ${r.entriesTouched} üretim satırı güncellendi; ${r.hidesCleared} sahada yok işareti kaldırıldı.${hedefStr}`
       );
       window.setTimeout(() => setCopyRosterSuccess(null), 8000);
     } catch (err) {
@@ -1378,10 +1393,11 @@ export default function HomePage() {
               {selectedDate} — listede {rows.length} kişi.
             </p>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Bu tarihten <strong className="font-medium text-slate-800 dark:text-slate-200">sonraki</strong> her hafta içi
-              gün için (bitiş tarihi dahil) kaynak gündeki üretim rakamları yazılır; satır yoksa oluşturulur, varsa
-              güncellenir. O günlerdeki “sahada yok” işaretleri kaldırılır. Bitiş, seçili günden en az bir gün sonra
-              olmalıdır.
+              <strong className="font-medium text-slate-800 dark:text-slate-200">Kaynak (seçili) gün hariç</strong>, bitiş
+              tarihi <strong className="font-medium text-slate-800 dark:text-slate-200">dahil</strong> olacak şekilde
+              aralıktaki her hafta içi güne kopyalanır. Örneğin verinin 27 Nisan’da görünmesi için bitiş en az 27 Nisan
+              olmalı; tek iş günü mesajı alıyorsanız o gün, aralıktaki yegâne hafta içi gündür (27 dışında bir güne
+              yazılmış olabilir). Tamamlandığında hedef günler mesajda listelenir ve ilk hedef gün takvimde açılır.
             </p>
             <WeekdayDatePicker
               label="Bitiş tarihi (hafta içi)"

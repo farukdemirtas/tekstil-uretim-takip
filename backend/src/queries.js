@@ -333,6 +333,106 @@ function weekDatesExclusiveAfter(sourceDate, endDate) {
   return out;
 }
 
+/** `frontend` productionSlots.PRODUCTION_SLOT_CUTOFF ile aynı — yeni gün 9 sütun (h*), öncesi 4 sütun (t*) */
+const ROSTER_NEW_LAYOUT_CUTOFF = "2026-04-21";
+
+function zNumRoster(n) {
+  return Number(n) || 0;
+}
+
+function sumHSlotsRoster(row) {
+  return (
+    zNumRoster(row.h0900) +
+    zNumRoster(row.h1000) +
+    zNumRoster(row.h1115) +
+    zNumRoster(row.h1215) +
+    zNumRoster(row.h1300) +
+    zNumRoster(row.h1445) +
+    zNumRoster(row.h1545) +
+    zNumRoster(row.h1700) +
+    zNumRoster(row.h1830)
+  );
+}
+
+function sumTSlotsRoster(row) {
+  return zNumRoster(row.t1000) + zNumRoster(row.t1300) + zNumRoster(row.t1600) + zNumRoster(row.t1830);
+}
+
+/** `aggregateDisplaySlots` (frontend) ile uyum: tam satırdan eski 4 t */
+function aggregateHourlyToLegacyTForRoster(row) {
+  return {
+    t1000: zNumRoster(row.t1000) + zNumRoster(row.h0900) + zNumRoster(row.h1000),
+    t1300: zNumRoster(row.t1300) + zNumRoster(row.h1115) + zNumRoster(row.h1215) + zNumRoster(row.h1300),
+    t1600: zNumRoster(row.t1600) + zNumRoster(row.h1445) + zNumRoster(row.h1545),
+    t1830: zNumRoster(row.t1830) + zNumRoster(row.h1700) + zNumRoster(row.h1830),
+  };
+}
+
+/**
+ * Eski 4 t → yeni 9 h: toplam korunur, çift sayım yok (t* hedefte 0).
+ * Eski gruplar: 10:00 / 11–13 / 16–16 / 17–18:30
+ */
+function expandLegacyTToNewHourlyRoster(t1000, t1300, t1600, t1830) {
+  return {
+    t1000: 0,
+    t1300: 0,
+    t1600: 0,
+    t1830: 0,
+    h0900: 0,
+    h1000: zNumRoster(t1000),
+    h1115: 0,
+    h1215: 0,
+    h1300: zNumRoster(t1300),
+    h1445: 0,
+    h1545: zNumRoster(t1600),
+    h1700: 0,
+    h1830: zNumRoster(t1830),
+  };
+}
+
+/**
+ * Roster hedef günü: yeni layout’ta h* gösterildiği için kaynaktan uygun sütunlara yazar;
+ * eski-yeni sınırı geçen kopyalarda saat sütunlarının boş kalması önlenir.
+ */
+function productionSlotsForRosterTarget(targetIso, src) {
+  const newTgt = String(targetIso) >= ROSTER_NEW_LAYOUT_CUTOFF;
+  const sh = sumHSlotsRoster(src);
+  const st = sumTSlotsRoster(src);
+
+  const z = {
+    t1000: 0, t1300: 0, t1600: 0, t1830: 0,
+    h0900: 0, h1000: 0, h1115: 0, h1215: 0, h1300: 0, h1445: 0, h1545: 0, h1700: 0, h1830: 0,
+  };
+
+  if (newTgt) {
+    if (sh > 0) {
+      return {
+        t1000: 0, t1300: 0, t1600: 0, t1830: 0,
+        h0900: zNumRoster(src.h0900), h1000: zNumRoster(src.h1000), h1115: zNumRoster(src.h1115), h1215: zNumRoster(src.h1215),
+        h1300: zNumRoster(src.h1300), h1445: zNumRoster(src.h1445), h1545: zNumRoster(src.h1545), h1700: zNumRoster(src.h1700), h1830: zNumRoster(src.h1830),
+      };
+    }
+    if (st > 0) {
+      return expandLegacyTToNewHourlyRoster(zNumRoster(src.t1000), zNumRoster(src.t1300), zNumRoster(src.t1600), zNumRoster(src.t1830));
+    }
+    return { ...z };
+  }
+  if (st > 0) {
+    return {
+      t1000: zNumRoster(src.t1000), t1300: zNumRoster(src.t1300), t1600: zNumRoster(src.t1600), t1830: zNumRoster(src.t1830),
+      h0900: 0, h1000: 0, h1115: 0, h1215: 0, h1300: 0, h1445: 0, h1545: 0, h1700: 0, h1830: 0,
+    };
+  }
+  if (sh > 0) {
+    const t = aggregateHourlyToLegacyTForRoster(src);
+    return {
+      t1000: t.t1000, t1300: t.t1300, t1600: t.t1600, t1830: t.t1830,
+      h0900: 0, h1000: 0, h1115: 0, h1215: 0, h1300: 0, h1445: 0, h1545: 0, h1700: 0, h1830: 0,
+    };
+  }
+  return { ...z };
+}
+
 function dbRun(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function onRun(err) {
@@ -416,9 +516,11 @@ export function getDailyEntries(date) {
 
 /**
  * Seçili gündeki personel listesini ileri tarihe taşır: her hedef hafta içi gün için
- * kaynak gündeki üretim rakamlarını (t1000–t1830) yazar; satır yoksa oluşturur, varsa günceller.
+ * kaynak gündeki üretim rakamlarını yazar; satır yoksa oluşturur, varsa günceller.
+ * 21.04.2026 sonrası hedef günlerde arayüz 9 saat sütununu (h*) okur — kaynak yalnız eski 4 sütundaysa (t*)
+ * değerler h*’a dağıtılır; aksi halde hedefte saat hücreleri boş görünürdü.
  * O gün için "sahada yok" işaretini kaldırır.
- * Kimlerin aktarılacağı yalnızca `getDailyEntries(sourceDate)` ile ana ekrandaki günlük liste ile aynıdır.
+ * Kimlerin aktarılacağı `getDailyEntries(sourceDate)` ile ana ekran listesiyle aynıdır.
  */
 export async function copyRosterToFutureWeekdays(sourceDate, endDate) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(sourceDate)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(endDate))) {
@@ -437,45 +539,27 @@ export async function copyRosterToFutureWeekdays(sourceDate, endDate) {
     );
   }
   const dailyRows = await getDailyEntries(String(sourceDate));
-  const ids = dailyRows
-    .map((r) => Number(r.workerId))
-    .filter((n) => Number.isFinite(n) && n > 0);
+  const sourceById = new Map();
+  for (const r of dailyRows) {
+    const id = Number(r.workerId ?? r.workerid);
+    if (Number.isFinite(id) && id > 0) sourceById.set(id, r);
+  }
+  const ids = Array.from(sourceById.keys());
 
   if (ids.length === 0) {
-    return { workers: 0, weekdayCount: dates.length, entriesTouched: 0, hidesCleared: 0 };
+    return { workers: 0, weekdayCount: dates.length, entriesTouched: 0, hidesCleared: 0, targetDates: dates };
   }
   const idPlaceholders = ids.map(() => "?").join(",");
   let hidesCleared = 0;
   await dbRun("BEGIN");
   try {
     for (const dayIso of dates) {
-      /* Yalnızca kaynak gün listesindeki id'ler; hedef güne göre created/deleted filtreleri
-         bazen tüm satırları eliyordu (deleted_at hedef günle çakışması, changes=0 no-op UPSERT vb.) */
-      await dbRun(
-        `INSERT INTO production_entries (worker_id, production_date, t1000, t1300, t1600, t1830, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830)
-         SELECT w.id, ?,
-                COALESCE(src.t1000, 0), COALESCE(src.t1300, 0), COALESCE(src.t1600, 0), COALESCE(src.t1830, 0),
-                COALESCE(src.h0900, 0), COALESCE(src.h1000, 0), COALESCE(src.h1115, 0), COALESCE(src.h1215, 0),
-                COALESCE(src.h1300, 0), COALESCE(src.h1445, 0), COALESCE(src.h1545, 0), COALESCE(src.h1700, 0), COALESCE(src.h1830, 0)
-         FROM workers w
-         LEFT JOIN production_entries src ON src.worker_id = w.id AND src.production_date = ?
-         WHERE w.id IN (${idPlaceholders})
-         ON CONFLICT(worker_id, production_date) DO UPDATE SET
-           t1000 = excluded.t1000,
-           t1300 = excluded.t1300,
-           t1600 = excluded.t1600,
-           t1830 = excluded.t1830,
-           h0900 = excluded.h0900,
-           h1000 = excluded.h1000,
-           h1115 = excluded.h1115,
-           h1215 = excluded.h1215,
-           h1300 = excluded.h1300,
-           h1445 = excluded.h1445,
-           h1545 = excluded.h1545,
-           h1700 = excluded.h1700,
-           h1830 = excluded.h1830`,
-        [dayIso, sourceDate, ...ids]
-      );
+      for (const wid of ids) {
+        const src = sourceById.get(wid);
+        if (!src) continue;
+        const s = productionSlotsForRosterTarget(dayIso, src);
+        await upsertEntry({ workerId: wid, date: String(dayIso), ...s });
+      }
       const hd = await dbRun(
         `DELETE FROM worker_roster_day_hide WHERE hide_date = ? AND worker_id IN (${idPlaceholders})`,
         [dayIso, ...ids]
@@ -493,6 +577,8 @@ export async function copyRosterToFutureWeekdays(sourceDate, endDate) {
     weekdayCount: dates.length,
     entriesTouched: ids.length * dates.length,
     hidesCleared,
+    /** Yazılan takvim günleri (kaynak gün hariç); arayüzde hangi günlerin dolduğu gösterilsin / seçilsin */
+    targetDates: dates,
   };
 }
 

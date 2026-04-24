@@ -289,6 +289,8 @@ export async function copyRosterToFutureDates(
   weekdayCount: number;
   entriesTouched: number;
   hidesCleared: number;
+  /** YYYY-MM-DD: verinin yazıldığı hafta içi günler (kaynak gün yok) */
+  targetDates?: string[];
 }> {
   const response = await apiFetch(`${apiBase()}/workers/copy-roster-to-dates`, {
     method: "POST",
@@ -304,6 +306,7 @@ export async function copyRosterToFutureDates(
     weekdayCount: number;
     entriesTouched: number;
     hidesCleared: number;
+    targetDates?: string[];
   };
 }
 
