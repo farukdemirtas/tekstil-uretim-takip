@@ -2219,3 +2219,195 @@ export function saveProsesVeriRows(modelCode, rows) {
     });
   });
 }
+
+function normBirthdayPart(s) {
+  return String(s ?? "")
+    .trim()
+    .toLocaleUpperCase("tr-TR");
+}
+
+function turkeyTodayMmDd() {
+  const iso = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Istanbul" });
+  return iso.slice(5, 10);
+}
+
+export function listPersonnelBirthdays() {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT id, first_name AS firstName, last_name AS lastName, birth_date AS birthDate
+       FROM personnel_birthdays
+       ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`,
+      [],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      }
+    );
+  });
+}
+
+export function listPersonnelBirthdaysToday() {
+  const mmdd = turkeyTodayMmDd();
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT id, first_name AS firstName, last_name AS lastName, birth_date AS birthDate
+       FROM personnel_birthdays
+       WHERE substr(birth_date, 6, 5) = ?`,
+      [mmdd],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      }
+    );
+  });
+}
+
+export function addPersonnelBirthday({ firstName, lastName, birthDate }) {
+  const fn = normBirthdayPart(firstName);
+  const ln = normBirthdayPart(lastName);
+  const bd = String(birthDate || "").trim();
+  if (!fn || !ln || !/^\d{4}-\d{2}-\d{2}$/.test(bd)) {
+    return Promise.reject(new Error("Geçersiz ad, soyad veya doğum tarihi (YYYY-MM-DD)"));
+  }
+  return new Promise((resolve, reject) => {
+    db.get(
+      "SELECT id, birth_date FROM personnel_birthdays WHERE first_name = ? AND last_name = ?",
+      [fn, ln],
+      (e0, row) => {
+        if (e0) return reject(e0);
+        if (row) {
+          if (row.birth_date === bd) {
+            const err = new Error("Bu isim ve doğum tarihi zaten kayıtlı.");
+            err.code = "DUPLICATE_SAME";
+            return reject(err);
+          }
+          db.run(
+            "UPDATE personnel_birthdays SET birth_date = ? WHERE id = ?",
+            [bd, row.id],
+            function (uErr) {
+              if (uErr) return reject(uErr);
+              resolve({ id: row.id, firstName: fn, lastName: ln, birthDate: bd, updated: true });
+            }
+          );
+          return;
+        }
+        db.run(
+          `INSERT INTO personnel_birthdays (first_name, last_name, birth_date) VALUES (?, ?, ?)`,
+          [fn, ln, bd],
+          function (err) {
+            if (err) return reject(err);
+            resolve({ id: this.lastID, firstName: fn, lastName: ln, birthDate: bd });
+          }
+        );
+      }
+    );
+  });
+}
+
+export function updatePersonnelBirthday(id, { firstName, lastName, birthDate }) {
+  const fn = normBirthdayPart(firstName);
+  const ln = normBirthdayPart(lastName);
+  const bd = String(birthDate || "").trim();
+  if (!fn || !ln || !/^\d{4}-\d{2}-\d{2}$/.test(bd)) {
+    return Promise.reject(new Error("Geçersiz ad, soyad veya doğum tarihi (YYYY-MM-DD)"));
+  }
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE personnel_birthdays SET first_name = ?, last_name = ?, birth_date = ? WHERE id = ?`,
+      [fn, ln, bd, id],
+      function (err) {
+        if (err) return reject(err);
+        resolve({ updated: this.changes > 0 });
+      }
+    );
+  });
+}
+
+export function deletePersonnelBirthday(id) {
+  return new Promise((resolve, reject) => {
+    db.run(`DELETE FROM personnel_birthdays WHERE id = ?`, [id], function (err) {
+      if (err) return reject(err);
+      resolve({ deleted: this.changes > 0 });
+    });
+  });
+}
+
+/**
+ * Toplu Excel: aynı (ad, soyad) tek kayıt; aynı tarih tekrarı → duplicateSame.
+ * Farklı kişiler aynı doğum gününde olabilir. Ad/soyad var ama tarih farklıysa → updated.
+ */
+export function bulkInsertPersonnelBirthdays(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return new Promise((resolve, reject) => {
+    if (list.length === 0) {
+      resolve({ inserted: 0, skippedInvalid: 0, duplicateSame: 0, updated: 0 });
+      return;
+    }
+    let inserted = 0;
+    let skippedInvalid = 0;
+    let duplicateSame = 0;
+    let updated = 0;
+
+    db.run("BEGIN", (bErr) => {
+      if (bErr) return reject(bErr);
+
+      const fail = (e) => {
+        db.run("ROLLBACK", () => reject(e));
+      };
+
+      const step = (i) => {
+        if (i >= list.length) {
+          db.run("COMMIT", (cErr) => {
+            if (cErr) return reject(cErr);
+            resolve({ inserted, skippedInvalid, duplicateSame, updated });
+          });
+          return;
+        }
+        const r = list[i];
+        const fn = normBirthdayPart(r?.firstName);
+        const ln = normBirthdayPart(r?.lastName);
+        const bd = String(r?.birthDate || "").trim();
+        if (!fn || !ln || !/^\d{4}-\d{2}-\d{2}$/.test(bd)) {
+          skippedInvalid++;
+          step(i + 1);
+          return;
+        }
+        db.get(
+          "SELECT id, birth_date FROM personnel_birthdays WHERE first_name = ? AND last_name = ?",
+          [fn, ln],
+          (e, row) => {
+            if (e) return fail(e);
+            if (!row) {
+              db.run(
+                "INSERT INTO personnel_birthdays (first_name, last_name, birth_date) VALUES (?, ?, ?)",
+                [fn, ln, bd],
+                function (insErr) {
+                  if (insErr) return fail(insErr);
+                  inserted++;
+                  step(i + 1);
+                }
+              );
+              return;
+            }
+            if (row.birth_date === bd) {
+              duplicateSame++;
+              step(i + 1);
+              return;
+            }
+            db.run(
+              "UPDATE personnel_birthdays SET birth_date = ? WHERE id = ?",
+              [bd, row.id],
+              function (uErr) {
+                if (uErr) return fail(uErr);
+                updated++;
+                step(i + 1);
+              }
+            );
+          }
+        );
+      };
+
+      step(0);
+    });
+  });
+}

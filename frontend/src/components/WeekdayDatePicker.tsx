@@ -38,6 +38,8 @@ export function WeekdayDatePicker({
   className = "",
   /** EKRAN2 gibi koyu arka planlı sayfalar için */
   tone = "default",
+  /** true: doğum günü vb. — cumartesi/pazar da seçilir; false: yalnız hafta içi (üretim takvimi) */
+  includeWeekends = false,
 }: {
   value: string;
   onChange: (iso: string) => void;
@@ -45,6 +47,7 @@ export function WeekdayDatePicker({
   label?: string;
   className?: string;
   tone?: WeekdayDatePickerTone;
+  includeWeekends?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -111,7 +114,8 @@ export function WeekdayDatePicker({
 
   function handleSelect(d: Date | undefined) {
     if (!d) return;
-    onChange(coerceWeekdayPickerValue(formatIsoLocal(d)));
+    const iso = formatIsoLocal(d);
+    onChange(includeWeekends ? iso : coerceWeekdayPickerValue(iso));
     setOpen(false);
   }
 
@@ -120,7 +124,8 @@ export function WeekdayDatePicker({
       ? format(selected, "d MMMM yyyy · EEEE", { locale: tr })
       : "Tarih seçin";
 
-  const monthAnchor = selected ?? parseIsoLocal(todayWeekdayIso()) ?? new Date();
+  const monthAnchor =
+    selected ?? (includeWeekends ? new Date() : parseIsoLocal(todayWeekdayIso()) ?? new Date());
 
   const buttonClass =
     tone === "dark"
@@ -154,7 +159,7 @@ export function WeekdayDatePicker({
             onSelect={handleSelect}
             locale={tr}
             weekStartsOn={1}
-            disabled={weekendMatcher}
+            {...(!includeWeekends ? { disabled: weekendMatcher } : {})}
             defaultMonth={monthAnchor}
             autoFocus
             className={`${rdpTone} rdp-weekday-picker`}
@@ -179,7 +184,11 @@ export function WeekdayDatePicker({
         className={buttonClass}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title="Hafta içi günler seçilebilir; cumartesi ve pazar kapalıdır."
+        title={
+          includeWeekends
+            ? "Takvimden tarih seçin (tüm günler)."
+            : "Hafta içi günler seçilebilir; cumartesi ve pazar kapalıdır."
+        }
       >
         <span className="min-w-0 flex-1 truncate">{display}</span>
         <CalendarGlyph

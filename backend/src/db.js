@@ -379,6 +379,61 @@ export function initDb() {
     `);
 
     db.run(`
+      CREATE TABLE IF NOT EXISTS personnel_birthdays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        birth_date TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(first_name, last_name)
+      )
+    `);
+
+    /* Eski şema: UNIQUE(ad, soyad, tarih) → aynı kişi iki kez; farklı kişiler aynı gün olamazdı. Tekilleştir: (ad, soyad). */
+    db.get(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'personnel_birthdays'",
+      [],
+      (migErr, migRow) => {
+        if (migErr || !migRow?.sql) return;
+        const tblSql = String(migRow.sql);
+        if (!tblSql.includes("UNIQUE(first_name, last_name, birth_date)")) return;
+        db.serialize(() => {
+          db.run("BEGIN");
+          db.run(`
+            CREATE TABLE personnel_birthdays__mig (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              first_name TEXT NOT NULL,
+              last_name TEXT NOT NULL,
+              birth_date TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              UNIQUE(first_name, last_name)
+            )
+          `);
+          db.run(`
+            INSERT INTO personnel_birthdays__mig (first_name, last_name, birth_date, created_at)
+            SELECT first_name, last_name, birth_date, created_at
+            FROM personnel_birthdays
+            WHERE id IN (
+              SELECT MIN(id) FROM personnel_birthdays GROUP BY first_name, last_name
+            )
+          `);
+          db.run("DROP TABLE personnel_birthdays");
+          db.run("ALTER TABLE personnel_birthdays__mig RENAME TO personnel_birthdays");
+          db.run("COMMIT", (ce) => {
+            if (ce) {
+              // eslint-disable-next-line no-console
+              console.error("[tekstil-db] personnel_birthdays migration:", ce.message);
+              db.run("ROLLBACK", () => {});
+              return;
+            }
+            // eslint-disable-next-line no-console
+            console.log("[tekstil-db] personnel_birthdays: UNIQUE(ad, soyad) migrasyonu tamamlandı");
+          });
+        });
+      }
+    );
+
+    db.run(`
       CREATE TABLE IF NOT EXISTS teams (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code TEXT NOT NULL UNIQUE,

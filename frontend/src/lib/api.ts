@@ -119,6 +119,83 @@ export async function deleteWorkerName(id: number): Promise<void> {
   if (!res.ok) throw new Error("Silinemedi");
 }
 
+export type PersonnelBirthdayRow = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  birthDate: string;
+};
+
+export async function getPersonnelBirthdays(): Promise<PersonnelBirthdayRow[]> {
+  const res = await apiFetch(`${apiBase()}/personnel-birthdays`, { cache: "no-store", headers: authHeaders() });
+  if (!res.ok) throw new Error("Doğum günü listesi alınamadı");
+  return res.json();
+}
+
+export async function getPersonnelBirthdaysToday(): Promise<PersonnelBirthdayRow[]> {
+  const res = await apiFetch(`${apiBase()}/personnel-birthdays/today`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Bugünkü doğum günleri alınamadı");
+  return res.json();
+}
+
+export async function addPersonnelBirthday(body: {
+  firstName: string;
+  lastName: string;
+  birthDate: string;
+}): Promise<PersonnelBirthdayRow & { updated?: boolean }> {
+  const res = await apiFetch(`${apiBase()}/personnel-birthdays`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((d as { message?: string }).message ?? "Eklenemedi");
+  return d as PersonnelBirthdayRow & { updated?: boolean };
+}
+
+export async function updatePersonnelBirthday(
+  id: number,
+  body: { firstName: string; lastName: string; birthDate: string }
+): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/personnel-birthdays/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Güncellenemedi");
+}
+
+export async function deletePersonnelBirthday(id: number): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/personnel-birthdays/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Silinemedi");
+}
+
+export type BulkPersonnelBirthdaysResult = {
+  inserted: number;
+  skippedInvalid: number;
+  duplicateSame: number;
+  updated: number;
+};
+
+export async function bulkInsertPersonnelBirthdays(
+  rows: { firstName: string; lastName: string; birthDate: string }[]
+): Promise<BulkPersonnelBirthdaysResult> {
+  const res = await apiFetch(`${apiBase()}/personnel-birthdays/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ rows }),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((d as { message?: string }).message ?? "Toplu aktarım başarısız");
+  return d as BulkPersonnelBirthdaysResult;
+}
+
 export async function getWorkers(): Promise<Worker[]> {
   const response = await apiFetch(`${apiBase()}/workers`, { cache: "no-store", headers: authHeaders() });
   if (!response.ok) throw new Error("Çalışanlar alınamadı");

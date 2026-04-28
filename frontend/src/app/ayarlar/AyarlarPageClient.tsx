@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import BirthdaysSection from "@/components/settings/BirthdaysSection";
 import LogsSection from "@/components/settings/LogsSection";
 import PersonnelNamesSection from "@/components/settings/PersonnelNamesSection";
 import ProductModelsSection from "@/components/settings/ProductModelsSection";
@@ -11,7 +12,7 @@ import UsersSettingsSection from "@/components/settings/UsersSettingsSection";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "kullanici" | "personel" | "proses" | "modeller" | "loglar";
+type TabId = "kullanici" | "personel" | "dogum" | "proses" | "modeller" | "loglar";
 
 export default function AyarlarPageClient() {
   const searchParams = useSearchParams();
@@ -45,6 +46,7 @@ export default function AyarlarPageClient() {
     if (raw === "loglar" && canLoglar) return "loglar";
     if (raw === "modeller" && canAyarlar) return "modeller";
     if (raw === "proses" && canAyarlar) return "proses";
+    if (raw === "dogum" && canAyarlar) return "dogum";
     if (raw === "personel" && canAyarlar) return "personel";
     if (raw === "kullanici" && admin) return "kullanici";
     if (canAyarlar) return "personel";
@@ -65,6 +67,7 @@ export default function AyarlarPageClient() {
     ...(canAyarlar
       ? ([
           { id: "personel" as const, label: "Personel" },
+          { id: "dogum" as const, label: "Doğum günleri" },
           { id: "proses" as const, label: "Proses ve bölüm" },
           { id: "modeller" as const, label: "Ürün modelleri" },
         ] as const)
@@ -112,6 +115,7 @@ export default function AyarlarPageClient() {
 
       {activeTab === "kullanici" && admin && <UsersSettingsSection />}
       {activeTab === "personel" && canAyarlar && <PersonnelNamesSection />}
+      {activeTab === "dogum" && canAyarlar && <BirthdaysSection />}
       {activeTab === "proses" && canAyarlar && <TeamsProcessesSection />}
       {activeTab === "modeller" && canAyarlar && <ProductModelsSection />}
       {activeTab === "loglar" && canLoglar && <LogsSection />}

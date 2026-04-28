@@ -70,6 +70,12 @@ import {
   deleteRepairEntries,
   getProsesVeriRows,
   saveProsesVeriRows,
+  listPersonnelBirthdays,
+  listPersonnelBirthdaysToday,
+  addPersonnelBirthday,
+  updatePersonnelBirthday,
+  deletePersonnelBirthday,
+  bulkInsertPersonnelBirthdays,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 
@@ -377,6 +383,80 @@ app.delete("/api/worker-names/:id", requirePermission("ayarlar"), async (req, re
     logActivity(req, "isim_havuzu_sil", "worker_names", { id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: String(e) }); }
+});
+
+/* ── Doğum günleri (EKRAN1 kutlama + ayarlar) ── */
+app.get("/api/personnel-birthdays", requirePermission("ayarlar"), async (_req, res) => {
+  try {
+    res.json(await listPersonnelBirthdays());
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
+app.get("/api/personnel-birthdays/today", requireAnyPermission(["ekran1", "ayarlar"]), async (_req, res) => {
+  try {
+    res.json(await listPersonnelBirthdaysToday());
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
+app.post("/api/personnel-birthdays", requirePermission("ayarlar"), async (req, res) => {
+  const { firstName, lastName, birthDate } = req.body || {};
+  try {
+    const row = await addPersonnelBirthday({ firstName, lastName, birthDate });
+    if (row.updated) {
+      logActivity(req, "dogum_gunu_guncelle", "personnel_birthdays", { id: row.id, kaynak: "tekil_ekle" });
+      return res.status(200).json(row);
+    }
+    logActivity(req, "dogum_gunu_ekle", "personnel_birthdays", { id: row.id });
+    res.status(201).json(row);
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (e?.code === "DUPLICATE_SAME" || /zaten kayıtlı/i.test(msg)) {
+      return res.status(409).json({ message: "Bu isim ve doğum tarihi zaten kayıtlı. Aynı veri tekrar yüklenemez." });
+    }
+    if (msg.includes("UNIQUE")) return res.status(409).json({ message: "Bu ad ve soyad zaten kayıtlı." });
+    res.status(400).json({ message: msg });
+  }
+});
+
+app.put("/api/personnel-birthdays/:id", requirePermission("ayarlar"), async (req, res) => {
+  const id = Number(req.params.id);
+  const { firstName, lastName, birthDate } = req.body || {};
+  try {
+    const r = await updatePersonnelBirthday(id, { firstName, lastName, birthDate });
+    if (!r.updated) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "dogum_gunu_guncelle", "personnel_birthdays", { id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ message: String(e?.message || e) });
+  }
+});
+
+app.delete("/api/personnel-birthdays/:id", requirePermission("ayarlar"), async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const r = await deletePersonnelBirthday(id);
+    if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
+    logActivity(req, "dogum_gunu_sil", "personnel_birthdays", { id });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
+app.post("/api/personnel-birthdays/bulk", requirePermission("ayarlar"), async (req, res) => {
+  const rows = req.body?.rows;
+  if (!Array.isArray(rows)) return res.status(400).json({ message: "rows[] gerekli" });
+  try {
+    const r = await bulkInsertPersonnelBirthdays(rows);
+    logActivity(req, "dogum_gunu_toplu", "personnel_birthdays", r);
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
 });
 
 app.get("/api/teams", requireAuth, async (_req, res) => {
