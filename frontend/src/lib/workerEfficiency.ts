@@ -49,3 +49,32 @@ export function averageWorkerEfficiency(
   }
   return { avg: n > 0 ? Math.round(sum / n) : 0, count: n };
 }
+
+/** Dönem toplamı ve aktif gün sayısına göre ortalama günlük verimlilik (%). Hedef yoksa null. */
+export function efficiencyPercentFromTotals(
+  prosesMap: ProsesMap,
+  team: string,
+  process: string,
+  totalProduction: number,
+  activeDays: number
+): number | null {
+  const dk = Number(prosesMap[makeProsesKey(team, process)]) || 0;
+  const gunluk = dk * 60 * 9;
+  if (gunluk <= 0) return null;
+  const denom = Math.max(activeDays, 1);
+  const dailyAvg = totalProduction / denom;
+  return Math.min(Math.round((dailyAvg / gunluk) * 100), 100);
+}
+
+/** Tek gün toplam üretim ÷ günlük hedef (dk×60×9), üst sınır %100. */
+export function efficiencyPercentForDayProduction(
+  prosesMap: ProsesMap,
+  team: string,
+  process: string,
+  dayProduction: number
+): number | null {
+  const dk = Number(prosesMap[makeProsesKey(team, process)]) || 0;
+  const gunluk = dk * 60 * 9;
+  if (gunluk <= 0) return null;
+  return Math.min(Math.round((dayProduction / gunluk) * 100), 100);
+}

@@ -9,12 +9,18 @@ import {
   getWorkersForAnalytics,
   setAuthToken,
 } from "@/lib/api";
-import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { todayWeekdayIso, todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
 import { aggregateDisplaySlots, DISPLAY_SLOT_CHART_LABELS } from "@/lib/displaySlotAggregation";
 import { sumProductionRow } from "@/lib/productionSlots";
 import { SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
+import { getProsesMapForEfficiency } from "@/lib/prosesVeri";
+import {
+  efficiencyPercentForDayProduction,
+  efficiencyPercentFromTotals,
+  workerEfficiencyPercent,
+} from "@/lib/workerEfficiency";
 import type { ProductionRow, Worker, WorkerProductionDayDetail } from "@/lib/types";
 
 const SLOTS = [
@@ -26,6 +32,29 @@ const SLOTS = [
 
 function dayTotal(r: WorkerProductionDayDetail): number {
   return sumProductionRow(r as unknown as ProductionRow);
+}
+
+function detailToProductionRow(r: WorkerProductionDayDetail): ProductionRow {
+  return {
+    workerId: r.workerId ?? 0,
+    name: r.name,
+    team: r.team as ProductionRow["team"],
+    process: r.process,
+    t1000: r.t1000,
+    t1300: r.t1300,
+    t1600: r.t1600,
+    t1830: r.t1830,
+    h0900: r.h0900 ?? 0,
+    h1000: r.h1000 ?? 0,
+    h1115: r.h1115 ?? 0,
+    h1215: r.h1215 ?? 0,
+    h1300: r.h1300 ?? 0,
+    h1445: r.h1445 ?? 0,
+    h1545: r.h1545 ?? 0,
+    h1700: r.h1700 ?? 0,
+    h1830: r.h1830 ?? 0,
+    ekSayim: 0,
+  };
 }
 
 function formatDateLong(iso: string): string {
@@ -225,6 +254,46 @@ export default function PersonAnalysisPage() {
     };
   }, [rows, sortedDates, dateTotals]);
 
+  const prosesMap = useMemo(() => getProsesMapForEfficiency(), [loadedAt]);
+
+  const periodEfficiencyPercent = useMemo(() => {
+    if (rows.length === 0) return null;
+    if (processBreakdown.length === 1) {
+      const pb = processBreakdown[0];
+      return efficiencyPercentFromTotals(
+        prosesMap,
+        pb.team,
+        pb.process,
+        stats.grandTotal,
+        Math.max(stats.activeDays, 1)
+      );
+    }
+    let sumW = 0;
+    let sumTW = 0;
+    for (const pb of processBreakdown) {
+      const e = efficiencyPercentFromTotals(
+        prosesMap,
+        pb.team,
+        pb.process,
+        pb.total,
+        Math.max(pb.dayCount, 1)
+      );
+      if (e === null) continue;
+      sumTW += e * pb.total;
+      sumW += pb.total;
+    }
+    if (sumW <= 0) return null;
+    return Math.min(Math.round(sumTW / sumW), 100);
+  }, [rows.length, processBreakdown, prosesMap, stats.grandTotal, stats.activeDays]);
+
+  function dayRowEfficiencyPercent(r: WorkerProductionDayDetail): number | null {
+    const isToday = r.productionDate === todayWorkdayIsoTurkey();
+    if (isToday) {
+      return workerEfficiencyPercent(detailToProductionRow(r), prosesMap, true);
+    }
+    return efficiencyPercentForDayProduction(prosesMap, r.team, r.process, dayTotal(r));
+  }
+
   const trendPoints = useMemo(() => {
     if (sortedDates.length === 0) return "";
     const totals = sortedDates.map((d) => dateTotals.get(d) ?? 0);
@@ -259,9 +328,14 @@ export default function PersonAnalysisPage() {
       { Alan: "En yüksek gün", Değer: stats.maxDay ? `${stats.maxDay.date} (${stats.maxDay.total})` : "—" },
       { Alan: "En düşük gün", Değer: stats.minDay ? `${stats.minDay.date} (${stats.minDay.total})` : "—" },
       { Alan: "Baskın saat dilimi", Değer: `${stats.dominantSlot} (${stats.dominantSlotTotal})` },
+      {
+        Alan: "Dönem verimliliği",
+        Değer: periodEfficiencyPercent !== null ? `${periodEfficiencyPercent}%` : "—",
+      },
     ];
     const gunluk = rows.map((r) => {
       const d = aggregateDisplaySlots(r);
+      const eff = dayRowEfficiencyPercent(r);
       return {
         Tarih: r.productionDate,
         "Kayıt no": r.workerId ?? "",
@@ -272,15 +346,26 @@ export default function PersonAnalysisPage() {
         [DISPLAY_SLOT_CHART_LABELS[2]]: d.t1600,
         [DISPLAY_SLOT_CHART_LABELS[3]]: d.t1830,
         "Gün toplamı": dayTotal(r),
+        "Verimlilik %": eff !== null ? eff : "",
       };
     });
-    const bolumOzet = processBreakdown.map((row) => ({
-      Bölüm: teamLabel(row.team),
-      Proses: row.process,
-      "Kayıt no": row.workerId,
-      "Üretim günü": row.dayCount,
-      Toplam: row.total,
-    }));
+    const bolumOzet = processBreakdown.map((row) => {
+      const eff = efficiencyPercentFromTotals(
+        prosesMap,
+        row.team,
+        row.process,
+        row.total,
+        Math.max(row.dayCount, 1)
+      );
+      return {
+        Bölüm: teamLabel(row.team),
+        Proses: row.process,
+        "Kayıt no": row.workerId,
+        "Üretim günü": row.dayCount,
+        Toplam: row.total,
+        "Verimlilik %": eff !== null ? eff : "",
+      };
+    });
     const saatlik = SLOTS.map((s) => ({
       "Saat dilimi": s.label,
       "Aralık toplamı": stats.slotTotals[s.key],
@@ -553,7 +638,7 @@ export default function PersonAnalysisPage() {
               </div>
             </header>
 
-            <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
               <div className="rounded-2xl border border-slate-100 border-l-4 border-l-teal-500 bg-gradient-to-br from-white to-teal-50/40 p-4 shadow-sm ring-1 ring-slate-900/[0.04]">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Toplam üretim</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-teal-700">{stats.grandTotal}</p>
@@ -573,6 +658,16 @@ export default function PersonAnalysisPage() {
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-violet-700">{stats.avgPerNominalShift}</p>
                 <p className="mt-0.5 text-[10px] text-slate-500">Günlük ort. ÷ {SHIFT_NOMINAL_HOURS}</p>
+              </div>
+              <div
+                className="col-span-2 rounded-2xl border border-slate-100 border-l-4 border-l-amber-500 bg-gradient-to-br from-white to-amber-50/50 p-4 shadow-sm ring-1 ring-slate-900/[0.04] md:col-span-1 xl:col-span-1"
+                title="Proses Veri Sayfası dk hedefine göre; çoklu bölümde üretim ağırlıklı ortalama. Bugünün satırında vardiya içi oran kullanılır."
+              >
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Dönem verimliliği</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-amber-800 dark:text-amber-200">
+                  {periodEfficiencyPercent !== null ? `${periodEfficiencyPercent}%` : "—"}
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-500">Hedef: dk × 60 × 9</p>
               </div>
             </section>
 
@@ -598,25 +693,38 @@ export default function PersonAnalysisPage() {
                         <th className="px-3 py-3 text-right">Kayıt no</th>
                         <th className="px-3 py-3 text-right">Üretim günü</th>
                         <th className="px-4 py-3 text-right">Toplam</th>
+                        <th className="px-3 py-3 text-right">Verim %</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {processBreakdown.map((row) => (
-                        <tr
-                          key={row.workerId}
-                          className="border-b border-slate-100 odd:bg-white even:bg-slate-50/70 dark:border-slate-700 dark:odd:bg-slate-900/40 dark:even:bg-slate-800/30"
-                        >
-                          <td className="px-4 py-2.5 font-medium">{teamLabel(row.team)}</td>
-                          <td className="px-4 py-2.5">{row.process}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-400">
-                            {row.workerId}
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">{row.dayCount}</td>
-                          <td className="px-4 py-2.5 text-right font-bold tabular-nums text-violet-800 dark:text-violet-200">
-                            {row.total}
-                          </td>
-                        </tr>
-                      ))}
+                      {processBreakdown.map((row) => {
+                        const eff = efficiencyPercentFromTotals(
+                          prosesMap,
+                          row.team,
+                          row.process,
+                          row.total,
+                          Math.max(row.dayCount, 1)
+                        );
+                        return (
+                          <tr
+                            key={row.workerId}
+                            className="border-b border-slate-100 odd:bg-white even:bg-slate-50/70 dark:border-slate-700 dark:odd:bg-slate-900/40 dark:even:bg-slate-800/30"
+                          >
+                            <td className="px-4 py-2.5 font-medium">{teamLabel(row.team)}</td>
+                            <td className="px-4 py-2.5">{row.process}</td>
+                            <td className="px-3 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-400">
+                              {row.workerId}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums">{row.dayCount}</td>
+                            <td className="px-4 py-2.5 text-right font-bold tabular-nums text-violet-800 dark:text-violet-200">
+                              {row.total}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums text-amber-900 dark:text-amber-100">
+                              {eff !== null ? `${eff}%` : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -751,6 +859,7 @@ export default function PersonAnalysisPage() {
                         {DISPLAY_SLOT_CHART_LABELS[3]}
                       </th>
                       <th className="px-4 py-3 text-right">Gün toplamı</th>
+                      <th className="px-3 py-3 text-right whitespace-nowrap">Verim %</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -758,6 +867,7 @@ export default function PersonAnalysisPage() {
                       const t = dayTotal(r);
                       const d = aggregateDisplaySlots(r);
                       const rowKey = `${r.productionDate}-${r.workerId ?? 0}-${r.team}-${r.process}`;
+                      const eff = dayRowEfficiencyPercent(r);
                       return (
                         <tr
                           key={rowKey}
@@ -778,6 +888,16 @@ export default function PersonAnalysisPage() {
                           <td className="px-3 py-2.5 text-right tabular-nums">{d.t1600}</td>
                           <td className="px-3 py-2.5 text-right tabular-nums">{d.t1830}</td>
                           <td className="px-4 py-2.5 text-right font-bold tabular-nums text-teal-800">{t}</td>
+                          <td
+                            className="px-3 py-2.5 text-right tabular-nums text-amber-900 dark:text-amber-100"
+                            title={
+                              r.productionDate === todayWorkdayIsoTurkey()
+                                ? "Bugün: vardiya içi (intraday) verimlilik"
+                                : "Tam günlük hedefe göre"
+                            }
+                          >
+                            {eff !== null ? `${eff}%` : "—"}
+                          </td>
                         </tr>
                       );
                     })}
@@ -795,6 +915,7 @@ export default function PersonAnalysisPage() {
                       <td className="px-3 py-3 text-right tabular-nums">{stats.slotTotals.t1600}</td>
                       <td className="px-3 py-3 text-right tabular-nums">{stats.slotTotals.t1830}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-teal-800">{stats.grandTotal}</td>
+                      <td className="px-3 py-3 text-right text-slate-400">—</td>
                     </tr>
                     <tr className="bg-slate-100/80 text-xs">
                       <td
@@ -808,6 +929,7 @@ export default function PersonAnalysisPage() {
                       <td className="px-3 py-2 text-right tabular-nums text-slate-700">{stats.slotAvgPerDay.t1600}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-700">{stats.slotAvgPerDay.t1830}</td>
                       <td className="px-4 py-2 text-right font-semibold tabular-nums text-slate-800">{stats.avgPerDay}</td>
+                      <td className="px-3 py-2 text-right text-slate-400">—</td>
                     </tr>
                   </tfoot>
                 </table>

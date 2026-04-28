@@ -27,9 +27,39 @@ import {
 } from "@/lib/displaySlotAggregation";
 import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import type { WorkerHourlyBreakdown } from "@/lib/api";
-import { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
+import { DailyTrendPoint, HourFilter, ProductionRow, Team, TopWorkerAnalytics, WorkerDailyAnalytics } from "@/lib/types";
+import { getProsesMapForEfficiency } from "@/lib/prosesVeri";
+import {
+  efficiencyPercentForDayProduction,
+  efficiencyPercentFromTotals,
+  workerEfficiencyPercent,
+} from "@/lib/workerEfficiency";
+import { todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
 
 const AUTO_REFRESH_MS = 30_000;
+
+function hourlyToProductionRow(worker: TopWorkerAnalytics, h: WorkerHourlyBreakdown): ProductionRow {
+  return {
+    workerId: worker.workerId,
+    name: worker.name,
+    team: worker.team as Team,
+    process: worker.process,
+    t1000: h.t1000,
+    t1300: h.t1300,
+    t1600: h.t1600,
+    t1830: h.t1830,
+    h0900: h.h0900 ?? 0,
+    h1000: h.h1000 ?? 0,
+    h1115: h.h1115 ?? 0,
+    h1215: h.h1215 ?? 0,
+    h1300: h.h1300 ?? 0,
+    h1445: h.h1445 ?? 0,
+    h1545: h.h1545 ?? 0,
+    h1700: h.h1700 ?? 0,
+    h1830: h.h1830 ?? 0,
+    ekSayim: 0,
+  };
+}
 
 export default function AnalysisPage() {
   const [startDate, setStartDate] = useState(todayWeekdayIso());
@@ -194,15 +224,35 @@ export default function AnalysisPage() {
     return workerDailyRows.filter((row) => row.name.toLocaleLowerCase("tr").includes(query));
   }, [workerDailyRows, workerSearch]);
 
+  const prosesMap = useMemo(() => getProsesMapForEfficiency(), [lastUpdated]);
+
+  function rowPeriodEfficiency(row: TopWorkerAnalytics): number | null {
+    if (hourFilter !== "") return null;
+    return efficiencyPercentFromTotals(
+      prosesMap,
+      row.team,
+      row.process,
+      row.totalProduction,
+      Math.max(row.activeDays, 1)
+    );
+  }
+
+  function dailyRowEfficiency(row: WorkerDailyAnalytics): number | null {
+    if (hourFilter !== "") return null;
+    return efficiencyPercentForDayProduction(prosesMap, row.team, row.process, row.production);
+  }
+
   function exportExcel() {
     const topSheet = displayRows.map((row, index) => {
+      const eff = rowPeriodEfficiency(row);
       const base: Record<string, string | number> = {
         Sıra: groupMeta ? groupMeta[index].indexInGroup + 1 : index + 1,
         "Ad Soyad": row.name,
         Grup: resolveTeamLabel(row.team),
         Proses: row.process,
         "Çalışılan Gün": row.activeDays,
-        "Toplam Üretim": row.totalProduction
+        "Toplam Üretim": row.totalProduction,
+        "Verimlilik %": eff !== null ? eff : "",
       };
       if (groupMeta) {
         base["Genel sıra"] = rows.findIndex((r) => r.workerId === row.workerId) + 1;
@@ -217,13 +267,17 @@ export default function AnalysisPage() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(topSheet), "Top İşçi");
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(trendSheet), "Günlük Trend");
-    const workerDailySheet = workerDailyRows.map((row) => ({
-      Tarih: row.productionDate,
-      "Ad Soyad": row.name,
-      Grup: resolveTeamLabel(row.team),
-      Proses: row.process,
-      Üretim: row.production
-    }));
+    const workerDailySheet = workerDailyRows.map((row) => {
+      const eff = dailyRowEfficiency(row);
+      return {
+        Tarih: row.productionDate,
+        "Ad Soyad": row.name,
+        Grup: resolveTeamLabel(row.team),
+        Proses: row.process,
+        Üretim: row.production,
+        "Verimlilik %": eff !== null ? eff : "",
+      };
+    });
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(workerDailySheet), "İşçi Günlük Verim");
     XLSX.writeFile(workbook, `analiz-${startDate}-${endDate}.xlsx`);
   }
@@ -239,15 +293,26 @@ export default function AnalysisPage() {
     doc.text(`Saat Filtresi: ${displaySlotLabelForHourFilter(hourFilter)}`, 14, 35);
 
     const pdfHead = groupMeta
-      ? [["# (proses içi)", "Genel", "Ad Soyad", "Grup", "Proses", "Çalışılan Gün", "Toplam Üretim"]]
-      : [["#", "Ad Soyad", "Grup", "Proses", "Çalışılan Gün", "Toplam Üretim"]];
+      ? [["# (proses içi)", "Genel", "Ad Soyad", "Grup", "Proses", "Çalışılan Gün", "Toplam Üretim", "Verim %"]]
+      : [["#", "Ad Soyad", "Grup", "Proses", "Çalışılan Gün", "Toplam Üretim", "Verim %"]];
     const pdfBody = displayRows.map((row, index) => {
       const rankInView = groupMeta ? groupMeta[index].indexInGroup + 1 : index + 1;
       const globalRank = rows.findIndex((r) => r.workerId === row.workerId) + 1;
+      const eff = rowPeriodEfficiency(row);
+      const effCell = eff !== null ? `${eff}%` : "—";
       if (groupMeta) {
-        return [rankInView, globalRank, row.name, resolveTeamLabel(row.team), row.process, row.activeDays, row.totalProduction];
+        return [
+          rankInView,
+          globalRank,
+          row.name,
+          resolveTeamLabel(row.team),
+          row.process,
+          row.activeDays,
+          row.totalProduction,
+          effCell,
+        ];
       }
-      return [rankInView, row.name, resolveTeamLabel(row.team), row.process, row.activeDays, row.totalProduction];
+      return [rankInView, row.name, resolveTeamLabel(row.team), row.process, row.activeDays, row.totalProduction, effCell];
     });
 
     autoTable(doc, {
@@ -471,6 +536,7 @@ export default function AnalysisPage() {
               const rankShown = groupMeta ? groupMeta[index].indexInGroup + 1 : index + 1;
               const isActive = hoveredId === row.workerId;
               const showProcessHeader = groupByProcess && (index === 0 || displayRows[index - 1].process !== row.process);
+              const eff = rowPeriodEfficiency(row);
               return (
                 <Fragment key={`${row.workerId}-${row.process}-${index}`}>
                   {showProcessHeader && (
@@ -480,8 +546,8 @@ export default function AnalysisPage() {
                   )}
                 <div
                   className={`grid cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm transition-colors
-                    grid-cols-[24px_minmax(0,1fr)_2fr_56px]
-                    sm:grid-cols-[28px_minmax(0,200px)_1fr_72px]
+                    grid-cols-[24px_minmax(0,1fr)_2fr_56px_2.5rem]
+                    sm:grid-cols-[28px_minmax(0,200px)_1fr_72px_2.75rem]
                     ${isActive ? "bg-slate-100 dark:bg-slate-700/60" : "hover:bg-slate-50 dark:hover:bg-slate-700/30"}`}
                   onMouseEnter={(e: RMouseEvent) => {
                     setHoveredId(row.workerId);
@@ -497,6 +563,12 @@ export default function AnalysisPage() {
                     <div className={`h-full rounded ${barColor} transition-all duration-500`} style={{ width: `${width}%` }} />
                   </div>
                   <span className="text-right text-xs font-semibold sm:text-sm">{row.totalProduction}</span>
+                  <span
+                    className="text-right text-[10px] font-semibold tabular-nums text-slate-600 dark:text-slate-300 sm:text-xs"
+                    title={hourFilter !== "" ? "Saat filtresi açıkken verimlilik hesaplanmaz" : "Dönem verimliliği (%)"}
+                  >
+                    {eff !== null ? `${eff}%` : "—"}
+                  </span>
                 </div>
                 </Fragment>
               );
@@ -525,7 +597,27 @@ export default function AnalysisPage() {
           t1600: 0,
           t1830: 0,
         };
-        const hourlyForShift = aggregateDisplaySlots(hourlyRaw);
+        const showEfficiency = hourFilter === "";
+        let tooltipEff: number | null = null;
+        if (showEfficiency) {
+          if (
+            isSingleAnalysisDay &&
+            startDate === todayWorkdayIsoTurkey() &&
+            !hourlyLoading &&
+            hourlyData
+          ) {
+            const synth = hourlyToProductionRow(worker, hourlyRaw);
+            tooltipEff = workerEfficiencyPercent(synth, prosesMap, true);
+          } else {
+            tooltipEff = efficiencyPercentFromTotals(
+              prosesMap,
+              worker.team,
+              worker.process,
+              worker.totalProduction,
+              Math.max(worker.activeDays, 1)
+            );
+          }
+        }
         const shiftAvgs =
           isSingleAnalysisDay && !hourlyLoading
             ? computeShiftHourAverages(hourlyRaw, worker.totalProduction)
@@ -535,7 +627,7 @@ export default function AnalysisPage() {
         const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
         const vh = typeof window !== "undefined" ? window.innerHeight : 800;
         const cardW = 320;
-        const cardH = startDate === endDate ? 360 : 270;
+        const cardH = startDate === endDate ? 400 : 300;
         const left = tooltipPos.x + 16 + cardW > vw ? tooltipPos.x - cardW - 16 : tooltipPos.x + 16;
         const top  = tooltipPos.y + 16 + cardH > vh ? tooltipPos.y - cardH - 8  : tooltipPos.y + 16;
 
@@ -574,7 +666,7 @@ export default function AnalysisPage() {
             </div>
 
             {/* Özet istatistikler */}
-            <div className="mb-3 grid grid-cols-3 gap-2 text-center">
+            <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
               <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30">
                 <div className="text-lg font-bold text-emerald-600 dark:text-emerald-300">{worker.totalProduction}</div>
                 <div className="text-xs text-slate-500">Toplam</div>
@@ -586,6 +678,21 @@ export default function AnalysisPage() {
               <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30">
                 <div className="text-lg font-bold text-violet-600 dark:text-violet-300">{avg}</div>
                 <div className="text-xs text-slate-500">Günlük Ort.</div>
+              </div>
+              <div
+                className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30"
+                title={
+                  showEfficiency && isSingleAnalysisDay && startDate === todayWorkdayIsoTurkey() && hourlyData
+                    ? "Bugün için vardiya içi (intraday) oran; diğer aralıklarda dönem ortalamasına göre tam gün hedefi."
+                    : showEfficiency
+                      ? "Ortalama günlük üretim ÷ proses günlük hedefi (dk×60×9), en fazla %100."
+                      : "Saat filtresi açıkken verimlilik hesaplanmaz."
+                }
+              >
+                <div className="text-lg font-bold text-amber-600 dark:text-amber-300">
+                  {tooltipEff !== null ? `${tooltipEff}%` : "—"}
+                </div>
+                <div className="text-xs text-slate-500">Verimlilik</div>
               </div>
             </div>
 
@@ -698,8 +805,13 @@ export default function AnalysisPage() {
         <p className="mb-3 text-sm text-slate-600">
           Gösterilen üretim: {displaySlotLabelForHourFilter(hourFilter)}
           {groupByProcess && " · Sıra ve renkler proses grubuna göre"}
+          {hourFilter !== "" ? (
+            <span className="mt-1 block text-xs text-amber-800 dark:text-amber-200/90">
+              Saat filtresi açıkken verimlilik hesaplanmaz (hedef tam güne göredir).
+            </span>
+          ) : null}
         </p>
-        <table className="w-full min-w-[760px] border-collapse text-sm">
+        <table className="w-full min-w-[820px] border-collapse text-sm">
           <thead className="bg-slate-100">
             <tr>
               <th className="px-2 py-2 text-left">#</th>
@@ -709,6 +821,7 @@ export default function AnalysisPage() {
               <th className="px-2 py-2 text-left">Proses</th>
               <th className="px-2 py-2 text-right">Çalışılan Gün</th>
               <th className="px-2 py-2 text-right">Toplam Üretim</th>
+              <th className="px-2 py-2 text-right">Verimlilik %</th>
             </tr>
           </thead>
           <tbody>
@@ -718,6 +831,7 @@ export default function AnalysisPage() {
               const tercileIndex = groupMeta ? groupMeta[index].indexInGroup : index;
               const tercileTotal = groupMeta ? groupMeta[index].groupLen : rows.length;
               const { rank: rankColor } = rankTercileStyles(tercileIndex, tercileTotal);
+              const eff = rowPeriodEfficiency(row);
               return (
                 <tr key={`${row.workerId}-${index}`} className="border-b border-slate-200">
                   <td className={`px-2 py-2 font-medium ${rankColor}`}>{rankInView}</td>
@@ -727,6 +841,9 @@ export default function AnalysisPage() {
                   <td className="px-2 py-2">{row.process}</td>
                   <td className="px-2 py-2 text-right">{row.activeDays}</td>
                   <td className="px-2 py-2 text-right font-semibold">{row.totalProduction}</td>
+                  <td className="px-2 py-2 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                    {eff !== null ? `${eff}%` : "—"}
+                  </td>
                 </tr>
               );
             })}
@@ -747,7 +864,7 @@ export default function AnalysisPage() {
         {filteredWorkerDailyRows.length === 0 ? (
           <div className="text-sm text-slate-600 dark:text-slate-300">Seçilen aralıkta veri bulunamadı.</div>
         ) : (
-          <table className="w-full min-w-[860px] border-collapse text-sm">
+          <table className="w-full min-w-[920px] border-collapse text-sm">
             <thead className="bg-slate-100 dark:bg-slate-700">
               <tr>
                 <th className="px-2 py-2 text-left">Tarih</th>
@@ -755,18 +872,23 @@ export default function AnalysisPage() {
                 <th className="px-2 py-2 text-left">Grup</th>
                 <th className="px-2 py-2 text-left">Proses</th>
                 <th className="px-2 py-2 text-right">Üretim</th>
+                <th className="px-2 py-2 text-right">Verimlilik %</th>
               </tr>
             </thead>
             <tbody>
-              {filteredWorkerDailyRows.map((row) => (
-                <tr key={`${row.productionDate}-${row.workerId}`} className="border-b border-slate-200 dark:border-slate-600">
-                  <td className="px-2 py-2">{row.productionDate}</td>
-                  <td className="px-2 py-2">{row.name}</td>
-                  <td className="px-2 py-2">{resolveTeamLabel(row.team)}</td>
-                  <td className="px-2 py-2">{row.process}</td>
-                  <td className="px-2 py-2 text-right font-semibold">{row.production}</td>
-                </tr>
-              ))}
+              {filteredWorkerDailyRows.map((row) => {
+                const eff = dailyRowEfficiency(row);
+                return (
+                  <tr key={`${row.productionDate}-${row.workerId}`} className="border-b border-slate-200 dark:border-slate-600">
+                    <td className="px-2 py-2">{row.productionDate}</td>
+                    <td className="px-2 py-2">{row.name}</td>
+                    <td className="px-2 py-2">{resolveTeamLabel(row.team)}</td>
+                    <td className="px-2 py-2">{row.process}</td>
+                    <td className="px-2 py-2 text-right font-semibold">{row.production}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{eff !== null ? `${eff}%` : "—"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
