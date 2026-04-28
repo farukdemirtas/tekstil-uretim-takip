@@ -529,35 +529,82 @@ export default function Ekran1IcerikPage() {
                 </div>
               </div>
 
-              {avgEfficiencyStats.count > 0 && (
-                <div
-                  className={`mt-3 rounded-2xl border-2 px-3 py-2.5 text-center shadow-sm sm:mt-4 sm:py-3 ${
-                    prevAvgEfficiency == null || avgEfficiencyStats.avg === prevAvgEfficiency
-                      ? "border-slate-200 bg-white text-slate-800"
-                      : avgEfficiencyStats.avg > prevAvgEfficiency
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                        : "border-rose-300 bg-rose-50 text-rose-900"
-                  }`}
-                  role="status"
-                  aria-label="Ortalama personel verimliliği"
-                >
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 sm:text-[11px]">
-                    Ortalama verimlilik
-                  </p>
-                  <p
-                    className="mt-1 font-black tabular-nums leading-none"
-                    style={{ fontSize: "clamp(1.5rem, 4.5vw, 2.75rem)" }}
+              {avgEfficiencyStats.count > 0 && (() => {
+                const avgEff = avgEfficiencyStats.avg;
+                const over75 = avgEff >= 75;
+                const trendUp =
+                  prevAvgEfficiency != null && avgEff > prevAvgEfficiency;
+                const trendDown =
+                  prevAvgEfficiency != null && avgEff < prevAvgEfficiency;
+                return (
+                  <div
+                    className={`mt-3 rounded-2xl border-2 px-4 py-3 shadow-md sm:mt-4 sm:px-5 sm:py-3.5 ${
+                      over75
+                        ? "border-emerald-400 bg-emerald-50"
+                        : "border-rose-400 bg-rose-50"
+                    }`}
+                    role="status"
+                    aria-label="Ortalama personel verimliliği"
                   >
-                    %{avgEfficiencyStats.avg}
-                  </p>
-                  {prevAvgEfficiency != null && avgEfficiencyStats.avg !== prevAvgEfficiency && (
-                    <p className="mt-1 text-[11px] font-semibold sm:text-xs">
-                      Önceki iş günü: %{prevAvgEfficiency}
-                      {avgEfficiencyStats.avg > prevAvgEfficiency ? " · yükseliş" : " · düşüş"}
-                    </p>
-                  )}
-                </div>
-              )}
+                    <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 md:gap-10">
+                      <p
+                        className={`shrink-0 whitespace-nowrap text-base font-black uppercase tracking-wide sm:text-lg md:text-2xl ${
+                          over75 ? "text-emerald-900" : "text-rose-900"
+                        }`}
+                      >
+                        Ortalama verimlilik
+                      </p>
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <p
+                          className={`font-black tabular-nums leading-none ${
+                            over75 ? "text-emerald-600" : "text-rose-600"
+                          }`}
+                          style={{
+                            fontSize: "clamp(2rem, 6.5vw, 3.75rem)",
+                            textShadow: over75
+                              ? "0 1px 0 rgb(255 255 255 / 0.5), 0 2px 8px rgb(5 150 105 / 0.35)"
+                              : "0 1px 0 rgb(255 255 255 / 0.5), 0 2px 8px rgb(225 29 72 / 0.35)",
+                          }}
+                        >
+                          %{avgEff}
+                        </p>
+                        {trendUp && (
+                          <span
+                            className="flex shrink-0 items-center"
+                            title="Önceki iş gününe göre yükseliş"
+                            aria-hidden
+                          >
+                            <svg width="32" height="32" viewBox="0 0 16 16" fill="none" className="sm:h-9 sm:w-9">
+                              <path d="M8 3l6 9H2z" fill="#16a34a" />
+                            </svg>
+                          </span>
+                        )}
+                        {trendDown && (
+                          <span
+                            className="flex shrink-0 items-center"
+                            title="Önceki iş gününe göre düşüş"
+                            aria-hidden
+                          >
+                            <svg width="32" height="32" viewBox="0 0 16 16" fill="none" className="sm:h-9 sm:w-9">
+                              <path d="M8 13L2 4h12z" fill="#dc2626" />
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {prevAvgEfficiency != null && (
+                      <p
+                        className={`mt-2 text-center text-[11px] font-semibold sm:text-xs ${
+                          over75 ? "text-emerald-800" : "text-rose-800"
+                        }`}
+                      >
+                        Önceki iş günü: %{prevAvgEfficiency}
+                        {trendUp ? " · yükseliş" : trendDown ? " · düşüş" : ""}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </section>
 
