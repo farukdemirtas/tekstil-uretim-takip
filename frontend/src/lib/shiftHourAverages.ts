@@ -53,6 +53,15 @@ function lastFromNine(h: WorkerHourlyBreakdown): { lastStartHour: number; lastLa
   return last;
 }
 
+/** Son adedi >0 olan kolonun 0-tabanlı indeksi (9 kolon = vardiya saatleri, her biri ~1 saat). */
+function lastNonZeroIndexNine(h: WorkerHourlyBreakdown): number | null {
+  let lastIdx: number | null = null;
+  for (let i = 0; i < NINE_MEASUREMENT_SLOTS.length; i++) {
+    if (z(h[NINE_MEASUREMENT_SLOTS[i].key]) > 0) lastIdx = i;
+  }
+  return lastIdx;
+}
+
 function lastFromLegacyAggregated(agg: ReturnType<typeof aggregateDisplaySlots>): {
   lastStartHour: number;
   lastLabel: string;
@@ -74,8 +83,9 @@ export type ShiftHourAverages = {
 
 /**
  * Tek günlük toplam + o güne ait saatlik dağılım:
- * - Öncelik: 9 ayrı kolon (h0900…h1830) varsa, son adedi olan ölçüm saatine kadar 09:00’dan itibaren geçen süreye bölünür.
- * - Yoksa: eski t* toplu kolonları toplanmış 4 gruptan son üretim zamanı (yedek).
+ * - 9 ayrı kolon (h0900…h1830): her kolon ~1 saatlik üretim; saatlik ortalama = toplam ÷ (son dolu kolon sırası, 1…9).
+ *   (Saat damgası farkına bölmek yanlış verim verir: örn. 3 kolonda 150+150+150 → 450÷3=150/saat, ÷2,25 saat değil.)
+ * - Yoksa: eski t* 4 grupta saat damgasına kadar geçen süre (yedek).
  * - Nominal: toplam ÷ 9.
  */
 export function computeShiftHourAverages(
@@ -89,9 +99,18 @@ export function computeShiftHourAverages(
   const nominalShiftAvg = Math.round(totalProduction / SHIFT_NOMINAL_HOURS);
 
   const hasGranular = sumNineHours(h) > 0;
-  const last = hasGranular
-    ? lastFromNine(h)
-    : lastFromLegacyAggregated(aggregateDisplaySlots(h));
+  if (hasGranular) {
+    const lastIdx = lastNonZeroIndexNine(h);
+    const last = lastFromNine(h);
+    if (lastIdx !== null && lastIdx >= 0 && last) {
+      const effectiveHours = Math.max(lastIdx + 1, 1);
+      const windowAvg = Math.round(totalProduction / effectiveHours);
+      const windowHint = `${effectiveHours} dilim → ${last.lastLabel}`;
+      return { perHourInWindow: windowAvg, perHourEightHourDay: nominalShiftAvg, windowHint };
+    }
+  }
+
+  const last = lastFromLegacyAggregated(aggregateDisplaySlots(h));
 
   if (!last || !Number.isFinite(last.lastStartHour) || last.lastStartHour < SHIFT_DAY_START_HOUR) {
     return {
