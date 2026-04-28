@@ -5,19 +5,21 @@ import Link from "next/link";
 import {
   getHedefTakipStageTotals,
   getTopWorkersAnalytics,
-  listProductModels,
-  getDayProductMeta,
+  getProduction,
+  getProsesVeriRowsFromServer,
   setAuthToken,
   type HedefStageLineDto,
 } from "@/lib/api";
 
-import { getProsesMap, makeProsesKey } from "@/lib/prosesVeri";
-import { clampToWeekdayIso, todayIsoTurkey } from "@/lib/businessCalendar";
-
-/** EKRAN1 / EKRAN3 ile aynı: TR takvim günü, hafta sonu → son hafta içi (sorgu tarihleri) */
-function workdayIsoTurkey(): string {
-  return clampToWeekdayIso(todayIsoTurkey());
-}
+import {
+  getProsesMapForEfficiency,
+  makeProsesKey,
+  replaceLocalGenelCacheFromServerRows,
+  GENEL_VERIMLILIK_MODEL_CODE,
+} from "@/lib/prosesVeri";
+import { previousWeekdayIso, todayIsoTurkey, todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
+import { sumProductionRow } from "@/lib/productionSlots";
+import { averageWorkerEfficiency, workerEfficiencyPercent } from "@/lib/workerEfficiency";
 import { hasPermission } from "@/lib/permissions";
 import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker";
 
@@ -98,14 +100,16 @@ const STAGE_TEXT = [
 export default function Ekran1IcerikPage() {
   const [target, setTarget] = useState(5000);
   const [stages, setStages] = useState<HedefStageLineDto[]>([]);
-  const [startDate, setStartDate] = useState(() => workdayIsoTurkey());
-  const [endDate, setEndDate] = useState(() => workdayIsoTurkey());
+  const [startDate, setStartDate] = useState(() => todayWorkdayIsoTurkey());
+  const [endDate, setEndDate] = useState(() => todayWorkdayIsoTurkey());
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
   const [hasToken, setHasToken] = useState(false);
   const [modelId, setModelId] = useState<number | null>(null);
   const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
+  const [avgEfficiencyStats, setAvgEfficiencyStats] = useState({ avg: 0, count: 0 });
+  const [prevAvgEfficiency, setPrevAvgEfficiency] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const genelTamamlanan = useMemo(() => {
@@ -127,101 +131,145 @@ export default function Ekran1IcerikPage() {
       const isSingleDay = startDate === endDate;
 
       // Verimlilik API’si başarısız olsa da (eski: yalnız ekran1 yetkisi → 403) ana özet yüklenir; ticker boş kalır.
-      const [totals, rawCurrent, rawPrev, allModels, dayMeta] = await Promise.all([
+      const [totals, rawCurrent, rawPrev, dayRowsRaw] = await Promise.all([
         getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined),
         getTopWorkersAnalytics({ startDate, endDate, limit: 200 }).catch(() => []),
         getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }).catch(() => []),
-        listProductModels(),
-        getDayProductMeta(endDate).catch(() => null),
+        isSingleDay ? getProduction(endDate).catch(() => []) : Promise.resolve([]),
       ]);
+      const dayRows = isSingleDay ? dayRowsRaw : [];
       setStages(totals.stages ?? []);
 
-      // ── Proses Veri Sayfası hedef haritası ─────────────────────────────
-      // Öncelik 1: Hedef-takip ayarlarındaki modelId (kullanıcının seçtiği model)
-      // Öncelik 2: O tarihe ait üretim meta verisi (model seçili değilse)
-      // Son yedek: v1 global veri
-      const settingsModelCode =
-        modelId != null
-          ? (allModels.find((m) => m.id === modelId)?.modelCode ?? null)
-          : null;
-      const dayMetaModelCode =
-        dayMeta?.modelId != null
-          ? (allModels.find((m) => m.id === dayMeta.modelId)?.modelCode ?? null)
-          : null;
-      const resolvedModelCode = settingsModelCode ?? dayMetaModelCode ?? null;
-
-      let prosesMap = getProsesMap(resolvedModelCode);
-
-      // Harita boşsa (seçili modelde veri girilmemiş) tüm modeller denenir
-      if (Object.keys(prosesMap).length === 0) {
-        for (const m of allModels) {
-          const candidate = getProsesMap(m.modelCode);
-          if (Object.keys(candidate).length > 0) {
-            prosesMap = candidate;
-            break;
-          }
-        }
+      const genelRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE).catch(() => []);
+      if (genelRows.length > 0) {
+        replaceLocalGenelCacheFromServerRows(genelRows);
       }
+      const prosesMap = getProsesMapForEfficiency();
 
-      // ── Bugün tamamlandı mı? ────────────────────────────────────────────
-      const todayActiveCount     = isSingleDay ? rawCurrent.filter((w) => w.totalProduction > 0).length : 0;
-      const yesterdayActiveCount = isSingleDay ? rawPrev.filter((w) => w.totalProduction > 0).length : 0;
-      // Bugün için hiç üretim kaydı yoksa veya gün henüz "tamamlanmadı" sayılmıyorsa dünün verisini kullan
-      // (eski mantık: todayActiveCount===0 → "tamam" deyip bugünkü sıfır veriyi kullanıyordu → ticker boş kalıyordu)
-      const isTodayComplete =
-        !isSingleDay
-          ? true
-          : todayActiveCount === 0
-            ? false
-            : todayActiveCount >= yesterdayActiveCount * 0.75;
-
-      // Verimlilik kaynağı: tamamlanmadıysa dünkü, tamamlandıysa bugünkü veri
-      const effSource = isSingleDay && !isTodayComplete ? rawPrev : rawCurrent;
+      const todayTurkey = todayWorkdayIsoTurkey();
 
       // Önceki dönem lookup (trend için): workerId → { totalProduction, activeDays }
       const prevMap = new Map<number, { prod: number; days: number }>(
         rawPrev.map((w) => [w.workerId, { prod: w.totalProduction, days: Math.max(w.activeDays, 1) }])
       );
 
-      // ── Verimlilik hesabı ───────────────────────────────────────────────
-      // effPct = çalışanın günlük ortalaması / Proses Veri Sayfası günlük hedef × 100
-      const items: TickerItem[] = effSource.map((w) => {
-        const dk     = Number(prosesMap[makeProsesKey(w.team, w.process)]) || 0;
-        const gunluk = dk * 60 * 9;   // Proses Veri Sayfası günlük hedef
+      let items: TickerItem[];
 
-        const workerDaily = w.totalProduction / Math.max(w.activeDays, 1);
-        const effPct = gunluk > 0
-          ? Math.min(Math.round((workerDaily / gunluk) * 100), 100)
-          : 0;
+      if (isSingleDay && dayRows.length === 0) {
+        items = [];
+        setAvgEfficiencyStats({ avg: 0, count: 0 });
+        setPrevAvgEfficiency(null);
+      } else if (isSingleDay && dayRows.length > 0) {
+        // TR bugünü: vardiya boyunca hep saatlik pencere (09:00 → son dolu ölçüm) / saat hedefi.
+        // Dün aktif sayısı 0 iken eski "gün tamam" mantığı günlük formüle düşürüp sabah verisini gizliyordu.
+        const useIntraday = endDate === todayTurkey;
 
-        // Önceki dönem verimliliği (delta hesabı için)
-        const prev = prevMap.get(w.workerId);
-        const prevDaily = prev ? prev.prod / prev.days : 0;
-        const prevEffPct = gunluk > 0 && prev
-          ? Math.min(Math.round((prevDaily / gunluk) * 100), 100)
-          : null;
+        items = dayRows
+          .filter((r) => !r.absentForDay)
+          .map((r) => {
+            const dk = Number(prosesMap[makeProsesKey(r.team, r.process)]) || 0;
+            const gunluk = dk * 60 * 9;
+            const effPct = workerEfficiencyPercent(r, prosesMap, useIntraday) ?? 0;
 
-        const trendDelta = prevEffPct != null ? effPct - prevEffPct : undefined;
+            const prev = prevMap.get(r.workerId);
+            const prevDaily = prev ? prev.prod / prev.days : 0;
+            const prevEffPct =
+              gunluk > 0 && prev
+                ? Math.min(Math.round((prevDaily / gunluk) * 100), 100)
+                : null;
 
-        const trend: "up" | "down" | "neutral" =
-          trendDelta == null || trendDelta === 0 ? "neutral"
-          : trendDelta > 0 ? "up"
-          : "down";
+            const trendDelta = prevEffPct != null ? effPct - prevEffPct : undefined;
+            const trend: "up" | "down" | "neutral" =
+              trendDelta == null || trendDelta === 0
+                ? "neutral"
+                : trendDelta > 0
+                  ? "up"
+                  : "down";
 
-        return {
-          workerId:      w.workerId,
-          name:          w.name,
-          process:       w.process || "—",
-          team:          w.team,
-          efficiencyPct: effPct,
-          trend,
-          trendDelta,
-        };
-      });
+            return {
+              workerId: r.workerId,
+              name: r.name,
+              process: r.process || "—",
+              team: r.team,
+              efficiencyPct: effPct,
+              trend,
+              trendDelta,
+            };
+          });
+
+        const avgStats = averageWorkerEfficiency(dayRows, prosesMap, useIntraday);
+        setAvgEfficiencyStats(avgStats);
+
+        const prevIso = previousWeekdayIso(endDate);
+        const prevRows = await getProduction(prevIso).catch(() => []);
+        const { avg: prevAvg } = averageWorkerEfficiency(prevRows, prosesMap, false);
+        setPrevAvgEfficiency(prevRows.length > 0 && avgStats.count > 0 ? prevAvg : null);
+      } else {
+        const todayActiveCount = isSingleDay ? rawCurrent.filter((w) => w.totalProduction > 0).length : 0;
+        const yesterdayActiveCount = isSingleDay ? rawPrev.filter((w) => w.totalProduction > 0).length : 0;
+        const isTodayComplete =
+          !isSingleDay
+            ? true
+            : todayActiveCount === 0
+              ? false
+              : todayActiveCount >= yesterdayActiveCount * 0.75;
+
+        const effSource = isSingleDay && !isTodayComplete ? rawPrev : rawCurrent;
+
+        items = effSource.map((w) => {
+          const dk = Number(prosesMap[makeProsesKey(w.team, w.process)]) || 0;
+          const gunluk = dk * 60 * 9;
+
+          const workerDaily = w.totalProduction / Math.max(w.activeDays, 1);
+          const effPct =
+            gunluk > 0 ? Math.min(Math.round((workerDaily / gunluk) * 100), 100) : 0;
+
+          const prev = prevMap.get(w.workerId);
+          const prevDaily = prev ? prev.prod / prev.days : 0;
+          const prevEffPct =
+            gunluk > 0 && prev
+              ? Math.min(Math.round((prevDaily / gunluk) * 100), 100)
+              : null;
+
+          const trendDelta = prevEffPct != null ? effPct - prevEffPct : undefined;
+          const trend: "up" | "down" | "neutral" =
+            trendDelta == null || trendDelta === 0 ? "neutral" : trendDelta > 0 ? "up" : "down";
+
+          return {
+            workerId: w.workerId,
+            name: w.name,
+            process: w.process || "—",
+            team: w.team,
+            efficiencyPct: effPct,
+            trend,
+            trendDelta,
+          };
+        });
+
+        const avgAgg =
+          items.length > 0
+            ? Math.round(items.reduce((s, i) => s + i.efficiencyPct, 0) / items.length)
+            : 0;
+        setAvgEfficiencyStats({ avg: avgAgg, count: items.length });
+        setPrevAvgEfficiency(null);
+      }
 
       items.sort((a, b) => b.efficiencyPct - a.efficiencyPct);
-      // %40 altı ve proses hedefi girilmemişler gizlenir
-      setTickerItems(items.filter((item) => item.efficiencyPct >= 40));
+      const prodById =
+        isSingleDay && dayRows.length > 0
+          ? new Map(dayRows.map((r) => [r.workerId, sumProductionRow(r)]))
+          : null;
+      setTickerItems(
+        items.filter((item) => {
+          const dk = Number(prosesMap[makeProsesKey(item.team, item.process)]) || 0;
+          if (dk <= 0) return false;
+          if (prodById) {
+            const tot = prodById.get(item.workerId) ?? 0;
+            return tot > 0 || item.efficiencyPct >= 40;
+          }
+          return item.efficiencyPct >= 40;
+        }),
+      );
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
     } catch {
       setError("Veri alınamadı. Oturum veya bağlantıyı kontrol edin.");
@@ -238,7 +286,7 @@ export default function Ekran1IcerikPage() {
     }
     setHasToken(true);
     setAuthToken(token);
-    const today = workdayIsoTurkey();
+    const today = todayWorkdayIsoTurkey();
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -480,6 +528,36 @@ export default function Ekran1IcerikPage() {
                   </p>
                 </div>
               </div>
+
+              {avgEfficiencyStats.count > 0 && (
+                <div
+                  className={`mt-3 rounded-2xl border-2 px-3 py-2.5 text-center shadow-sm sm:mt-4 sm:py-3 ${
+                    prevAvgEfficiency == null || avgEfficiencyStats.avg === prevAvgEfficiency
+                      ? "border-slate-200 bg-white text-slate-800"
+                      : avgEfficiencyStats.avg > prevAvgEfficiency
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                        : "border-rose-300 bg-rose-50 text-rose-900"
+                  }`}
+                  role="status"
+                  aria-label="Ortalama personel verimliliği"
+                >
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 sm:text-[11px]">
+                    Ortalama verimlilik
+                  </p>
+                  <p
+                    className="mt-1 font-black tabular-nums leading-none"
+                    style={{ fontSize: "clamp(1.5rem, 4.5vw, 2.75rem)" }}
+                  >
+                    %{avgEfficiencyStats.avg}
+                  </p>
+                  {prevAvgEfficiency != null && avgEfficiencyStats.avg !== prevAvgEfficiency && (
+                    <p className="mt-1 text-[11px] font-semibold sm:text-xs">
+                      Önceki iş günü: %{prevAvgEfficiency}
+                      {avgEfficiencyStats.avg > prevAvgEfficiency ? " · yükseliş" : " · düşüş"}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 

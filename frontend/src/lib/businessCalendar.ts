@@ -54,3 +54,19 @@ export function coerceWeekdayPickerValue(raw: string): string {
   if (!raw) return raw;
   return isWeekendIso(raw) ? clampToWeekdayIso(raw) : raw;
 }
+
+/** ISO tarihten bir önceki hafta içi günü (Cumartesi/Pazar atlanır) */
+export function previousWeekdayIso(fromIso: string): string {
+  const dt = parseIsoLocal(fromIso);
+  if (!dt) return fromIso;
+  let d = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  do {
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+  } while (d.getDay() === 0 || d.getDay() === 6);
+  return formatIsoLocal(d);
+}
+
+/** TR takvim günü, hafta sonu değil (EKRAN1 / verimlilik ile uyumlu) */
+export function todayWorkdayIsoTurkey(): string {
+  return clampToWeekdayIso(todayIsoTurkey());
+}

@@ -7,6 +7,14 @@ const DK_KEY_V1      = "proses_dk_adet_v1";    // eski global anahtar (geriye d�
 const ROWS_KEY_V1    = "proses_veri_rows_v1";   // eski global satırlar
 const MODEL_LIST_KEY = "proses_model_list_v1";  // kayıtlı model adları
 
+/** Sunucu / API: canlı verimlilik hedefleri (ürün modelinden bağımsız) */
+export const GENEL_VERIMLILIK_MODEL_CODE = "__genel_verimlilik__";
+
+const DK_KEY_GENEL = "proses_dk_genel_verimlilik_v1";
+const ROWS_KEY_GENEL = "proses_rows_genel_v1";
+
+export const GENEL_PROSES_UPDATED_EVENT = "tekstil-genel-proses-updated";
+
 /* ── Tipler ──────────────────────────────────────────────── */
 export type ProsesMap = Record<string, string>; // key: "teamCode|processName"
 
@@ -102,6 +110,155 @@ export function getProsesMap(modelKey?: string | null): ProsesMap {
 export function setProsesMap(map: ProsesMap, modelKey?: string | null): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(resolveDkKey(modelKey), JSON.stringify(map));
+}
+
+function dispatchGenelProsesUpdated() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(GENEL_PROSES_UPDATED_EVENT));
+}
+
+export function dkKeyGenel(): string {
+  return DK_KEY_GENEL;
+}
+
+export function rowsKeyGenel(): string {
+  return ROWS_KEY_GENEL;
+}
+
+/** Ana sayfa, EKRAN ve verimlilik: yalnızca genel hedef haritası */
+export function getProsesMapForEfficiency(): ProsesMap {
+  return getGenelVerimlilikMap();
+}
+
+export function getGenelVerimlilikMap(): ProsesMap {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(DK_KEY_GENEL);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed as ProsesMap;
+  } catch {
+    return {};
+  }
+}
+
+export function setGenelVerimlilikMap(map: ProsesMap): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(DK_KEY_GENEL, JSON.stringify(map));
+  dispatchGenelProsesUpdated();
+}
+
+/** Sunucudan gelen satırlarla genel önbellek (tarayıcı) */
+export function replaceLocalGenelCacheFromServerRows(
+  rows: Array<{ id: number; teamCode: string; teamLabel: string; processName: string; dkAdet: string }>,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(ROWS_KEY_GENEL, JSON.stringify(rows));
+    const map: ProsesMap = {};
+    for (const r of rows) {
+      if (r.dkAdet && Number(r.dkAdet) > 0) {
+        map[makeProsesKey(r.teamCode, r.processName)] = String(r.dkAdet);
+      }
+    }
+    window.localStorage.setItem(DK_KEY_GENEL, JSON.stringify(map));
+    dispatchGenelProsesUpdated();
+  } catch {
+    /* quota */
+  }
+}
+
+export function getStoredGenelRowsForServerSave(): Array<{
+  teamCode: string;
+  teamLabel: string;
+  processName: string;
+  dkAdet: string;
+}> {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(ROWS_KEY_GENEL);
+    if (!raw) return [];
+    const rows = JSON.parse(raw) as Array<{
+      teamCode: string;
+      teamLabel?: string;
+      processName: string;
+      dkAdet: string;
+    }>;
+    if (!Array.isArray(rows)) return [];
+    return rows.map((r) => ({
+      teamCode: r.teamCode,
+      teamLabel: r.teamLabel ?? r.teamCode,
+      processName: r.processName,
+      dkAdet: String(r.dkAdet ?? ""),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Ana sayfa tablosundan Dk düzenleme → genel hedefler */
+export function setProcessDkAndSyncGenelRows(
+  teamCode: string,
+  processName: string,
+  dkAdet: string,
+  teamLabelForNewRow?: string,
+): void {
+  const map = getGenelVerimlilikMap();
+  const k = makeProsesKey(teamCode, processName);
+  if (!dkAdet || Number(dkAdet) <= 0) delete map[k];
+  else map[k] = dkAdet;
+
+  const rowsKey = ROWS_KEY_GENEL;
+  try {
+    window.localStorage.setItem(DK_KEY_GENEL, JSON.stringify(map));
+
+    const raw = window.localStorage.getItem(rowsKey);
+    if (!raw) {
+      if (!dkAdet || Number(dkAdet) <= 0) {
+        dispatchGenelProsesUpdated();
+        return;
+      }
+      const row = {
+        id: Date.now(),
+        teamCode,
+        teamLabel: teamLabelForNewRow ?? teamCode,
+        processName,
+        dkAdet,
+      };
+      window.localStorage.setItem(rowsKey, JSON.stringify([row]));
+      dispatchGenelProsesUpdated();
+      return;
+    }
+    const rows = JSON.parse(raw) as Array<Record<string, unknown>>;
+    if (!Array.isArray(rows)) return;
+    const matchIdx = rows.findIndex(
+      (r) => r["teamCode"] === teamCode && r["processName"] === processName,
+    );
+    let updated: Array<Record<string, unknown>>;
+    if (matchIdx >= 0) {
+      updated = rows.map((r, i) =>
+        i === matchIdx ? { ...r, dkAdet } : r,
+      );
+    } else if (dkAdet && Number(dkAdet) > 0) {
+      updated = [
+        ...rows,
+        {
+          id: Date.now(),
+          teamCode,
+          teamLabel: teamLabelForNewRow ?? teamCode,
+          processName,
+          dkAdet,
+        },
+      ];
+    } else {
+      updated = rows;
+    }
+    window.localStorage.setItem(rowsKey, JSON.stringify(updated));
+    dispatchGenelProsesUpdated();
+  } catch {
+    /* quota */
+  }
 }
 
 /* ── Hem dk hem rows güncelle (ProductionTable modalından) ── */

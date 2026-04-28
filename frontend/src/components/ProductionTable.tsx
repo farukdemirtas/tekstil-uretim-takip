@@ -12,12 +12,15 @@ import {
 } from "@/lib/productionSlots";
 import {
   calcFromDk,
-  getProsesMap,
+  getProsesMapForEfficiency,
   makeProsesKey,
-  setProcessDkAndSyncRows,
-  dkKeyForModel,
-  getStoredRowsForServerSave,
-  replaceLocalProsesCacheFromServerRows,
+  setProcessDkAndSyncGenelRows,
+  dkKeyGenel,
+  rowsKeyGenel,
+  getStoredGenelRowsForServerSave,
+  replaceLocalGenelCacheFromServerRows,
+  GENEL_VERIMLILIK_MODEL_CODE,
+  GENEL_PROSES_UPDATED_EVENT,
   type ProsesMap,
 } from "@/lib/prosesVeri";
 
@@ -25,7 +28,7 @@ type ProductionTableProps = {
   rows: ProductionRow[];
   /** Seçili takvim günü (ipucu / tutarlılık) */
   selectedDate: string;
-  /** O günkü ürün modeli — model bazlı dk/saat/günlük adet okumak için */
+  /** Geriye dönük uyumluluk; dk hedefleri artık ürün modelinden değil genel verimlilik deposundan okunur */
   modelKey?: string;
   onCellChange: (workerId: number, field: ProductionSlotKey, value: number) => void;
   onDeleteWorker: (workerId: number, workerName: string) => void;
@@ -132,35 +135,39 @@ export default function ProductionTable({
   useEffect(() => {
     let cancelled = false;
     async function loadFromServer() {
-      if (!modelKey) {
-        setProsesMapState(getProsesMap(undefined));
-        return;
-      }
       try {
-        const serverRows = await getProsesVeriRowsFromServer(modelKey);
+        const serverRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE);
         if (cancelled) return;
         if (serverRows.length > 0) {
-          replaceLocalProsesCacheFromServerRows(modelKey, serverRows);
+          replaceLocalGenelCacheFromServerRows(serverRows);
         }
-        setProsesMapState(getProsesMap(modelKey));
+        setProsesMapState(getProsesMapForEfficiency());
       } catch {
-        if (!cancelled) setProsesMapState(getProsesMap(modelKey));
+        if (!cancelled) setProsesMapState(getProsesMapForEfficiency());
       }
     }
     void loadFromServer();
 
     function onStorage(e: StorageEvent) {
-      const modelSpecificKey = modelKey ? dkKeyForModel(modelKey) : null;
-      if (e.key === "proses_dk_adet_v1" || (modelSpecificKey && e.key === modelSpecificKey)) {
-        setProsesMapState(getProsesMap(modelKey));
+      if (
+        e.key === dkKeyGenel() ||
+        e.key === rowsKeyGenel() ||
+        e.key === "proses_dk_adet_v1"
+      ) {
+        setProsesMapState(getProsesMapForEfficiency());
       }
     }
+    function onGenelUpdated() {
+      setProsesMapState(getProsesMapForEfficiency());
+    }
     window.addEventListener("storage", onStorage);
+    window.addEventListener(GENEL_PROSES_UPDATED_EVENT, onGenelUpdated as EventListener);
     return () => {
       cancelled = true;
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener(GENEL_PROSES_UPDATED_EVENT, onGenelUpdated as EventListener);
     };
-  }, [modelKey]);
+  }, []);
 
   useEffect(() => {
     void Promise.all([getTeams(), getProcesses()])
@@ -184,8 +191,10 @@ export default function ProductionTable({
   const tableColSpan = 2 + timeColCount + 1 + 3 + 1;
 
   function persistProsesServerSnapshot() {
-    if (!modelKey) return;
-    void saveProsesVeriRowsToServer(modelKey, getStoredRowsForServerSave(modelKey)).catch(() => {});
+    void saveProsesVeriRowsToServer(
+      GENEL_VERIMLILIK_MODEL_CODE,
+      getStoredGenelRowsForServerSave(),
+    ).catch(() => {});
   }
 
   const canDelete = Boolean(canDeleteWorkers);
@@ -300,8 +309,8 @@ export default function ProductionTable({
                 onChange={(e) => setDkEditValue(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue, modelKey, teamLabel(dkEditTeam));
-                    setProsesMapState(getProsesMap(modelKey));
+                    setProcessDkAndSyncGenelRows(dkEditTeam, dkEditProcess!, dkEditValue, teamLabel(dkEditTeam));
+                    setProsesMapState(getProsesMapForEfficiency());
                     persistProsesServerSnapshot();
                     setDkEditProcess(null);
                   }
@@ -336,8 +345,8 @@ export default function ProductionTable({
               <button
                 type="button"
                 onClick={() => {
-                  setProcessDkAndSyncRows(dkEditTeam, dkEditProcess!, dkEditValue, modelKey, teamLabel(dkEditTeam));
-                  setProsesMapState(getProsesMap(modelKey));
+                  setProcessDkAndSyncGenelRows(dkEditTeam, dkEditProcess!, dkEditValue, teamLabel(dkEditTeam));
+                  setProsesMapState(getProsesMapForEfficiency());
                   persistProsesServerSnapshot();
                   setDkEditProcess(null);
                 }}

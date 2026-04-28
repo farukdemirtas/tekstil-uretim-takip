@@ -82,6 +82,20 @@
       dark:hover:border-teal-600/50 dark:hover:bg-teal-950/35 dark:hover:text-teal-100;
   }
 
+  /** Genel verimlilik + model arşivi — tek görünür grup */
+  .btn-nav-group {
+    @apply inline-flex overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-surface-sm
+      dark:border-slate-600 dark:bg-slate-800/90;
+  }
+  .btn-nav-group .btn-nav-segment {
+    @apply inline-flex items-center justify-center border-0 px-3.5 py-2 text-sm font-medium text-slate-700 shadow-none transition
+      hover:bg-teal-50/90 hover:text-teal-900 active:scale-[0.98]
+      dark:text-slate-200 dark:hover:bg-teal-950/35 dark:hover:text-teal-100;
+  }
+  .btn-nav-group .btn-nav-segment + .btn-nav-segment {
+    @apply border-l border-slate-200/90 dark:border-slate-600;
+  }
+
   /* Native select — chevron alanı için sağ padding; sarmalayıcıda ikon kullanın */
   .select-modern {
     @apply input-modern w-full cursor-pointer appearance-none py-2.5 pr-10 text-left text-sm font-normal;

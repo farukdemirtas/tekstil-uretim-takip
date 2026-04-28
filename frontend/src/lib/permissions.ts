@@ -30,7 +30,12 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
   { key: "ekran4", label: "EKRAN4", description: "TV fabrika özeti: günlük toplam, bölümler, en üretken personel" },
   { key: "loglar", label: "Loglar", description: "Sistem ve kullanıcı işlem kayıtlarını görüntüleme" },
   { key: "tamirOrani", label: "Tamir Oranı", description: "Tamir oranı ekranına erişim ve günlük tamir verisi girişi" },
-  { key: "veriSayfasi", label: "Veri Sayfası", description: "Proses bazlı dk / saatlik / günlük adet hesaplama sayfası" },
+  {
+    key: "veriSayfasi",
+    label: "Genel verimlilik ve model arşivi",
+    description:
+      "Tek yetki: canlı hedefler (/genel-verimlilik) ile model başına şablon–yedek tablolar (/veri-sayfasi). Dk · saatlik · günlük adet girişi.",
+  },
   { key: "prosesKontrol", label: "Proses Kontrol", description: "Numune bazlı hata takip sayfası (8 kontrol × 7 numune)" },
   { key: "hataRapor", label: "Hata Rapor", description: "Günlük hata oranı ve personel bazlı analiz sayfası" },
 ];

@@ -8,13 +8,18 @@ import {
   getTeams,
   getTopWorkersAnalytics,
   getWorkerHourlyBreakdownsForDate,
-  listProductModels,
+  getProsesVeriRowsFromServer,
   setAuthToken,
   type HedefStageLineDto,
 } from "@/lib/api";
 import { clampToWeekdayIso, formatIsoLocal, todayIsoTurkey } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
-import { getProsesMap, makeProsesKey } from "@/lib/prosesVeri";
+import {
+  getProsesMapForEfficiency,
+  makeProsesKey,
+  replaceLocalGenelCacheFromServerRows,
+  GENEL_VERIMLILIK_MODEL_CODE,
+} from "@/lib/prosesVeri";
 import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import type { TopWorkerAnalytics } from "@/lib/types";
 
@@ -148,10 +153,9 @@ export default function Ekran4IcerikPage() {
     setModelId(mid);
 
     try {
-      const [metaToday, metaPrev, allModels, bulkHourly] = await Promise.all([
+      const [metaToday, metaPrev, bulkHourly] = await Promise.all([
         getDayProductMeta(day).catch(() => null),
         getDayProductMeta(prev).catch(() => null),
-        listProductModels(),
         getWorkerHourlyBreakdownsForDate(day).catch(() => []),
       ]);
       const modelIdToday = metaToday?.modelId ?? null;
@@ -208,21 +212,11 @@ export default function Ekran4IcerikPage() {
 
       setTopWorkers(tops.slice(0, TOP_N));
 
-      const effectiveModelId = modelIdToday ?? mid;
-      const modelCodeForProses =
-        effectiveModelId != null
-          ? (allModels.find((m) => m.id === effectiveModelId)?.modelCode ?? null)
-          : null;
-      let prosesMap = getProsesMap(modelCodeForProses);
-      if (Object.keys(prosesMap).length === 0) {
-        for (const m of allModels) {
-          const candidate = getProsesMap(m.modelCode);
-          if (Object.keys(candidate).length > 0) {
-            prosesMap = candidate;
-            break;
-          }
-        }
+      const genelRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE).catch(() => []);
+      if (genelRows.length > 0) {
+        replaceLocalGenelCacheFromServerRows(genelRows);
       }
+      const prosesMap = getProsesMapForEfficiency();
 
       const prevMap = new Map(
         rawPrev.map((w) => [w.workerId, { prod: w.totalProduction, days: Math.max(w.activeDays, 1) }])

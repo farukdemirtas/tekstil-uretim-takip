@@ -4,13 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { getProcesses, getTeams, listProductModels, setAuthToken, getProsesVeriRowsFromServer, saveProsesVeriRowsToServer } from "@/lib/api";
-import type { ProcessRow, TeamRow, ProductModelListItem } from "@/lib/api";
+import { getProcesses, getTeams, setAuthToken, getProsesVeriRowsFromServer, saveProsesVeriRowsToServer } from "@/lib/api";
+import type { ProcessRow, TeamRow } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import {
   makeProsesKey,
-  setProsesMap,
-  rowsKeyForModel,
+  setGenelVerimlilikMap,
+  rowsKeyGenel,
+  replaceLocalGenelCacheFromServerRows,
+  GENEL_VERIMLILIK_MODEL_CODE,
 } from "@/lib/prosesVeri";
 
 /* ─── Tipler ─────────────────────────────────────────────── */
@@ -34,74 +36,67 @@ function calc(dkAdet: string) {
 
 let nextId = 1;
 
-function saveModelRows(model: string, rows: Row[]) {
-  try { window.localStorage.setItem(rowsKeyForModel(model), JSON.stringify(rows)); } catch { /* quota */ }
+function saveGenelRowsLocal(rows: Row[]) {
+  try {
+    window.localStorage.setItem(rowsKeyGenel(), JSON.stringify(rows));
+  } catch {
+    /* quota */
+  }
 }
 
-function loadModelRows(model: string): Row[] {
+function loadGenelRowsLocal(): Row[] {
   try {
-    const raw = window.localStorage.getItem(rowsKeyForModel(model));
+    const raw = window.localStorage.getItem(rowsKeyGenel());
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Row[];
     if (!Array.isArray(parsed)) return [];
     const maxId = parsed.reduce((m, r) => Math.max(m, r.id ?? 0), 0);
     if (maxId >= nextId) nextId = maxId + 1;
     return parsed;
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 /* ════════════════════════════════════════════════════════════
    Sayfa
 ════════════════════════════════════════════════════════════ */
-export default function VeriSayfasiPage() {
+export default function GenelVerimlilikPage() {
   const router = useRouter();
 
   /* auth */
   const [authorized, setAuthorized] = useState(false);
-  const [loading,    setLoading]    = useState(true);
+  const [loading, setLoading] = useState(true);
 
   /* api */
-  const [processes,  setProcesses]  = useState<ProcessRow[]>([]);
-  const [teams,      setTeams]      = useState<TeamRow[]>([]);
-  const [apiModels,  setApiModels]  = useState<ProductModelListItem[]>([]);
+  const [processes, setProcesses] = useState<ProcessRow[]>([]);
+  const [teams, setTeams] = useState<TeamRow[]>([]);
 
-  /* model + satırlar — atomik tek obje (ikisi asla ayrışmaz) */
-  const [modelState, setModelState] = useState<{ model: string; rows: Row[] }>({ model: "", rows: [] });
-  const activeModel = modelState.model;
-  const rows        = modelState.rows;
+  const [rows, setRows] = useState<Row[]>([]);
 
   /* veri giriş formu */
-  const [selectedTeam,    setSelectedTeam]    = useState("");
+  const [selectedTeam, setSelectedTeam] = useState("");
   const [selectedProcess, setSelectedProcess] = useState("");
-  const [dkAdet,          setDkAdet]          = useState("");
+  const [dkAdet, setDkAdet] = useState("");
 
   /* satır düzenleme — tek atomik obje */
   const [edit, setEdit] = useState<EditState>(EDIT_RESET);
 
-  /* aktarma modalı */
-  const [showTransfer,    setShowTransfer]    = useState(false);
-  const [transferSource,  setTransferSource]  = useState<string>("");
-  const [transferMode,    setTransferMode]    = useState<"merge" | "replace">("merge");
-
-  /* ── Sunucudan yükle (API + localStorage fallback + otomatik migrasyon) ── */
-  async function loadModelRowsFromServer(model: string): Promise<Row[]> {
+  /* ── Sunucudan yükle (API + localStorage fallback) ── */
+  async function loadGenelRowsFromServer(): Promise<Row[]> {
     try {
-      const serverRows = await getProsesVeriRowsFromServer(model);
+      const serverRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE);
       if (serverRows.length > 0) {
-        // Sunucu verisi varsa localStorage cache'i güncelle
-        saveModelRows(model, serverRows);
+        replaceLocalGenelCacheFromServerRows(serverRows);
         return serverRows;
       }
-      // Sunucu boş — localStorage'da eski veri varsa otomatik yükle
-      const localRows = loadModelRows(model);
+      const localRows = loadGenelRowsLocal();
       if (localRows.length > 0) {
-        // Arka planda sunucuya yükle (migrasyon)
-        saveProsesVeriRowsToServer(model, localRows).catch(() => {/* sessiz hata */});
+        saveProsesVeriRowsToServer(GENEL_VERIMLILIK_MODEL_CODE, localRows).catch(() => {});
       }
       return localRows;
     } catch {
-      // API erişim hatası — localStorage'a düş
-      return loadModelRows(model);
+      return loadGenelRowsLocal();
     }
   }
 
@@ -110,51 +105,40 @@ export default function VeriSayfasiPage() {
   useEffect(() => {
     const r = routerRef.current;
     const token = window.localStorage.getItem("auth_token");
-    if (!token) { r.replace("/"); return; }
-    if (!hasPermission("veriSayfasi") && !isAdminRole()) { r.replace("/"); return; }
+    if (!token) {
+      r.replace("/");
+      return;
+    }
+    if (!hasPermission("veriSayfasi") && !isAdminRole()) {
+      r.replace("/");
+      return;
+    }
     setAuthorized(true);
     setAuthToken(token);
 
-    void Promise.all([getProcesses(), getTeams(), listProductModels()])
-      .then(async ([procs, tms, mds]) => {
+    void Promise.all([getProcesses(), getTeams()])
+      .then(async ([procs, tms]) => {
         setProcesses(procs);
         setTeams(tms);
-        setApiModels(mds);
-        if (tms.length)  setSelectedTeam(tms[0].code);
+        if (tms.length) setSelectedTeam(tms[0].code);
         if (procs.length) setSelectedProcess(procs[0].name);
-        const first = mds[0]?.modelCode ?? "";
-        if (first) {
-          const rows = await loadModelRowsFromServer(first);
-          setModelState({ model: first, rows });
-        } else {
-          setModelState({ model: "", rows: [] });
-        }
+        const loaded = await loadGenelRowsFromServer();
+        setRows(loaded);
       })
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Model değişimi — sunucudan yükle ── */
-  async function switchModel(model: string) {
-    setEdit(EDIT_RESET);
-    setModelState({ model, rows: loadModelRows(model) }); // önce localStorage (anlık)
-    const rows = await loadModelRowsFromServer(model);    // sonra sunucu (güncel)
-    setModelState({ model, rows });
-  }
-
-  /* ── Storage sync — localStorage + sunucu ─────────────────────────────
-     Model her zaman açıkça geçirilmeli; stale closure riskini ortadan kaldırır. */
-  function syncToStorage(nextRows: Row[], model: string) {
-    if (!model) return;
-    saveModelRows(model, nextRows);
+  /* ── Storage sync — localStorage + sunucu (canlı verimlilik haritası) ── */
+  function syncToStorage(nextRows: Row[]) {
+    saveGenelRowsLocal(nextRows);
     const map: Record<string, string> = {};
     for (const row of nextRows) {
       if (row.dkAdet && Number(row.dkAdet) > 0) {
         map[makeProsesKey(row.teamCode, row.processName)] = row.dkAdet;
       }
     }
-    setProsesMap(map, model);
-    // Sunucuya async kaydet (arka planda)
-    saveProsesVeriRowsToServer(model, nextRows).catch(() => {/* sessiz hata */});
+    setGenelVerimlilikMap(map);
+    saveProsesVeriRowsToServer(GENEL_VERIMLILIK_MODEL_CODE, nextRows).catch(() => {});
   }
 
   /* ── Satır işlemleri ────────────────────────────────────── */
@@ -163,30 +147,27 @@ export default function VeriSayfasiPage() {
   );
 
   function handleAdd() {
-    if (!selectedTeam || !selectedProcess || !dkAdet || isDuplicate || !activeModel) return;
+    if (!selectedTeam || !selectedProcess || !dkAdet || isDuplicate) return;
     const team = teams.find((t) => t.code === selectedTeam);
     const next = [
       ...rows,
       { id: nextId++, teamCode: selectedTeam, teamLabel: team?.label ?? selectedTeam, processName: selectedProcess, dkAdet },
     ];
-    const m = activeModel;
-    setModelState((s) => ({ ...s, rows: next }));
-    syncToStorage(next, m);
+    setRows(next);
+    syncToStorage(next);
     setDkAdet("");
   }
 
   function handleRemove(id: number) {
     const next = rows.filter((r) => r.id !== id);
-    const m = activeModel;
-    setModelState((s) => ({ ...s, rows: next }));
-    syncToStorage(next, m);
+    setRows(next);
+    syncToStorage(next);
   }
 
   function handleDkChange(id: number, value: string) {
     const next = rows.map((r) => (r.id === id ? { ...r, dkAdet: value } : r));
-    const m = activeModel;
-    setModelState((s) => ({ ...s, rows: next }));
-    syncToStorage(next, m);
+    setRows(next);
+    syncToStorage(next);
   }
 
   function startEdit(row: Row) {
@@ -204,39 +185,16 @@ export default function VeriSayfasiPage() {
     const next = rows.map((r) =>
       r.id === id ? { ...r, teamCode: edit.team, teamLabel: team?.label ?? edit.team, processName: edit.process, dkAdet: edit.dk } : r
     );
-    const m = activeModel;
-    setModelState((s) => ({ ...s, rows: next }));
-    syncToStorage(next, m);
+    setRows(next);
+    syncToStorage(next);
     setEdit(EDIT_RESET);
   }
 
   function handleClear() {
     if (rows.length === 0) return;
-    if (!window.confirm("Bu modelin tüm satırları silinsin mi?")) return;
-    const m = activeModel;
-    setModelState((s) => ({ ...s, rows: [] }));
-    syncToStorage([], m);
-  }
-
-  /* ── Aktarma ────────────────────────────────────────────── */
-  function handleTransfer() {
-    const source = transferSource || otherModels[0] || "";
-    if (!source || !activeModel) return;
-    const sourceRows = loadModelRows(source);
-    let next: Row[];
-    if (transferMode === "replace") {
-      next = sourceRows.map((r) => ({ ...r, id: nextId++ }));
-    } else {
-      const existing = new Set(rows.map((r) => makeProsesKey(r.teamCode, r.processName)));
-      const toAdd    = sourceRows
-        .filter((r) => !existing.has(makeProsesKey(r.teamCode, r.processName)))
-        .map((r) => ({ ...r, id: nextId++ }));
-      next = [...rows, ...toAdd];
-    }
-    const m = activeModel;
-    setModelState((s) => ({ ...s, rows: next }));
-    syncToStorage(next, m);
-    setShowTransfer(false);
+    if (!window.confirm("Genel verimlilik tablosundaki tüm satırlar silinsin mi?")) return;
+    setRows([]);
+    syncToStorage([]);
   }
 
   /* ── Excel import ───────────────────────────────────────── */
@@ -248,7 +206,7 @@ export default function VeriSayfasiPage() {
 
   function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !activeModel) return;
+    if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -275,11 +233,9 @@ export default function VeriSayfasiPage() {
           return;
         }
 
-        // setModelState dışında hesaplayalım ki sayaçlar doğru çalışsın
-        const m        = activeModel;
-        const snapshot = modelState.rows;
+        const snapshot = rows;
         const existing = new Set(snapshot.map((r) => makeProsesKey(r.teamCode, r.processName)));
-        const toAdd: typeof snapshot = [];
+        const toAdd: Row[] = [];
 
         for (const row of dataRows) {
           const teamLabelRaw = String(row[0] ?? "").trim();
@@ -301,10 +257,10 @@ export default function VeriSayfasiPage() {
           toAdd.push({ id: nextId++, teamCode, teamLabel, processName, dkAdet });
         }
 
-        const skipped  = dataRows.filter((r) => r && r.length >= 2 && String(r[0] ?? "").trim()).length - toAdd.length;
+        const skipped = dataRows.filter((r) => r && r.length >= 2 && String(r[0] ?? "").trim()).length - toAdd.length;
         const next = [...snapshot, ...toAdd];
-        syncToStorage(next, m);
-        setModelState((prev) => ({ ...prev, rows: next }));
+        syncToStorage(next);
+        setRows(next);
 
         if (toAdd.length === 0) {
           alert(`Eklenecek yeni satır yok — ${skipped} satır zaten mevcut.`);
@@ -323,7 +279,7 @@ export default function VeriSayfasiPage() {
   function handleExport() {
     if (rows.length === 0) return;
     const aoa: (string | number)[][] = [
-      [`Proses Veri Sayfası — ${activeModel}`],
+      ["Genel verimlilik hedefleri"],
       ["Dışa aktarım", new Date().toLocaleString("tr-TR")],
       [],
       ["Bölüm", "Proses", "Dk Adet", "Saat Adet", "Günlük Adet"],
@@ -337,14 +293,12 @@ export default function VeriSayfasiPage() {
     ws["!cols"] = [{ wch: 22 }, { wch: 24 }, { wch: 12 }, { wch: 14 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Proses Verileri");
-    XLSX.writeFile(wb, `proses-veri-${activeModel}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `genel-verimlilik-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
-  const canAdd = Boolean(selectedTeam && selectedProcess && dkAdet && Number(dkAdet) > 0 && !isDuplicate && activeModel);
+  const canAdd = Boolean(selectedTeam && selectedProcess && dkAdet && Number(dkAdet) > 0 && !isDuplicate);
 
   if (!authorized) return null;
-
-  const otherModels = apiModels.map((m) => m.modelCode).filter((m) => m !== activeModel);
 
   /* ── Render ─────────────────────────────────────────────── */
   return (
@@ -354,22 +308,18 @@ export default function VeriSayfasiPage() {
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm dark:border-slate-700/60 dark:bg-slate-900">
         <div>
           <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-            Proses Veri Sayfası (model arşivi)
+            Genel verimlilik hedefleri
           </h1>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Ürün modeli başına şablon / yedek dk tabloları — canlı verimlilik için{" "}
-            <Link href="/genel-verimlilik" className="font-semibold text-teal-700 underline-offset-2 hover:underline dark:text-teal-400">
-              Genel verimlilik
-            </Link>{" "}
-            sayfasını kullanın.
+            Buradaki Dk adetleri ana üretim ekranı, TV verimliliği ve ortalamalar için kullanılır (ürün modelinden bağımsız).
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/genel-verimlilik"
-            className="rounded-xl border border-teal-300 bg-teal-50 px-3.5 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-950/30 dark:text-teal-300"
+            href="/veri-sayfasi"
+            className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
           >
-            Genel verimlilik →
+            Model arşivi
           </Link>
           <Link
             href="/"
@@ -380,91 +330,27 @@ export default function VeriSayfasiPage() {
         </div>
       </section>
 
-      {/* ── Bu sayfa = model bazlı arşiv ── */}
-      <section className="rounded-2xl border border-amber-200/80 bg-amber-50/80 px-5 py-4 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/25">
-        <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-          Model bazlı saklama
+      {/* ── Açıklama ── */}
+      <section className="rounded-2xl border border-indigo-200/70 bg-gradient-to-br from-indigo-50/90 to-white px-5 py-4 shadow-sm dark:border-indigo-800/50 dark:from-indigo-950/40 dark:to-slate-900">
+        <h2 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">
+          Bu ekran ne işe yarar?
         </h2>
-        <p className="mt-2 text-xs leading-relaxed text-slate-700 dark:text-slate-300">
-          Buradaki sekmeler <strong className="font-medium">ürün modeli</strong> başına ayrı tablolar tutar (Excel, aktarım, yedek).
-          Ana üretim ekranı ve TV verimliliği artık bu modelleri kullanmaz; canlı hedefler{" "}
-          <Link href="/genel-verimlilik" className="font-semibold text-teal-800 underline-offset-2 hover:underline dark:text-teal-400">
-            Genel verimlilik hedefleri
-          </Link>{" "}
-          sayfasındaki tek listeden okunur.
+        <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+          Her <strong className="font-medium text-slate-800 dark:text-slate-200">bölüm + proses</strong> için{" "}
+          <strong className="font-medium text-amber-700 dark:text-amber-400">Dk Adet</strong> girersiniz;{" "}
+          <strong className="font-medium text-sky-700 dark:text-sky-400">Saat Adet</strong> (= Dk×60) ve{" "}
+          <strong className="font-medium text-emerald-700 dark:text-emerald-400">Günlük Adet</strong> (= ×9) otomatik hesaplanır.
+          Ana sayfadaki personel tablosu bu tek haritadan dk / saat / günlük hedefleri okur; EKRAN1 verimlilik şeritleri de aynı veriyi kullanır.
+        </p>
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
+          <strong className="font-medium text-slate-700 dark:text-slate-300">Proses Veri Sayfası</strong>ndaki ürün modelleri yalnızca şablon / yedek saklama içindir; canlı hesap bu sayfadaki girişlere bağlıdır.
         </p>
       </section>
 
-      {/* ── Model sekmeler ───────────────────────────────── */}
-      <section className="rounded-2xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm dark:border-slate-700/60 dark:bg-slate-900">
-        <div className="mb-3 flex items-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-          </svg>
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Ürün Modelleri</span>
-          <span className="text-xs text-slate-400 dark:text-slate-500">(Hedef takip ekranından yönetilir)</span>
-        </div>
-
-        {loading ? (
-          <p className="text-sm text-slate-400">Yükleniyor…</p>
-        ) : apiModels.length === 0 ? (
-          <p className="text-sm text-slate-400 dark:text-slate-500">
-            Henüz ürün modeli tanımlanmamış. Ayarlar → Ürün Modelleri bölümünden ekleyin.
-          </p>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            {apiModels.map((m) => (
-              <button
-                key={m.modelCode}
-                type="button"
-                onClick={() => switchModel(m.modelCode)}
-                title={m.productName}
-                className={`rounded-xl border px-3.5 py-1.5 text-sm font-semibold transition ${
-                  m.modelCode === activeModel
-                    ? "border-slate-700 bg-slate-800 text-white"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                }`}
-              >
-                {m.modelCode}
-                {m.modelCode === activeModel && rows.length > 0 && (
-                  <span className="ml-2 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold">
-                    {rows.length}
-                  </span>
-                )}
-                <span className={`ml-1.5 text-[11px] font-normal ${m.modelCode === activeModel ? "text-slate-300" : "text-slate-400"}`}>
-                  {m.productName}
-                </span>
-              </button>
-            ))}
-
-            {/* Aktar butonu — her zaman erişilebilir */}
-            {activeModel && otherModels.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  const first = otherModels[0] ?? "";
-                  setTransferSource(first);
-                  setTransferMode("merge");
-                  setShowTransfer(true);
-                }}
-                className="flex items-center gap-1.5 rounded-xl border border-violet-300 bg-violet-50 px-3.5 py-1.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-700/60 dark:bg-violet-950/20 dark:text-violet-400"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/>
-                </svg>
-                Başka Modelden Aktar
-              </button>
-            )}
-          </div>
-        )}
-      </section>
-
       {/* ── Veri giriş formu ─────────────────────────────── */}
-      {activeModel && (
-        <section className="rounded-2xl border border-slate-200/80 bg-white px-5 py-5 shadow-sm dark:border-slate-700/60 dark:bg-slate-900">
+      <section className="rounded-2xl border border-slate-200/80 bg-white px-5 py-5 shadow-sm dark:border-slate-700/60 dark:bg-slate-900">
           <h2 className="mb-4 text-sm font-semibold text-slate-800 dark:text-slate-100">
-            Veri Girişi
-            <span className="ml-2 text-xs font-normal text-slate-400">— {activeModel}</span>
+            Veri girişi
           </h2>
 
           {loading ? (
@@ -549,14 +435,13 @@ export default function VeriSayfasiPage() {
             </div>
           )}
         </section>
-      )}
 
       {/* ── Kayıtlar tablosu ─────────────────────────────── */}
-      {activeModel && rows.length > 0 && (
+      {rows.length > 0 && (
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-900">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800">
             <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-              {activeModel}
+              Kayıtlı hedefler
               <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                 {rows.length}
               </span>
@@ -820,69 +705,6 @@ export default function VeriSayfasiPage() {
             })}
           </div>
         </section>
-      )}
-
-      {/* ── Aktarma Modalı ───────────────────────────────── */}
-      {showTransfer && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
-          onClick={() => setShowTransfer(false)}
-        >
-          <div
-            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Modelden Aktar</h3>
-            <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-              Seçilen modelin verilerini <strong>{activeModel}</strong> modeline aktarır.
-            </p>
-
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Kaynak Model</label>
-            <div className="relative mb-4">
-              <select
-                value={transferSource || otherModels[0] || ""}
-                onChange={(e) => setTransferSource(e.target.value)}
-                className="w-full appearance-none rounded-xl border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm text-slate-800 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              >
-                {otherModels.map((m) => (
-                  <option key={m} value={m}>
-                    {m} {apiModels.find(a => a.modelCode === m)?.productName ? `— ${apiModels.find(a => a.modelCode === m)!.productName}` : ""}
-                  </option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-400">
-                <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </span>
-            </div>
-
-            <label className="mb-2 block text-xs font-medium text-slate-600 dark:text-slate-300">Aktarma Modu</label>
-            <div className="mb-5 flex flex-col gap-2">
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 p-3 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                <input type="radio" name="tm" value="merge" checked={transferMode === "merge"} onChange={() => setTransferMode("merge")} className="mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Birleştir</p>
-                  <p className="text-xs text-slate-500">Zaten var olan bölüm+proses kombinasyonları atlanır, yeni olanlar eklenir.</p>
-                </div>
-              </label>
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 p-3 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                <input type="radio" name="tm" value="replace" checked={transferMode === "replace"} onChange={() => setTransferMode("replace")} className="mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Üstüne Yaz</p>
-                  <p className="text-xs text-slate-500">Mevcut {activeModel} verileri silinir, kaynak modelin verileri kopyalanır.</p>
-                </div>
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowTransfer(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300"
-              >İptal</button>
-              <button type="button" onClick={handleTransfer}
-                className="rounded-xl border border-violet-500 bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
-              >Aktar</button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* ── Formül ───────────────────────────────────────── */}

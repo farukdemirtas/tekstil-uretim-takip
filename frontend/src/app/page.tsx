@@ -12,6 +12,7 @@ import {
   addWorker,
   getDayProductMeta,
   getHedefTakipStageTotals,
+  getProsesVeriRowsFromServer,
   getProduction,
   getTeams,
   hideWorkerForCalendarDay,
@@ -28,7 +29,14 @@ import {
   saveWorkerNote,
   type DayProductMeta,
 } from "@/lib/api";
-import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
+import { clampToWeekdayIso, previousWeekdayIso, todayWeekdayIso, todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
+import {
+  GENEL_PROSES_UPDATED_EVENT,
+  GENEL_VERIMLILIK_MODEL_CODE,
+  getProsesMapForEfficiency,
+  replaceLocalGenelCacheFromServerRows,
+} from "@/lib/prosesVeri";
+import { averageWorkerEfficiency } from "@/lib/workerEfficiency";
 import {
   getProductionExcelHeaders,
   getConsolidatedProductionExcelHeaders,
@@ -152,6 +160,8 @@ export default function HomePage() {
   const [bulkExporting, setBulkExporting] = useState(false);
   const [bulkExportProgress, setBulkExportProgress] = useState<{ done: number; total: number } | null>(null);
   const [ekSayimOpen, setEkSayimOpen] = useState(false);
+  const [prevAvgEfficiency, setPrevAvgEfficiency] = useState<number | null>(null);
+  const [genelProsesTick, setGenelProsesTick] = useState(0);
 
   const rowsRef = useRef<ProductionRow[]>(rows);
   const selectedDateRef = useRef(selectedDate);
@@ -258,6 +268,43 @@ export default function HomePage() {
       void loadDateData(selectedDate);
     }
   }, [selectedDate, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    const prevIso = previousWeekdayIso(selectedDate);
+    void (async () => {
+      try {
+        const prod = await getProduction(prevIso);
+        if (cancelled) return;
+        const map = getProsesMapForEfficiency();
+        const { avg, count } = averageWorkerEfficiency(prod, map, false);
+        setPrevAvgEfficiency(count > 0 ? avg : null);
+      } catch {
+        if (!cancelled) setPrevAvgEfficiency(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, isAuthenticated, genelProsesTick]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const onGenel = () => setGenelProsesTick((t) => t + 1);
+    window.addEventListener(GENEL_PROSES_UPDATED_EVENT, onGenel);
+    return () => window.removeEventListener(GENEL_PROSES_UPDATED_EVENT, onGenel);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE)
+      .then((r) => {
+        if (r.length > 0) replaceLocalGenelCacheFromServerRows(r);
+        setGenelProsesTick((t) => t + 1);
+      })
+      .catch(() => {});
+  }, [isAuthenticated]);
 
   async function handleLogin(payload: { username: string; password: string }) {
     const result = await login(payload);
@@ -425,6 +472,12 @@ export default function HomePage() {
     if (stages.length === 0) return 0;
     return Math.min(...stages.map((s) => v(s.total)));
   }, [hedefStageTotals]);
+
+  const useIntradayEfficiency = selectedDate === todayWorkdayIsoTurkey();
+  const personnelEfficiencyAgg = useMemo(() => {
+    const map = getProsesMapForEfficiency();
+    return averageWorkerEfficiency(rows, map, useIntradayEfficiency);
+  }, [rows, useIntradayEfficiency, genelProsesTick]);
 
   const ekSayimTeamSections = useMemo(
     () => rowsByTeamSections(rows, teamMeta),
@@ -892,14 +945,50 @@ export default function HomePage() {
           >
             Genel tamamlanan: {genelTamamlanan}
           </div>
+          {personnelEfficiencyAgg.count > 0 && (
+            <div
+              className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-surface-sm ${
+                prevAvgEfficiency == null || personnelEfficiencyAgg.avg === prevAvgEfficiency
+                  ? "border-slate-200/80 bg-slate-50 text-slate-800 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100"
+                  : personnelEfficiencyAgg.avg > prevAvgEfficiency
+                    ? "border-emerald-300/90 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                    : "border-rose-300/90 bg-rose-50 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/35 dark:text-rose-200"
+              }`}
+              title={
+                useIntradayEfficiency
+                  ? "Bugün: 9 ölçüm dilimine göre anlık saat ortalaması ÷ Veri Sayfası saat adedi. Tam gün: günlük üretim ÷ günlük adet."
+                  : "Günlük üretim ÷ Veri Sayfası günlük adet (proses bazlı hedef)."
+              }
+            >
+              Ortalama verimlilik: %{personnelEfficiencyAgg.avg}
+              <span className="ml-1.5 font-normal opacity-90">
+                ({personnelEfficiencyAgg.count} personel)
+              </span>
+              {prevAvgEfficiency != null && personnelEfficiencyAgg.avg !== prevAvgEfficiency && (
+                <span className="ml-2 text-xs font-medium opacity-95">
+                  · önceki iş günü %{prevAvgEfficiency}
+                  {personnelEfficiencyAgg.avg > prevAvgEfficiency ? " (yükseliş)" : " (düşüş)"}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Aksiyon butonları — sarılabilir satır */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {hasPermission("veriSayfasi") ? (
-            <Link href="/veri-sayfasi" className="btn-nav">
-              Veri Sayfası
-            </Link>
+            <div
+              className="btn-nav-group"
+              role="group"
+              aria-label="Genel verimlilik ve model arşivi"
+            >
+              <Link href="/genel-verimlilik" className="btn-nav-segment">
+                Genel verimlilik
+              </Link>
+              <Link href="/veri-sayfasi" className="btn-nav-segment">
+                Model arşivi
+              </Link>
+            </div>
           ) : null}
           {hasPermission("prosesKontrol") ? (
             <Link href="/proses-kontrol" className="btn-nav">
