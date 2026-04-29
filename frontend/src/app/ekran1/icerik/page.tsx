@@ -27,6 +27,9 @@ import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
 const AUTO_REFRESH_MS = 30_000;
+/** Tam ekran doğum günü: her gösterim süresi ve iki gösterim arası */
+const BDAY_OVERLAY_VISIBLE_MS = 10_000;
+const BDAY_OVERLAY_CYCLE_MS = 60_000;
 
 function nWorkdaysBack(fromIso: string, n: number): string {
   const [y, m, d] = fromIso.split("-").map(Number);
@@ -138,7 +141,105 @@ const BDAY_CONFETTI_SPECS: {
   { left: "76%", drift: "48px", delay: "0.75s", dur: "2.68s", w: 10, h: 13, bg: "#f472b6" },
   { left: "44%", drift: "-8px", delay: "1.4s", dur: "3.28s", w: 9, h: 10, bg: "#fcd34d" },
   { left: "68%", drift: "8px", delay: "0.28s", dur: "3.02s", w: 12, h: 12, bg: "#c026d3" },
+  { left: "4%", drift: "-24px", delay: "0.65s", dur: "2.9s", w: 10, h: 12, bg: "#10b981" },
+  { left: "12%", drift: "38px", delay: "1.1s", dur: "3.22s", w: 9, h: 10, bg: "#f59e0b" },
+  { left: "20%", drift: "-14px", delay: "0.42s", dur: "2.68s", w: 12, h: 11, bg: "#ec4899" },
+  { left: "28%", drift: "52px", delay: "0.08s", dur: "3.12s", w: 10, h: 13, bg: "#6366f1" },
+  { left: "36%", drift: "-36px", delay: "1.2s", dur: "2.95s", w: 11, h: 10, bg: "#22c55e" },
+  { left: "44%", drift: "20px", delay: "0.55s", dur: "3.18s", w: 9, h: 12, bg: "#fb923c" },
+  { left: "52%", drift: "-28px", delay: "0.92s", dur: "2.82s", w: 13, h: 9, bg: "#d946ef" },
+  { left: "60%", drift: "44px", delay: "0.33s", dur: "3.08s", w: 10, h: 11, bg: "#0ea5e9" },
+  { left: "72%", drift: "-18px", delay: "1.45s", dur: "3.35s", w: 11, h: 12, bg: "#eab308" },
+  { left: "80%", drift: "32px", delay: "0.62s", dur: "2.76s", w: 9, h: 11, bg: "#f43f5e" },
+  { left: "88%", drift: "-40px", delay: "0.25s", dur: "3.28s", w: 12, h: 10, bg: "#8b5cf6" },
+  { left: "96%", drift: "14px", delay: "1.08s", dur: "2.88s", w: 10, h: 14, bg: "#14b8a6" },
+  { left: "3%", drift: "48px", delay: "0.78s", dur: "3.42s", w: 11, h: 9, bg: "#f472b6" },
+  { left: "16%", drift: "-52px", delay: "1.55s", dur: "2.62s", w: 9, h: 12, bg: "#fde047" },
+  { left: "24%", drift: "26px", delay: "0.48s", dur: "3.05s", w: 12, h: 11, bg: "#a855f7" },
+  { left: "32%", drift: "-22px", delay: "1.32s", dur: "2.74s", w: 10, h: 10, bg: "#34d399" },
+  { left: "40%", drift: "36px", delay: "0.15s", dur: "3.3s", w: 11, h: 13, bg: "#f97316" },
+  { left: "48%", drift: "-44px", delay: "0.88s", dur: "3.02s", w: 9, h: 9, bg: "#06b6d4" },
+  { left: "56%", drift: "18px", delay: "1.62s", dur: "3.52s", w: 12, h: 12, bg: "#e11d48" },
+  { left: "64%", drift: "-12px", delay: "0.38s", dur: "2.66s", w: 10, h: 12, bg: "#84cc16" },
+  { left: "92%", drift: "42px", delay: "0.72s", dur: "2.94s", w: 11, h: 11, bg: "#c084fc" },
+  { left: "7%", drift: "-46px", delay: "1.22s", dur: "3.15s", w: 8, h: 11, bg: "#2dd4bf" },
+  { left: "31%", drift: "54px", delay: "0.58s", dur: "3.08s", w: 13, h: 10, bg: "#fb7185" },
+  { left: "55%", drift: "-20px", delay: "1.42s", dur: "3.38s", w: 9, h: 13, bg: "#38bdf8" },
+  { left: "71%", drift: "30px", delay: "0.05s", dur: "2.8s", w: 12, h: 10, bg: "#facc15" },
+  { left: "83%", drift: "-34px", delay: "0.95s", dur: "2.92s", w: 10, h: 12, bg: "#4ade80" },
+  { left: "91%", drift: "48px", delay: "1.28s", dur: "3.25s", w: 11, h: 9, bg: "#a78bfa" },
+  { left: "98%", drift: "-8px", delay: "0.68s", dur: "3.12s", w: 9, h: 14, bg: "#f43f5e" },
+  { left: "10%", drift: "-26px", delay: "1.48s", dur: "2.71s", w: 11, h: 12, bg: "#0d9488" },
+  { left: "63%", drift: "56px", delay: "0.22s", dur: "3.18s", w: 10, h: 10, bg: "#d8b4fe" },
 ];
+
+/** İsim alanının sol/sağ kenarından dışa doğru patlayan parçacıklar (sağ taraf için scale-x mirror) */
+const BDAY_EDGE_BURST_SPECS: {
+  offY: number;
+  tx: number;
+  ty: number;
+  w: number;
+  h: number;
+  bg: string;
+  rot: string;
+  delay: string;
+  dur: string;
+}[] = [
+  { offY: -52, tx: -78, ty: -58, w: 11, h: 12, bg: "#fbbf24", rot: "220deg", delay: "0ms", dur: "2.05s" },
+  { offY: -38, tx: -102, ty: -28, w: 9, h: 14, bg: "#ec4899", rot: "310deg", delay: "140ms", dur: "2.25s" },
+  { offY: -26, tx: -88, ty: -8, w: 12, h: 10, bg: "#a78bfa", rot: "180deg", delay: "60ms", dur: "1.92s" },
+  { offY: -14, tx: -110, ty: -42, w: 10, h: 12, bg: "#34d399", rot: "260deg", delay: "200ms", dur: "2.18s" },
+  { offY: 0, tx: -96, ty: 12, w: 11, h: 11, bg: "#38bdf8", rot: "400deg", delay: "0ms", dur: "2.12s" },
+  { offY: 14, tx: -118, ty: -18, w: 9, h: 13, bg: "#fb7185", rot: "195deg", delay: "260ms", dur: "2.08s" },
+  { offY: 26, tx: -84, ty: 48, w: 12, h: 9, bg: "#f97316", rot: "340deg", delay: "100ms", dur: "2.22s" },
+  { offY: 38, tx: -100, ty: 22, w: 10, h: 12, bg: "#e879f9", rot: "275deg", delay: "180ms", dur: "1.98s" },
+  { offY: 50, tx: -76, ty: 58, w: 13, h: 10, bg: "#facc15", rot: "210deg", delay: "320ms", dur: "2.28s" },
+  { offY: -62, tx: -68, ty: -32, w: 8, h: 13, bg: "#22d3ee", rot: "300deg", delay: "400ms", dur: "2.15s" },
+  { offY: 18, tx: -92, ty: 36, w: 10, h: 10, bg: "#4ade80", rot: "355deg", delay: "220ms", dur: "2.02s" },
+  { offY: -46, tx: -104, ty: -48, w: 10, h: 11, bg: "#f472b6", rot: "245deg", delay: "460ms", dur: "2.3s" },
+  { offY: 42, tx: -72, ty: -6, w: 9, h: 12, bg: "#fde047", rot: "190deg", delay: "540ms", dur: "1.96s" },
+  { offY: -22, tx: -114, ty: 44, w: 11, h: 9, bg: "#c084fc", rot: "415deg", delay: "300ms", dur: "2.06s" },
+  { offY: 62, tx: -90, ty: -24, w: 10, h: 12, bg: "#14b8a6", rot: "230deg", delay: "520ms", dur: "2.24s" },
+  { offY: -8, tx: -98, ty: 56, w: 12, h: 11, bg: "#fb923c", rot: "285deg", delay: "80ms", dur: "2.14s" },
+];
+
+function Ekran1BirthdayEdgeBursts({ side }: { side: "left" | "right" }) {
+  const mirror = side === "right";
+  return (
+    <div
+      className={`pointer-events-none absolute top-1/2 z-[38] h-[min(19rem,44vh)] w-[clamp(4.25rem,10vw,7rem)] -translate-y-1/2 ${
+        side === "left" ? "left-0" : "right-0"
+      }`}
+      aria-hidden
+    >
+      <div className={`relative h-full w-full overflow-visible ${mirror ? "scale-x-[-1]" : ""}`}>
+        {BDAY_EDGE_BURST_SPECS.map((s, i) => (
+          <div
+            key={`bday-burst-${side}-${i}`}
+            className="absolute right-[10px] top-1/2"
+            style={{ transform: `translateY(calc(-50% + ${s.offY}px))` }}
+          >
+            <span
+              className={`ekran1-bday-edge-burst-inner block ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
+              style={
+                {
+                  width: s.w,
+                  height: s.h,
+                  backgroundColor: s.bg,
+                  "--ebb-tx": `${s.tx}px`,
+                  "--ebb-ty": `${s.ty}px`,
+                  "--ebb-rot": s.rot,
+                  animationDelay: s.delay,
+                  animationDuration: s.dur,
+                } as CSSProperties
+              }
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Ekran1BirthdayCake({ className }: { className?: string }) {
   return (
@@ -252,13 +353,35 @@ export default function Ekran1IcerikPage() {
   const [birthdayOverlayVisible, setBirthdayOverlayVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const birthdayBanner = useMemo(() => {
-    if (birthdayToday.length === 0) return { title: "", namesLine: "" };
-    const names = birthdayToday.map((p) => `${p.firstName} ${p.lastName}`.trim());
-    const title = names.length === 1 ? "Doğum Günün Kutlu Olsun!" : "Doğum Gününüz Kutlu Olsun!";
-    const namesLine = names.join("  ·  ");
-    return { title, namesLine };
+  const birthdayCelebration = useMemo(() => {
+    if (birthdayToday.length === 0)
+      return { title: "", people: [] as { id: number; fullName: string }[], dateLine: "" };
+    const people = birthdayToday.map((p) => ({
+      id: p.id,
+      fullName: `${p.firstName} ${p.lastName}`.trim(),
+    }));
+    const title =
+      birthdayToday.length === 1 ? "DOĞUM GÜNÜN KUTLU OLSUN!" : "DOĞUM GÜNÜNÜZ KUTLU OLSUN!";
+    const dateLine = new Intl.DateTimeFormat("tr-TR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(new Date());
+    return { title, people, dateLine };
   }, [birthdayToday]);
+
+  /** Veri yenilemesi her seferinde yeni dizi atanmasına rağmen; yalnız kişi seti değişince güncellenir */
+  const birthdayPeopleKey = useMemo(
+    () =>
+      birthdayToday.length === 0
+        ? ""
+        : birthdayToday
+            .map((p) => p.id)
+            .sort((a, b) => a - b)
+            .join(","),
+    [birthdayToday]
+  );
 
   const genelTamamlanan = useMemo(() => {
     if (!stages.length) return 0;
@@ -482,25 +605,26 @@ export default function Ekran1IcerikPage() {
     return () => clearInterval(id);
   }, [hasToken, fetchData]);
 
-  /** Bugün doğum günü olanlar: her 1 dakikada bir ~10 sn tam ekran kutlama */
+  /** Bugün doğum günü olanlar: 30 sn’lik fetch’ten bağımsız olarak her ~1 dk’da bir ~10 sn tam ekran */
   useEffect(() => {
-    if (birthdayToday.length === 0) {
+    if (!birthdayPeopleKey) {
       setBirthdayOverlayVisible(false);
       return;
     }
     let hideId: ReturnType<typeof setTimeout> | undefined;
-    const show = () => {
+    const flashCelebration = () => {
       setBirthdayOverlayVisible(true);
       if (hideId) clearTimeout(hideId);
-      hideId = setTimeout(() => setBirthdayOverlayVisible(false), 10_000);
+      hideId = setTimeout(() => setBirthdayOverlayVisible(false), BDAY_OVERLAY_VISIBLE_MS);
     };
-    show();
-    const intervalId = setInterval(show, 60_000);
+    flashCelebration();
+    const intervalId = setInterval(flashCelebration, BDAY_OVERLAY_CYCLE_MS);
     return () => {
       clearInterval(intervalId);
       if (hideId) clearTimeout(hideId);
+      setBirthdayOverlayVisible(false);
     };
-  }, [birthdayToday]);
+  }, [birthdayPeopleKey]);
 
   /**
    * TR takvim günü değişince tam yenileme: state + localStorage sıfırdan, `fetchData` o güne ait veriyi çeker.
@@ -579,15 +703,51 @@ export default function Ekran1IcerikPage() {
 
       {birthdayOverlayVisible && birthdayToday.length > 0 && (
         <div
-          className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-gradient-to-br from-slate-950/70 via-rose-950/50 to-violet-950/65 px-3 backdrop-blur-md sm:px-8"
+          className="pointer-events-none fixed inset-0 z-[100] flex min-h-[100dvh] min-h-0 flex-col justify-start overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-8 [-webkit-overflow-scrolling:touch] sm:justify-center sm:py-12"
           role="status"
           aria-live="polite"
+          aria-label={`Doğum günü kutlaması — ${birthdayCelebration.title}`}
         >
+          {/* Arka plan: derin gradient + aurora küreleri */}
+          <div
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_80%_-10%,rgba(244,114,182,0.28),transparent_52%),radial-gradient(ellipse_at_10%_90%,rgba(167,139,250,0.32),transparent_46%),linear-gradient(160deg,#0f172a_0%,#1e1b4b_42%,#4c0519_76%,#0f172a_100%)]"
+            aria-hidden
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/35" aria-hidden />
+          <div
+            className="ekran1-bday-aurora pointer-events-none absolute -left-[15%] top-[-20%] h-[72%] w-[72%] rounded-full bg-[conic-gradient(from_120deg,#f472b6,#fb7185,#a78bfa,#38bdf8,#f472b6)] opacity-[0.22] blur-[100px]"
+            aria-hidden
+          />
+          <div
+            className="ekran1-bday-aurora pointer-events-none absolute -right-[18%] bottom-[-28%] h-[62%] w-[62%] rounded-full bg-[conic-gradient(from_280deg,#fbbf24,#fb923c,#e879f9,#fbbf24)] opacity-[0.2] blur-[92px]"
+            style={{ animationDelay: "-4s" }}
+            aria-hidden
+          />
+          <div className="pointer-events-none absolute inset-0 backdrop-blur-[3px]" aria-hidden />
+
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+            <span className="ekran1-bday-twinkle absolute left-[8%] top-[14%] text-3xl text-amber-200/90 drop-shadow-[0_0_20px_rgba(253,224,71,0.55)] md:text-5xl">
+              ✦
+            </span>
+            <span
+              className="ekran1-bday-twinkle absolute right-[11%] top-[22%] text-2xl text-rose-200/88 drop-shadow-[0_0_16px_rgba(251,113,133,0.5)] md:text-4xl"
+              style={{ animationDelay: "-1.1s" }}
+            >
+              ✧
+            </span>
+            <span
+              className="ekran1-bday-twinkle absolute bottom-[26%] left-[18%] text-xl text-fuchsia-200/80 md:text-3xl"
+              style={{ animationDelay: "-0.55s" }}
+            >
+              ✦
+            </span>
+          </div>
+
           <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
             {BDAY_CONFETTI_SPECS.map((c, i) => (
               <span
-                key={i}
-                className={`ekran1-bday-confetti-piece opacity-[0.92] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
+                key={`bday-confetti-${i}`}
+                className={`ekran1-bday-confetti-piece opacity-[0.96] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
                 style={{
                   left: c.left,
                   width: c.w,
@@ -601,51 +761,118 @@ export default function Ekran1IcerikPage() {
             ))}
           </div>
 
-          <div
-            className="relative z-10 w-full max-w-[min(100%,48rem)] overflow-hidden rounded-3xl border border-white/50 bg-white/90 px-6 py-9 text-center shadow-[0_32px_64px_-12px_rgba(15,23,42,0.45),0_0_0_1px_rgba(255,255,255,0.8)_inset] ring-1 ring-slate-900/5 backdrop-blur-xl sm:rounded-[1.75rem] sm:px-12 sm:py-11 md:px-14 md:py-12"
-          >
+          <div className="ekran1-bday-overlay-card relative z-10 mx-auto w-full max-w-[min(100%,54rem)] shrink-0 pb-4 sm:pb-6">
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-fuchsia-500 via-rose-500 to-amber-400"
-              aria-hidden
-            />
-            <div
-              className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-gradient-to-br from-pink-300/50 to-violet-400/30 blur-3xl"
-              aria-hidden
-            />
-            <div
-              className="pointer-events-none absolute -bottom-10 -left-10 h-44 w-44 rounded-full bg-gradient-to-tr from-amber-200/45 to-rose-300/35 blur-3xl"
-              aria-hidden
-            />
-
-            <div className="relative mx-auto mb-4 flex justify-center sm:mb-5">
-              <div className="rounded-2xl bg-gradient-to-b from-white to-rose-50/80 px-5 py-3 shadow-[0_8px_30px_rgba(244,63,94,0.15)] ring-1 ring-rose-100/80 sm:px-7 sm:py-4">
-                <Ekran1BirthdayCake className="mx-auto h-[4.75rem] w-auto drop-shadow-[0_12px_24px_rgba(15,23,42,0.12)] sm:h-[6rem] md:h-[6.75rem]" />
-              </div>
-            </div>
-
-            {/* Doğum günü mesajı — pastadan hemen sonra */}
-            <p
-              className="relative z-20 mx-auto max-w-full font-black leading-tight tracking-tight text-slate-900"
+              className="relative overflow-visible rounded-[1.85rem] border border-white/40 bg-white/[0.93] px-6 pb-9 pt-8 text-center shadow-[0_24px_80px_-14px_rgba(15,23,42,0.55),0_0_0_1px_rgba(255,255,255,0.92)_inset] ring-1 ring-slate-900/[0.04] backdrop-blur-2xl sm:rounded-[2.15rem] sm:px-10 sm:pb-10 sm:pt-10 md:px-14 md:pb-11 md:pt-11"
               style={{
-                fontSize: "clamp(1.35rem, 4.2vw, 2.75rem)",
-                textShadow: "0 1px 0 rgba(255,255,255,1)",
+                boxShadow:
+                  "0 0 120px rgba(236,72,153,0.12), inset 0 1px 0 rgba(255,255,255,1)",
               }}
             >
-              {birthdayBanner.title}
-            </p>
+              {/* Üst aksan */}
+              <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent opacity-90" aria-hidden />
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 h-2 bg-gradient-to-r from-violet-500 via-rose-500 to-amber-400"
+                aria-hidden
+              />
+              <div
+                className="pointer-events-none absolute -right-6 -top-6 h-36 w-36 rounded-full bg-gradient-to-br from-pink-300/45 to-violet-500/35 blur-[64px]"
+                aria-hidden
+              />
+              <div
+                className="pointer-events-none absolute -bottom-8 -left-8 h-40 w-40 rounded-full bg-gradient-to-tr from-amber-200/5 to-rose-400/35 blur-[72px]"
+                aria-hidden
+              />
 
-            {/* İsim(ler) — daha ölçülü */}
-            <div className="relative z-20 mx-auto mt-4 max-w-full sm:mt-5">
-              <div className="rounded-2xl border-2 border-slate-200/90 bg-slate-50/95 px-4 py-3 shadow-inner sm:px-6 sm:py-4">
-                <p
-                  className="font-black uppercase leading-snug tracking-[0.05em] text-slate-800"
-                  style={{
-                    fontSize: "clamp(1.15rem, 3.2vw, 2.1rem)",
-                  }}
-                >
-                  {birthdayBanner.namesLine}
-                </p>
+              {/* Bugün rozeti */}
+              <div className="relative z-30 mb-3 flex justify-center">
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/75 bg-white/95 px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.28em] text-rose-600 shadow-[0_8px_32px_-8px_rgba(244,63,94,0.35)] ring-1 ring-rose-200/70 sm:text-xs md:mb-5">
+                  <svg className="h-4 w-4 text-amber-500 drop-shadow-sm" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path d="m12 2 1.74 5.57h5.8l-4.7 3.61 1.82 5.62L12 15.73 7.34 17.8l1.82-5.62-4.7-3.61h5.8L12 2z" />
+                  </svg>
+                  Bugün
+                </span>
               </div>
+
+              <div className="relative z-30 mx-auto mb-5 flex justify-center md:mb-6">
+                <div className="rounded-[1.75rem] bg-gradient-to-b from-white via-rose-50/90 to-orange-50/40 p-[3px] shadow-[0_20px_50px_-12px_rgba(244,63,94,0.35)] ring-1 ring-rose-200/65">
+                  <div className="rounded-[1.65rem] bg-gradient-to-b from-white to-rose-50/70 px-6 py-3.5 sm:px-8 sm:py-4 md:py-5">
+                    <Ekran1BirthdayCake className="mx-auto h-[4.5rem] w-auto drop-shadow-[0_16px_28px_rgba(15,23,42,0.14)] sm:h-[6rem] md:h-[7rem]" />
+                  </div>
+                </div>
+              </div>
+
+              <p
+                className="relative z-30 mx-auto mt-2 max-w-full bg-gradient-to-br from-emerald-900 via-teal-800 to-emerald-800 bg-clip-text font-black leading-[1.02] tracking-[0.06em] text-transparent"
+                style={{ fontSize: "clamp(2rem, 6.2vw, 3.75rem)", filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.75))" }}
+              >
+                {birthdayCelebration.title}
+              </p>
+
+              <p className="relative z-30 mx-auto mt-3 max-w-lg text-[11px] font-semibold capitalize leading-snug text-slate-500 sm:text-xs md:text-sm">
+                {birthdayCelebration.dateLine}
+              </p>
+
+              <div className="relative z-30 mx-auto mt-7 w-full max-w-3xl sm:mt-10">
+                <div className="relative px-1 sm:px-2 md:px-4">
+                  <Ekran1BirthdayEdgeBursts side="left" />
+                  <Ekran1BirthdayEdgeBursts side="right" />
+                  {birthdayCelebration.people.length === 1 ? (
+                    <div className="relative z-40 mx-auto w-full max-w-2xl rounded-2xl border-2 border-white/95 bg-white/90 px-8 py-7 shadow-[0_20px_48px_-18px_rgba(15,23,42,0.25),inset_0_1px_0_rgba(255,255,255,1)] ring-2 ring-rose-300/55 backdrop-blur-md sm:rounded-[1.65rem] sm:px-14 sm:py-9 md:py-10">
+                      <p
+                        className="relative text-center font-black leading-[1.06] tracking-[0.02em] text-transparent"
+                        style={{
+                          fontSize: "clamp(2.15rem, 8vw, 4.35rem)",
+                          filter: "drop-shadow(0 4px 22px rgba(251,113,133,0.42))",
+                          backgroundImage:
+                            "linear-gradient(135deg,#0f172a 0%,#9f1239 38%,#be185d 62%,#312e81 100%)",
+                          backgroundClip: "text",
+                          WebkitBackgroundClip: "text",
+                        }}
+                      >
+                        {birthdayCelebration.people[0]!.fullName}
+                      </p>
+                      <div
+                        className="pointer-events-none absolute inset-x-4 top-1/2 -translate-y-1/2 -z-10 blur-2xl opacity-90 sm:inset-x-10"
+                        aria-hidden
+                      >
+                        <div className="mx-auto h-24 max-w-md rounded-full bg-white/80 sm:h-28" />
+                      </div>
+                    </div>
+                  ) : (
+                    <ul className="relative z-40 flex flex-wrap items-center justify-center gap-x-6 gap-y-5 md:gap-x-10 md:gap-y-6">
+                      {birthdayCelebration.people.map(({ id, fullName }) => (
+                        <li key={id} className="min-w-[min(100%,16rem)] max-w-xl flex-1 sm:min-w-[15rem] sm:flex-none md:max-w-none">
+                          <div className="rounded-2xl border-2 border-white/98 bg-white/92 px-6 py-5 text-center shadow-lg ring-2 ring-rose-200/55 backdrop-blur-md sm:rounded-3xl sm:py-7">
+                            <p
+                              className="text-balance font-black leading-tight tracking-tight text-transparent"
+                              style={{
+                                fontSize: "clamp(1.35rem, 4.2vw, 2.5rem)",
+                                backgroundImage:
+                                  "linear-gradient(135deg,#0f172a 0%,#9f1239 45%,#312e81 100%)",
+                                backgroundClip: "text",
+                                WebkitBackgroundClip: "text",
+                                filter: "drop-shadow(0 3px 16px rgba(244,114,182,0.35))",
+                              }}
+                            >
+                              {fullName}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              <footer className="relative z-40 mt-8 rounded-xl border border-emerald-100/95 bg-gradient-to-r from-emerald-50 via-white to-teal-50/90 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] ring-1 ring-emerald-200/70 sm:mt-10 sm:py-5 md:mt-11">
+                <p className="text-sm font-black uppercase tracking-[0.28em] text-emerald-800 sm:text-base sm:tracking-[0.32em]">
+                  YEŞİL İMAJ TEKSTİL
+                </p>
+                <p className="mt-1.5 font-semibold leading-snug text-emerald-900/90" style={{ fontSize: 'clamp(0.85rem, 2vw, 1.125rem)' }}>
+                  Mutluluk, sağlık ve güzel yarınlar dileriz
+                </p>
+              </footer>
             </div>
           </div>
         </div>

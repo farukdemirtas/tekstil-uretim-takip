@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   getDayProductMeta,
   getHedefTakipStageTotals,
@@ -19,24 +19,18 @@ import {
   makeProsesKey,
   replaceLocalGenelCacheFromServerRows,
   GENEL_VERIMLILIK_MODEL_CODE,
+  type ProsesMap,
 } from "@/lib/prosesVeri";
 import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
-import type { TopWorkerAnalytics } from "@/lib/types";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
-const REFRESH_MS = 30_000;
-const TOP_N = 5;
+/** Arka planda API verisi — slayt hızından bağımsız */
+const DATA_REFRESH_MS = 30_000;
+/** TV’de slaytların dönüş aralığı */
+const SLIDE_ROTATE_MS = 12_000;
 const SLIDE_COUNT = 5;
-/** Verimlilik / saatlik artan & düşen tablolarında gösterilecek satır (TV okunurluğu) */
+const SLIDE_SHORT_LABELS = ["Özet", "Hedef", "Artan", "Düşen", "7 gün"] as const;
 const TREND_TABLE_TOP = 5;
-
-const STAGE_GRADIENTS = [
-  "from-emerald-500 to-teal-400",
-  "from-sky-500 to-blue-400",
-  "from-violet-500 to-purple-400",
-  "from-amber-500 to-orange-400",
-  "from-rose-500 to-pink-400",
-] as const;
 
 function workdayIsoTurkey(): string {
   return clampToWeekdayIso(todayIsoTurkey());
@@ -99,6 +93,25 @@ function calcPercent(value: number, target: number) {
   return Math.max(0, Math.min(100, Math.round((value / target) * 100)));
 }
 
+/** Fabrika geneli: Σ ortalama günlük üretim / Σ tanımlı günlük kapasite — kişi sıralaması değildir */
+function aggregateGunlukVerimPct(
+  rows: { team: string; process: string; totalProduction: number; activeDays: number }[],
+  prosesMap: ProsesMap
+): number | null {
+  let num = 0;
+  let den = 0;
+  for (const w of rows) {
+    const dk = Number(prosesMap[makeProsesKey(w.team, w.process)]) || 0;
+    const gunluk = dk * 60 * 9;
+    if (gunluk <= 0) continue;
+    const workerDaily = w.totalProduction / Math.max(w.activeDays, 1);
+    num += workerDaily;
+    den += gunluk;
+  }
+  if (den <= 0) return null;
+  return Math.max(0, Math.min(100, Math.round((num / den) * 100)));
+}
+
 export default function Ekran4IcerikPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hasToken, setHasToken] = useState(false);
@@ -110,10 +123,12 @@ export default function Ekran4IcerikPage() {
   const [modelId, setModelId] = useState<number | null>(null);
   const [todayGenel, setTodayGenel] = useState(0);
   const [yesterdayGenel, setYesterdayGenel] = useState(0);
-  const [hedefStages, setHedefStages] = useState<HedefStageLineDto[]>([]);
-  const [summaryStageCards, setSummaryStageCards] = useState<{ key: string; label: string; total: number }[]>([]);
   const [teamLabelByCode, setTeamLabelByCode] = useState<Record<string, string>>({});
-  const [topWorkers, setTopWorkers] = useState<TopWorkerAnalytics[]>([]);
+  /** Slayt 1: fabrika geneli günlük verim — kişisel değil */
+  const [slide0GunlukVerimPct, setSlide0GunlukVerimPct] = useState<{
+    bugun: number | null;
+    dun: number | null;
+  }>({ bugun: null, dun: null });
   const [dailyRisers, setDailyRisers] = useState<
     { workerId: number; name: string; process: string; team: string; delta: number; effPct: number; prevEffPct: number }[]
   >([]);
@@ -163,10 +178,9 @@ export default function Ekran4IcerikPage() {
 
       const w7 = lastNWorkdaysAscending(day, 7);
 
-      const [totalsToday, totalsPrev, tops, rawCurrent, rawPrev, teams] = await Promise.all([
+      const [totalsToday, totalsPrev, rawCurrent, rawPrev, teams] = await Promise.all([
         getHedefTakipStageTotals(day, day, modelIdToday ?? undefined),
         getHedefTakipStageTotals(prev, prev, modelIdPrev ?? undefined),
-        getTopWorkersAnalytics({ startDate: day, endDate: day, limit: TOP_N }),
         getTopWorkersAnalytics({ startDate: day, endDate: day, limit: 400 }),
         getTopWorkersAnalytics({ startDate: prev, endDate: prev, limit: 400 }),
         getTeams(),
@@ -195,28 +209,19 @@ export default function Ekran4IcerikPage() {
 
       const stToday = totalsToday.stages ?? [];
       const stPrev = totalsPrev.stages ?? [];
-      setHedefStages(stToday);
       setTodayGenel(genelTamamlananFromStages(stToday));
       setYesterdayGenel(genelTamamlananFromStages(stPrev));
-
-      const cards: { key: string; label: string; total: number }[] = [];
-      for (let i = 0; i < stToday.length; i++) {
-        const s = stToday[i];
-        const t = Number.isFinite(s.total) ? s.total : 0;
-        if (t <= 0) continue;
-        const shortP = s.processName.length > 18 ? `${s.processName.slice(0, 16)}…` : s.processName;
-        const label = s.processName ? `${s.teamLabel} · ${shortP}` : s.teamLabel;
-        cards.push({ key: `st-${s.sortOrder}-${i}`, label, total: t });
-      }
-      setSummaryStageCards(cards);
-
-      setTopWorkers(tops.slice(0, TOP_N));
 
       const genelRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE).catch(() => []);
       if (genelRows.length > 0) {
         replaceLocalGenelCacheFromServerRows(genelRows);
       }
       const prosesMap = getProsesMapForEfficiency();
+
+      setSlide0GunlukVerimPct({
+        bugun: aggregateGunlukVerimPct(rawCurrent, prosesMap),
+        dun: aggregateGunlukVerimPct(rawPrev, prosesMap),
+      });
 
       const prevMap = new Map(
         rawPrev.map((w) => [w.workerId, { prod: w.totalProduction, days: Math.max(w.activeDays, 1) }])
@@ -388,15 +393,17 @@ export default function Ekran4IcerikPage() {
     return () => document.documentElement.classList.remove("ekran4-icerik");
   }, [hasToken]);
 
-  /** 30 sn: arka planda veri yenile + sonraki slayta geç (görünen slayttan bağımsız) */
   useEffect(() => {
     if (!hasToken) return;
-    const id = window.setInterval(() => {
-      setSlide((s) => (s + 1) % SLIDE_COUNT);
-      void fetchData(true);
-    }, REFRESH_MS);
+    const id = window.setInterval(() => void fetchData(true), DATA_REFRESH_MS);
     return () => clearInterval(id);
   }, [hasToken, fetchData]);
+
+  useEffect(() => {
+    if (!hasToken) return;
+    const id = window.setInterval(() => setSlide((s) => (s + 1) % SLIDE_COUNT), SLIDE_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [hasToken]);
 
   const vsYesterday = useMemo(() => {
     if (yesterdayGenel <= 0) return null;
@@ -413,6 +420,12 @@ export default function Ekran4IcerikPage() {
     () => Math.max(1, ...slide5PastPoints.map((p) => p.total)),
     [slide5PastPoints]
   );
+  const slide0VerimVsPrevGun = useMemo(() => {
+    const { bugun, dun } = slide0GunlukVerimPct;
+    if (bugun == null || dun == null) return null;
+    return bugun - dun;
+  }, [slide0GunlukVerimPct]);
+
   const slide5Hero = useMemo(() => {
     if (!todayIso) return { today: 0, vsPrev: null as number | null, prevDateLabel: null as string | null };
     const idx = slide5DailyPoints.findIndex((p) => p.iso === todayIso);
@@ -429,8 +442,8 @@ export default function Ekran4IcerikPage() {
   }, [slide5DailyPoints, todayIso]);
 
   const slideLabel = useMemo(() => {
-    if (slide === 0) return "Günlük üretim & personel";
-    if (slide === 1) return "Hedef & aşamalar";
+    if (slide === 0) return "Genel günlük verimlilik & üretim özeti";
+    if (slide === 1) return "Hedef & genel ilerleme";
     if (slide === 2) return "Verimlilik & saatlik — artanlar";
     if (slide === 3) return "Verimlilik & saatlik — düşenler";
     return "Son 7 iş günü — genel tamamlanan";
@@ -482,12 +495,21 @@ export default function Ekran4IcerikPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden gap-1 sm:flex" aria-hidden>
-              {Array.from({ length: SLIDE_COUNT }, (_, i) => (
+            <div
+              className="hidden max-w-[min(100vw-9rem,32rem)] flex-wrap items-center justify-end gap-1 sm:flex min-[1920px]:gap-1.5"
+              aria-label="Slayt göstergesi"
+            >
+              {SLIDE_SHORT_LABELS.map((label, i) => (
                 <span
-                  key={i}
-                  className={`h-2.5 w-2.5 rounded-full ${slide === i ? "bg-teal-600" : "bg-slate-300"}`}
-                />
+                  key={label}
+                  className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide shadow-sm ring-1 min-[1920px]:px-2.5 min-[1920px]:py-1 min-[1920px]:text-xs ${
+                    slide === i
+                      ? "bg-gradient-to-r from-teal-600 to-emerald-600 text-white ring-teal-400/40"
+                      : "bg-slate-200/90 text-slate-500 ring-slate-300/60"
+                  }`}
+                >
+                  {i + 1}. {label}
+                </span>
               ))}
             </div>
             <button
@@ -499,6 +521,22 @@ export default function Ekran4IcerikPage() {
             </button>
           </div>
         </header>
+
+        {lastUpdated ? (
+          <div className="flex-shrink-0 px-0.5" role="presentation">
+            <div className="relative h-1.5 overflow-hidden rounded-full bg-slate-200/90 shadow-inner ring-1 ring-slate-200/50 min-[1920px]:h-2">
+              <div
+                key={slide}
+                className="ekran4-slide-progress-bar h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500"
+                style={
+                  {
+                    "--ekran4-slide-duration": `${SLIDE_ROTATE_MS}ms`,
+                  } as CSSProperties
+                }
+              />
+            </div>
+          </div>
+        ) : null}
 
         {error ? (
           <div className="flex-shrink-0 rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3 text-center font-semibold text-red-800">{error}</div>
@@ -512,10 +550,14 @@ export default function Ekran4IcerikPage() {
 
         {!loading || lastUpdated ? (
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <div
+              key={slide}
+              className="ekran4-slide-panel-wrap flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            >
             {slide === 0 && (
               <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/50 to-emerald-50/20 p-2 shadow-[0_12px_48px_rgba(15,23,42,0.08)] min-[1920px]:gap-4 min-[1920px]:p-4 min-[2560px]:gap-5 min-[2560px]:p-5 sm:gap-4 sm:p-3">
-                <section className="grid flex-shrink-0 gap-3 sm:grid-cols-2 min-[1920px]:gap-5">
-                  <div className="flex flex-col overflow-hidden rounded-2xl border-2 border-emerald-300/70 bg-white shadow-lg ring-2 ring-emerald-100/60">
+                <section className="grid flex-shrink-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch min-[1920px]:gap-5">
+                  <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border-2 border-emerald-300/70 bg-white shadow-lg ring-2 ring-emerald-100/60">
                     <div className="shrink-0 bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-600 px-4 py-3.5 min-[1920px]:px-6 min-[1920px]:py-5">
                       <h2 className="text-lg font-black uppercase leading-tight tracking-wide text-white sm:text-xl min-[1920px]:text-2xl min-[1920px]:tracking-[0.1em]">
                         Bugün — genel tamamlanan
@@ -528,7 +570,7 @@ export default function Ekran4IcerikPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-col overflow-hidden rounded-2xl border-2 border-slate-200/90 bg-white shadow-lg ring-1 ring-slate-200/60">
+                  <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border-2 border-slate-200/90 bg-white shadow-lg ring-1 ring-slate-200/60">
                     <div className="shrink-0 bg-gradient-to-r from-slate-600 via-slate-500 to-slate-700 px-4 py-3.5 min-[1920px]:px-6 min-[1920px]:py-5">
                       <h2 className="text-lg font-black uppercase leading-tight tracking-wide text-white sm:text-xl min-[1920px]:text-2xl min-[1920px]:tracking-[0.1em]">
                         Dün (iş günü) — genel tamamlanan
@@ -556,93 +598,73 @@ export default function Ekran4IcerikPage() {
                   </div>
                 </section>
 
-                <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 items-stretch gap-2 lg:grid-cols-2 min-[1920px]:gap-3 min-[2560px]:gap-4">
-                  <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border-2 border-amber-200/50 bg-white shadow-[0_8px_32px_rgba(245,158,11,0.12)] ring-1 ring-amber-100/40">
-                    <div className="shrink-0 bg-gradient-to-r from-amber-600 via-orange-500 to-amber-600 px-4 py-3.5 min-[1920px]:px-6 min-[1920px]:py-5">
-                      <h2 className="text-lg font-black uppercase leading-tight tracking-wide text-white sm:text-xl min-[1920px]:text-2xl min-[1920px]:tracking-[0.1em]">
-                        Aşamalar (bugün)
-                      </h2>
+                <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border-2 border-violet-200/50 bg-white shadow-[0_8px_32px_rgba(139,92,246,0.14)] ring-1 ring-violet-100/40">
+                  <div className="shrink-0 bg-gradient-to-r from-violet-600 via-fuchsia-600 to-rose-600 px-4 py-3.5 min-[1920px]:px-6 min-[1920px]:py-5">
+                    <h2 className="text-lg font-black uppercase leading-tight tracking-wide text-white sm:text-xl min-[1920px]:text-2xl min-[1920px]:tracking-[0.1em]">
+                      Genel günlük verimlilik
+                    </h2>
+                    <p className="mt-1 max-w-[60rem] text-[11px] font-semibold leading-snug text-white/90 min-[1920px]:text-sm">
+                      Tanımlı süreç kapasitelerinin toplamına göre (ortalama günlük üretim). Kişisel sıralama değildir; fabrika ortalamasıdır.
+                    </p>
+                  </div>
+                  <div className="grid min-h-0 flex-1 grid-cols-1 content-stretch gap-6 bg-gradient-to-b from-violet-50/50 to-white px-4 py-5 min-[1920px]:grid-cols-2 min-[1920px]:gap-10 min-[1920px]:px-8 min-[1920px]:py-7">
+                    <div className="flex min-h-0 min-w-0 flex-col items-center justify-center rounded-2xl border border-violet-200/70 bg-white/95 px-4 py-5 text-center shadow-inner sm:py-6 min-[1920px]:py-8">
+                      <p className="text-xs font-black uppercase tracking-[0.15em] text-violet-800 min-[1920px]:text-sm">
+                        Bugün
+                      </p>
+                      <p
+                        className="mt-2 max-w-full font-black tabular-nums tracking-tight text-violet-950 leading-none min-[1920px]:mt-3"
+                        style={{
+                          fontSize:
+                            "clamp(2.75rem, min(13vw, 18vh), 7.5rem)",
+                        }}
+                      >
+                        {slide0GunlukVerimPct.bugun != null ? `%${slide0GunlukVerimPct.bugun}` : "—"}
+                      </p>
+                      <div className="mx-auto mt-4 h-2.5 w-full max-w-[12rem] overflow-hidden rounded-full bg-violet-200/70 min-[1920px]:mt-5 min-[1920px]:h-3 min-[1920px]:max-w-[14rem]">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-rose-500 transition-all duration-700"
+                          style={{
+                            width: `${slide0GunlukVerimPct.bugun != null ? slide0GunlukVerimPct.bugun : 0}%`,
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="min-h-0 bg-gradient-to-b from-amber-50/40 to-white p-3.5 min-[1920px]:p-5">
-                      {summaryStageCards.length === 0 ? (
-                        <p className="py-4 text-center text-base font-medium text-slate-500 min-[1920px]:text-lg">Satır yok veya adet 0.</p>
-                      ) : (
-                        <div className="grid min-h-0 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 min-[1920px]:gap-4">
-                          {summaryStageCards.map((c, idx) => {
-                            const grad = STAGE_GRADIENTS[idx % STAGE_GRADIENTS.length];
-                            return (
-                              <div
-                                key={c.key}
-                                className="group relative flex min-h-[6.25rem] items-stretch overflow-hidden rounded-2xl border border-white/90 bg-white/95 shadow-md ring-1 ring-amber-100/30 transition-shadow hover:shadow-lg min-[1920px]:min-h-[8.25rem]"
-                              >
-                                <div
-                                  className={`w-2.5 shrink-0 bg-gradient-to-b ${grad} min-[1920px]:w-3.5`}
-                                  aria-hidden
-                                />
-                                <div className="flex min-w-0 flex-1 flex-col justify-center px-3.5 py-3 min-[1920px]:px-5 min-[1920px]:py-4">
-                                  <span className="line-clamp-3 text-xs font-bold uppercase leading-snug tracking-wide text-amber-950/90 sm:text-sm min-[1920px]:text-base min-[1920px]:leading-snug min-[1920px]:tracking-[0.06em]">
-                                    {c.label}
-                                  </span>
-                                  <span className="mt-2 text-3xl font-black tabular-nums tracking-tight text-slate-900 min-[1920px]:mt-2.5 min-[1920px]:text-5xl min-[1920px]:leading-none">
-                                    {c.total.toLocaleString("tr-TR")}
-                                  </span>
-                                  <span className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-amber-800/70 min-[1920px]:text-sm min-[1920px]:tracking-[0.14em]">
-                                    adet
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
+                    <div className="flex min-h-0 min-w-0 flex-col justify-center rounded-2xl border border-violet-200/50 bg-white/90 px-4 py-5 min-[1920px]:px-6 min-[1920px]:py-8">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 min-[1920px]:gap-6">
+                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-3 text-center shadow-sm min-[1920px]:px-4 min-[1920px]:py-5">
+                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-600 min-[1920px]:text-xs">
+                            Önceki iş günü
+                          </p>
+                          <p className="mt-2 text-4xl font-black tabular-nums text-slate-900 min-[1920px]:text-6xl">
+                            {slide0GunlukVerimPct.dun != null ? `%${slide0GunlukVerimPct.dun}` : "—"}
+                          </p>
                         </div>
-                      )}
+                        <div className="flex flex-col items-center justify-center rounded-xl border border-emerald-200/80 bg-emerald-50/60 px-3 py-3 text-center shadow-sm min-[1920px]:px-4 min-[1920px]:py-5">
+                          <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900 min-[1920px]:text-xs">
+                            Önceki güne göre
+                          </p>
+                          {slide0VerimVsPrevGun != null ? (
+                            <p
+                              className={`mt-2 text-3xl font-black tabular-nums min-[1920px]:text-5xl ${
+                                slide0VerimVsPrevGun > 0 ? "text-emerald-700" : slide0VerimVsPrevGun < 0 ? "text-rose-600" : "text-slate-500"
+                              }`}
+                            >
+                              {slide0VerimVsPrevGun > 0 ? "↑" : slide0VerimVsPrevGun < 0 ? "↓" : "→"}{" "}
+                              {slide0VerimVsPrevGun > 0 ? "+" : ""}
+                              {slide0VerimVsPrevGun} puan
+                            </p>
+                          ) : (
+                            <p className="mt-2 text-xl font-semibold text-slate-500 min-[1920px]:text-2xl">—</p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="mx-auto mt-4 max-w-lg text-center text-[11px] font-medium leading-relaxed text-slate-600 min-[1920px]:mt-5 min-[1920px]:text-sm">
+                        Veri yoksa süreç hedef dk&apos;ları tanımlı olmayabilir veya bugün / dün kayıt eksik olabilir.
+                      </p>
                     </div>
-                  </section>
-
-                  <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border-2 border-cyan-200/70 bg-white shadow-md ring-1 ring-cyan-100/50">
-                    <div className="shrink-0 bg-gradient-to-r from-cyan-600 via-teal-500 to-cyan-700 px-3 py-2.5 min-[1920px]:px-4 min-[1920px]:py-3">
-                      <h2 className="text-sm font-black uppercase leading-tight tracking-wide text-white sm:text-base min-[1920px]:text-lg min-[1920px]:tracking-[0.1em]">
-                        En çok üreten 5 personel
-                      </h2>
-                    </div>
-                    <div className="flex min-h-0 flex-1 flex-col bg-gradient-to-b from-cyan-50/40 to-white p-2 min-[1920px]:p-3">
-                      {topWorkers.length === 0 ? (
-                        <p className="text-sm text-slate-500 min-[1920px]:text-base">Bugün kayıt yok.</p>
-                      ) : (
-                        <ol className="grid min-h-0 flex-1 grid-cols-1 [grid-template-rows:repeat(5,minmax(0,1fr))] gap-1 min-[1920px]:gap-1.5">
-                          {topWorkers.map((w, i) => {
-                            const tlab = w.team ? teamLabelByCode[w.team] ?? w.team : "—";
-                            return (
-                              <li
-                                key={w.workerId}
-                                className="flex min-h-0 items-center gap-2 overflow-hidden rounded-xl border border-cyan-200/50 bg-gradient-to-r from-cyan-50/80 to-white px-2 py-0.5 shadow-sm min-[1920px]:gap-2.5 min-[1920px]:px-2.5 min-[1920px]:py-1"
-                              >
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-600 to-teal-600 text-sm font-black text-white shadow min-[1920px]:h-9 min-[1920px]:w-9 min-[1920px]:text-base">
-                                  {i + 1}
-                                </span>
-                                <div className="min-w-0 flex-1 overflow-hidden">
-                                  <p className="truncate text-sm font-bold leading-tight text-slate-900 min-[1920px]:text-base">
-                                    {w.name}
-                                  </p>
-                                  <p className="truncate text-[10px] leading-tight text-slate-600 min-[1920px]:text-xs">
-                                    {tlab} <span className="text-slate-300">·</span> {w.process || "—"}
-                                  </p>
-                                </div>
-                                <div className="shrink-0 text-right leading-none">
-                                  <p className="text-lg font-black tabular-nums tracking-tight text-cyan-900 min-[1920px]:text-2xl min-[1920px]:leading-none">
-                                    {w.totalProduction.toLocaleString("tr-TR")}
-                                  </p>
-                                  <p className="text-[9px] font-semibold leading-tight text-cyan-800/70 min-[1920px]:text-[10px]">
-                                    adet
-                                  </p>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      )}
-                    </div>
-                  </section>
-                </div>
+                  </div>
+                </section>
               </div>
             )}
 
@@ -678,62 +700,22 @@ export default function Ekran4IcerikPage() {
                   </div>
                 </section>
 
-                <div className="rounded-2xl border-2 border-slate-200/80 bg-white px-4 py-4 shadow-md min-[1920px]:px-6 min-[1920px]:py-6">
-                  <div className="flex flex-col items-stretch justify-between gap-2 sm:flex-row sm:items-end sm:gap-4">
-                    <p className="text-left text-base font-black uppercase tracking-wide text-slate-800 min-[1920px]:text-xl min-[1920px]:tracking-[0.08em]">
+                <div className="flex min-h-0 flex-1 flex-col justify-center rounded-2xl border-2 border-slate-200/80 bg-white px-4 py-6 shadow-md min-[1920px]:px-10 min-[1920px]:py-12">
+                  <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-end sm:gap-6">
+                    <p className="text-left text-lg font-black uppercase tracking-wide text-slate-800 min-[1920px]:text-2xl min-[1920px]:tracking-[0.08em]">
                       Genel ilerleme (hedefe göre)
                     </p>
-                    <p className="text-center text-4xl font-black tabular-nums tracking-tight text-slate-900 min-[1920px]:text-6xl min-[1920px]:leading-none sm:text-right">
+                    <p className="text-center text-5xl font-black tabular-nums tracking-tight text-slate-900 min-[1920px]:text-[4.25rem] min-[1920px]:leading-none sm:text-right">
                       %{genelPercent}
                     </p>
                   </div>
-                  <div className="mt-4 h-5 overflow-hidden rounded-full bg-slate-200/90 shadow-inner min-[1920px]:h-7">
+                  <div className="mt-6 h-7 overflow-hidden rounded-full bg-slate-200/90 shadow-inner min-[1920px]:mt-10 min-[1920px]:h-10">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 shadow-sm transition-all duration-700"
                       style={{ width: `${genelPercent}%` }}
                     />
                   </div>
                 </div>
-
-                <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border-2 border-slate-200/70 bg-white shadow-md min-[1920px]:p-0">
-                  {hedefStages.length === 0 ? (
-                    <p className="p-4 text-base font-medium text-slate-600 min-[1920px]:p-5 min-[1920px]:text-lg">Aşama verisi yok.</p>
-                  ) : (
-                    <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-3 min-[1920px]:space-y-2.5 min-[1920px]:p-4">
-                      {hedefStages.map((s, i) => {
-                        const v = Number.isFinite(s.total) ? s.total : 0;
-                        const shortP = s.processName.length > 20 ? `${s.processName.slice(0, 18)}…` : s.processName;
-                        const label = s.processName ? `${s.teamLabel} · ${shortP}` : s.teamLabel;
-                        const pct = calcPercent(v, target);
-                        const g = STAGE_GRADIENTS[i % STAGE_GRADIENTS.length];
-                        return (
-                          <li
-                            key={`${s.sortOrder}-${s.teamCode}-${s.processName}-${i}`}
-                            className="grid grid-cols-1 gap-2 rounded-2xl border-2 border-slate-200/50 bg-slate-50/80 p-3 shadow-sm min-[1920px]:grid-cols-[1fr_auto] min-[1920px]:items-center min-[1920px]:gap-4 min-[1920px]:p-4"
-                          >
-                            <div className="min-w-0">
-                              <p className="text-base font-bold leading-tight text-slate-900 min-[1920px]:text-xl">{label}</p>
-                              <p className="mt-1.5 text-xl font-black tabular-nums tracking-tight text-slate-900 min-[1920px]:text-3xl min-[1920px]:leading-none">
-                                {v.toLocaleString("tr-TR")}{" "}
-                                <span className="text-base font-bold text-slate-400 min-[1920px]:text-2xl">/</span>{" "}
-                                <span className="text-lg font-bold text-slate-600 min-[1920px]:text-2xl">
-                                  {target.toLocaleString("tr-TR")}
-                                </span>
-                                <span className="ml-1 text-xs font-bold text-slate-600 min-[1920px]:text-base">(hedef)</span>
-                              </p>
-                            </div>
-                            <div className="flex flex-col items-stretch gap-1.5 min-[1920px]:w-48 min-[1920px]:shrink-0 min-[1920px]:items-end">
-                              <span className="text-3xl font-black tabular-nums tracking-tight text-slate-950 min-[1920px]:text-5xl min-[1920px]:leading-none">%{pct}</span>
-                              <div className="h-2.5 w-full max-w-full overflow-hidden rounded-full bg-slate-200/90 min-[1920px]:h-4 min-[1920px]:max-w-[14rem]">
-                                <div className={`h-full rounded-full bg-gradient-to-r ${g}`} style={{ width: `${pct}%` }} />
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </section>
               </div>
             )}
 
@@ -1046,10 +1028,14 @@ export default function Ekran4IcerikPage() {
                 </section>
               </div>
             )}
+            </div>
 
             <p className="shrink-0 pb-1 pt-0.5 text-center text-[11px] font-medium text-slate-500 min-[1920px]:text-sm">
               <span className="rounded-lg bg-slate-200/80 px-2 py-0.5 text-slate-700">
                 Slayt {slide + 1} / {SLIDE_COUNT}
+              </span>
+              <span className="ml-2 text-slate-500">
+                · döngü {Math.round(SLIDE_ROTATE_MS / 1000)} sn · veri {Math.round(DATA_REFRESH_MS / 1000)} sn
               </span>
             </p>
           </div>

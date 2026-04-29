@@ -186,6 +186,47 @@ html.ekran4-icerik body {
   overflow: hidden;
 }
 
+/* EKRAN4 slayt — sıradaki slayta kadar dolan çubuk + içerik girişi */
+@keyframes ekran4-slide-progress-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes ekran4-slide-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ekran4-slide-progress-bar {
+  transform-origin: left center;
+  animation: ekran4-slide-progress-fill var(--ekran4-slide-duration, 12s) linear forwards;
+}
+
+.ekran4-slide-panel-wrap {
+  animation: ekran4-slide-panel-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ekran4-slide-progress-bar {
+    animation: none;
+    transform: scaleX(1);
+  }
+
+  .ekran4-slide-panel-wrap {
+    animation: none;
+  }
+}
+
 /* EKRAN1 doğum günü kutlaması — konfeti */
 @keyframes ekran1-bday-confetti-fall {
   0% {
@@ -207,4 +248,82 @@ html.ekran4-icerik body {
   animation-timing-function: linear;
   animation-iteration-count: infinite;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+@keyframes ekran1-bday-aurora-drift {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.78;
+    transform: translate(-2%, -1%) scale(1.04);
+  }
+}
+
+@keyframes ekran1-bday-card-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.94) translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes ekran1-bday-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.06);
+  }
+}
+
+.ekran1-bday-aurora {
+  animation: ekran1-bday-aurora-drift 9s ease-in-out infinite alternate;
+}
+
+.ekran1-bday-overlay-card {
+  animation: ekran1-bday-card-enter 0.75s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ekran1-bday-twinkle {
+  animation: ekran1-bday-twinkle 2.2s ease-in-out infinite;
+}
+
+/* EKRAN1 doğum günü — ismin yanından patlayan konfeti / havai fişek */
+@keyframes ekran1-bday-edge-burst {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.15) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--ebb-tx, -80px), var(--ebb-ty, -40px), 0) scale(1) rotate(var(--ebb-rot, 420deg));
+    opacity: 0;
+  }
+}
+
+.ekran1-bday-edge-burst-inner {
+  transform-origin: center center;
+  animation-name: ekran1-bday-edge-burst;
+  animation-timing-function: cubic-bezier(0.2, 0.85, 0.35, 1);
+  animation-iteration-count: infinite;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ekran1-bday-edge-burst-inner {
+    animation: none;
+    opacity: 0.55;
+    transform: translate3d(calc(var(--ebb-tx, -40px) * 0.35), calc(var(--ebb-ty, -20px) * 0.35), 0);
+  }
 }

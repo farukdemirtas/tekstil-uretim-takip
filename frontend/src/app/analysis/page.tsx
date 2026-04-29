@@ -37,6 +37,8 @@ import {
 import { todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
 
 const AUTO_REFRESH_MS = 30_000;
+/** Personel verimlilik grafiğinde en fazla gösterilecek satır (üst sıra). */
+const EFF_VIZ_TOP = 28;
 
 function hourlyToProductionRow(worker: TopWorkerAnalytics, h: WorkerHourlyBreakdown): ProductionRow {
   return {
@@ -226,6 +228,53 @@ export default function AnalysisPage() {
 
   const prosesMap = useMemo(() => getProsesMapForEfficiency(), [lastUpdated]);
 
+  /** Dönem verimliliğine göre sıralı personel (üretim sırasından bağımsız). */
+  const personnelEfficiencyAnalysis = useMemo(() => {
+    if (hourFilter !== "") {
+      return {
+        active: false as const,
+        sorted: [] as Array<{ row: TopWorkerAnalytics; eff: number }>,
+        avg: null as number | null,
+        median: null as number | null,
+        withTarget: 0,
+        withoutTarget: 0,
+        below75: 0,
+      };
+    }
+    const sorted: Array<{ row: TopWorkerAnalytics; eff: number }> = [];
+    let withoutTarget = 0;
+    for (const row of rows) {
+      const eff = efficiencyPercentFromTotals(
+        prosesMap,
+        row.team,
+        row.process,
+        row.totalProduction,
+        Math.max(row.activeDays, 1)
+      );
+      if (eff === null) withoutTarget++;
+      else sorted.push({ row, eff });
+    }
+    sorted.sort((a, b) => b.eff - a.eff);
+    const n = sorted.length;
+    const avg = n ? Math.round(sorted.reduce((s, x) => s + x.eff, 0) / n) : null;
+    const median =
+      n === 0
+        ? null
+        : n % 2 === 1
+          ? sorted[Math.floor(n / 2)]!.eff
+          : Math.round((sorted[n / 2 - 1]!.eff + sorted[n / 2]!.eff) / 2);
+    const below75 = sorted.filter((x) => x.eff < 75).length;
+    return {
+      active: true as const,
+      sorted,
+      avg,
+      median,
+      withTarget: n,
+      withoutTarget,
+      below75,
+    };
+  }, [rows, hourFilter, prosesMap]);
+
   function rowPeriodEfficiency(row: TopWorkerAnalytics): number | null {
     if (hourFilter !== "") return null;
     return efficiencyPercentFromTotals(
@@ -266,6 +315,18 @@ export default function AnalysisPage() {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(topSheet), "Top İşçi");
+    if (personnelEfficiencyAnalysis.active && personnelEfficiencyAnalysis.sorted.length > 0) {
+      const effRankSheet = personnelEfficiencyAnalysis.sorted.map(({ row, eff }, i) => ({
+        Sıra: i + 1,
+        "Ad Soyad": row.name,
+        Grup: resolveTeamLabel(row.team),
+        Proses: row.process,
+        "Çalışılan Gün": row.activeDays,
+        "Toplam Üretim": row.totalProduction,
+        "Verimlilik %": eff,
+      }));
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(effRankSheet), "Personel Verimlilik");
+    }
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(trendSheet), "Günlük Trend");
     const workerDailySheet = workerDailyRows.map((row) => {
       const eff = dailyRowEfficiency(row);
@@ -327,6 +388,27 @@ export default function AnalysisPage() {
       head: [["Tarih", "Günlük Toplam Üretim"]],
       body: trendRows.map((row) => [row.productionDate, row.totalProduction])
     });
+
+    let yAfterTrend = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 40;
+    if (personnelEfficiencyAnalysis.active && personnelEfficiencyAnalysis.sorted.length > 0) {
+      if (yAfterTrend > 220) {
+        doc.addPage();
+        yAfterTrend = 20;
+      }
+      doc.setFontSize(11);
+      doc.text("Personel verimlilik sıralaması (dönem ortalaması / günlük hedef)", 14, yAfterTrend + 6);
+      autoTable(doc, {
+        startY: yAfterTrend + 12,
+        head: [["#", "Ad Soyad", "Grup", "Proses", "Verim %"]],
+        body: personnelEfficiencyAnalysis.sorted.slice(0, 45).map((x, i) => [
+          i + 1,
+          x.row.name,
+          resolveTeamLabel(x.row.team),
+          x.row.process,
+          `${x.eff}%`,
+        ]),
+      });
+    }
     doc.save(`analiz-${startDate}-${endDate}.pdf`);
   }
 
@@ -335,9 +417,9 @@ export default function AnalysisPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">Analiz - İşçi Verim Sıralaması</h1>
+            <h1 className="text-xl font-semibold">Analiz — Üretim ve personel verimliliği</h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              Seçilen tarih aralığında veri girilen tüm işçiler sıralanır.
+              İşçiler üretime göre sıralanır; ayrıca dönem verimliliği (hedefe göre %) analiz edilir.
             </p>
             {lastUpdated && (
               <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
@@ -797,6 +879,176 @@ export default function AnalysisPage() {
               ))}
             </div>
           </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-indigo-100 bg-gradient-to-br from-indigo-50/80 via-white to-emerald-50/50 p-4 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/40 dark:via-slate-900 dark:to-emerald-950/20 dark:text-slate-100">
+        <div className="mb-4 flex flex-col gap-2 border-b border-indigo-100/80 pb-3 dark:border-indigo-900/50 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Personel verimlilik analizi</h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              Proses hedefi (dk×60×9) üzerinden ortalama günlük üretim oranı; üretim sıralamasından bağımsız verim
+              sırası.
+            </p>
+          </div>
+        </div>
+
+        {!personnelEfficiencyAnalysis.active ? (
+          <p className="text-sm font-medium text-amber-900 dark:text-amber-200/90">
+            Personel verimlilik sıralaması ve özet kutuları ancak{" "}
+            <span className="font-semibold">saat filtresinde «Tümü»</span> seçiliyken kullanılabilir — kısmi saat için
+            hedef tam günlük olduğundan yüzde yanılıcı olur.
+          </p>
+        ) : loading && rows.length === 0 ? (
+          <div className="text-sm text-slate-500">Yükleniyor…</div>
+        ) : personnelEfficiencyAnalysis.withTarget === 0 && personnelEfficiencyAnalysis.withoutTarget === 0 ? (
+          <p className="text-sm text-slate-600 dark:text-slate-400">Bu aralıkta işçi kaydı yok.</p>
+        ) : personnelEfficiencyAnalysis.withTarget === 0 ? (
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Seçili personel için tanımlı proses hedefi (Genel Verimlilik) bulunamadı. Hedef girildiğinde verimlilik
+            hesaplanır.
+          </p>
+        ) : (
+          <>
+            <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="rounded-xl border border-emerald-100 bg-white/90 p-4 shadow-sm dark:border-emerald-900/40 dark:bg-slate-800/80">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                  Ortalama verim
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-200">
+                  {personnelEfficiencyAnalysis.avg !== null ? `%${personnelEfficiencyAnalysis.avg}` : "—"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-white/90 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800/80">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Medyan verim
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
+                  {personnelEfficiencyAnalysis.median !== null ? `%${personnelEfficiencyAnalysis.median}` : "—"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-violet-100 bg-white/90 p-4 shadow-sm dark:border-violet-900/40 dark:bg-slate-800/80">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+                  Hedefi olan
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-violet-800 dark:text-violet-100">
+                  {personnelEfficiencyAnalysis.withTarget}
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-500">kişi kaydı</p>
+              </div>
+              <div className="rounded-xl border border-amber-100 bg-white/90 p-4 shadow-sm dark:border-amber-900/40 dark:bg-slate-800/80">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                  {"<"}%75
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-amber-800 dark:text-amber-100">
+                  {personnelEfficiencyAnalysis.below75}
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-500">kişi</p>
+              </div>
+            </div>
+
+            {personnelEfficiencyAnalysis.withoutTarget > 0 ? (
+              <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                {personnelEfficiencyAnalysis.withoutTarget} kayıtta proses dk hedefi yok; listeye dahil edilmedi.
+              </p>
+            ) : null}
+
+            {personnelEfficiencyAnalysis.sorted.length > 0 ? (
+              <>
+                <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Verim sırası — özet grafik (ilk {Math.min(EFF_VIZ_TOP, personnelEfficiencyAnalysis.sorted.length)} kişi)
+                </h3>
+                <div className="mb-6 space-y-2 rounded-xl border border-slate-100 bg-white/60 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                  {personnelEfficiencyAnalysis.sorted.slice(0, EFF_VIZ_TOP).map(({ row, eff }, index) => {
+                    const w = Math.max(3, eff);
+                    const { rank: rankTextClass } = rankTercileStyles(
+                      index,
+                      Math.min(EFF_VIZ_TOP, personnelEfficiencyAnalysis.sorted.length)
+                    );
+                    const barTone =
+                      eff >= 85
+                        ? "from-emerald-500 to-teal-400"
+                        : eff >= 60
+                          ? "from-amber-500 to-orange-400"
+                          : "from-rose-500 to-orange-600";
+                    return (
+                      <div
+                        key={`${row.workerId}-${row.team}-${row.process}-${index}`}
+                        className="flex flex-col gap-2 sm:flex-row sm:items-center"
+                      >
+                        <div className="flex min-w-0 flex-1 items-center gap-3 sm:flex-[0_1_52%] lg:flex-[0_1_48%]">
+                          <span className={`w-6 shrink-0 text-center text-xs font-bold tabular-nums ${rankTextClass}`}>
+                            {index + 1}
+                          </span>
+                          <span
+                            className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-slate-100"
+                            title={row.name}
+                          >
+                            {row.name}
+                          </span>
+                        </div>
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          <div className="relative h-5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                            <div
+                              className={`h-full rounded-full bg-gradient-to-r ${barTone}`}
+                              style={{ width: `${w}%` }}
+                            />
+                          </div>
+                          <span className="w-28 shrink-0 truncate text-[10px] text-slate-500 dark:text-slate-400 sm:text-xs">
+                            {resolveTeamLabel(row.team)}
+                          </span>
+                          <span className="w-12 shrink-0 text-right text-sm font-bold tabular-nums text-indigo-800 dark:text-indigo-200">
+                            %{eff}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <h3 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Tam verim sıralaması ({personnelEfficiencyAnalysis.sorted.length} kayıt)
+                </h3>
+                <div className="max-h-80 overflow-auto rounded-lg border border-slate-200 dark:border-slate-600">
+                  <table className="w-full min-w-[760px] border-collapse text-xs sm:text-sm">
+                    <thead className="sticky top-0 z-[1] bg-indigo-50 text-left shadow-sm dark:bg-indigo-950/70">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">#</th>
+                        <th className="px-3 py-2 font-semibold">Ad Soyad</th>
+                        <th className="px-3 py-2 font-semibold">Grup</th>
+                        <th className="px-3 py-2 font-semibold">Proses</th>
+                        <th className="px-3 py-2 text-right font-semibold">Gün</th>
+                        <th className="px-3 py-2 text-right font-semibold">Toplam üretim</th>
+                        <th className="px-3 py-2 text-right font-semibold">Verim %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {personnelEfficiencyAnalysis.sorted.map(({ row, eff }, i) => (
+                        <tr
+                          key={`eff-row-${row.workerId}-${row.team}-${row.process}-${i}`}
+                          className="border-b border-slate-100 odd:bg-white dark:border-slate-700 dark:odd:bg-slate-800/50"
+                        >
+                          <td className="px-3 py-1.5 tabular-nums text-slate-600 dark:text-slate-400">{i + 1}</td>
+                          <td className="px-3 py-1.5 font-medium text-slate-900 dark:text-slate-100">{row.name}</td>
+                          <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">
+                            {resolveTeamLabel(row.team)}
+                          </td>
+                          <td className="max-w-[10rem] truncate px-3 py-1.5 text-slate-700 dark:text-slate-300">
+                            {row.process}
+                          </td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{row.activeDays}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums font-medium">{row.totalProduction}</td>
+                          <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-indigo-700 dark:text-indigo-300">
+                            %{eff}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : null}
+          </>
         )}
       </section>
 
