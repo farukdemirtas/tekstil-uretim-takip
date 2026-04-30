@@ -1,8 +1,10 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import { getProcesses, getTeams, getProsesVeriRowsFromServer, saveProsesVeriRowsToServer } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
+import { todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
+import { workerEfficiencyPercent } from "@/lib/workerEfficiency";
 import {
   isNewSlotLayout,
   LEGACY_SLOT_DEFS,
@@ -183,6 +185,53 @@ export default function ProductionTable({
 
   const teamLabel = (code: string) => teamLabels[code] ?? FALLBACK_LABELS[code] ?? code;
 
+  const useIntradayEfficiency = selectedDate === todayWorkdayIsoTurkey();
+
+  function rowEffectiveForEfficiency(row: ProductionRow, editing: boolean): ProductionRow {
+    if (!editing || editingId !== row.workerId) return row;
+    return { ...row, team: editingTeam, process: editingProcess };
+  }
+
+  function efficiencyBadge(absent: boolean, pct: number | null): ReactNode {
+    if (absent) {
+      return (
+        <span
+          className="inline-flex min-w-[3rem] justify-center rounded-md border border-transparent bg-transparent px-2 py-0.5 text-xs font-bold tabular-nums text-slate-400 dark:text-slate-500"
+          title="Sahada yok"
+          aria-hidden
+        >
+          —
+        </span>
+      );
+    }
+    if (pct === null) {
+      return (
+        <span
+          className="inline-flex min-w-[3rem] justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold tabular-nums text-slate-400 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-500"
+          title="Bu bölüm — proses için dk hedefi tanımlı değil (Genel verimlilik)"
+        >
+          —
+        </span>
+      );
+    }
+    const tone =
+      pct >= 75
+        ? "border-emerald-200/90 bg-emerald-50 text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/50 dark:text-emerald-50"
+        : "border-amber-200/90 bg-amber-50 text-amber-950 dark:border-amber-900/55 dark:bg-amber-950/45 dark:text-amber-50";
+    return (
+      <span
+        className={`inline-flex min-w-[3rem] justify-center rounded-md border px-2 py-0.5 text-xs font-black tabular-nums shadow-sm ${tone}`}
+        title={
+          useIntradayEfficiency
+            ? `Bugün (dilimlere göre anlık): %${pct}`
+            : `Seçili günde günlük hedefe göre: %${pct}`
+        }
+      >
+        %{pct}
+      </span>
+    );
+  }
+
   const timeFields = useMemo(
     () => (isNewSlotLayout(selectedDate) ? NEW_SLOT_DEFS : LEGACY_SLOT_DEFS),
     [selectedDate]
@@ -361,7 +410,7 @@ export default function ProductionTable({
         <table className={`w-full border-collapse text-sm ${timeColCount > 4 ? "min-w-[1280px]" : "min-w-[960px]"}`}>
           <colgroup>
             <col className="w-8" />
-            <col className="w-52" />
+            <col className="min-w-[12rem] w-[16.5rem]" />
             {timeFields.map((f) => (
               <col key={f.key} className={timeColCount > 4 ? "w-[4.5rem]" : "w-[6.5rem]"} />
             ))}
@@ -374,7 +423,9 @@ export default function ProductionTable({
           <thead className="bg-slate-800 text-white">
             <tr>
               <th className="px-2 py-2.5 text-center text-sm font-bold">No</th>
-              <th className="px-3 py-2.5 text-left text-sm font-bold">Ad Soyad</th>
+              <th className="px-3 py-2.5 text-left text-sm font-bold" title="Yanında anlık verimlilik oranı gösterilir">
+                Ad Soyad · verim
+              </th>
               {timeFields.map((f) => (
                 <th
                   key={f.key}
@@ -402,6 +453,8 @@ export default function ProductionTable({
                   const total = sumProductionRow(row);
                   const isEditing = editingId === row.workerId;
                   const absent = Boolean(row.absentForDay);
+                  const effectiveRow = rowEffectiveForEfficiency(row, isEditing);
+                  const rowEffPct = workerEfficiencyPercent(effectiveRow, prosesMap, useIntradayEfficiency);
                   return (
                     <tr
                       key={`${team}-${row.workerId}-${index}`}
@@ -418,9 +471,12 @@ export default function ProductionTable({
                           <div className="flex items-start gap-3">
                             {/* Sol: isim */}
                             <div className="min-w-0 flex-1">
-                              <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
-                                {row.name}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
+                                  {row.name}
+                                </span>
+                                {efficiencyBadge(absent, rowEffPct)}
+                              </div>
                             </div>
                             {/* Sağ: bölüm + proses seçimi */}
                             <div className="flex w-44 shrink-0 flex-col gap-1.5">
@@ -448,10 +504,11 @@ export default function ProductionTable({
                           </div>
                         ) : (
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
                                 {row.name}
                               </span>
+                              {efficiencyBadge(absent, rowEffPct)}
                               {absent ? (
                                 <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
                                   Sahada yok
@@ -645,6 +702,8 @@ export default function ProductionTable({
               const total = sumProductionRow(row);
               const isEditing = editingId === row.workerId;
               const absent = Boolean(row.absentForDay);
+              const effectiveMob = rowEffectiveForEfficiency(row, isEditing);
+              const rowEffPctMob = workerEfficiencyPercent(effectiveMob, prosesMap, useIntradayEfficiency);
 
               return (
                 <div
@@ -655,13 +714,16 @@ export default function ProductionTable({
                 >
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <span className="mr-1.5 text-xs text-slate-400">{startNo + index}.</span>
-                      <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : ""}`}>{row.name}</span>
-                      {absent ? (
-                        <span className="ml-2 inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                          Sahada yok
-                        </span>
-                      ) : null}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                        <span className="text-xs text-slate-400">{startNo + index}.</span>
+                        <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>{row.name}</span>
+                        {efficiencyBadge(absent, rowEffPctMob)}
+                        {absent ? (
+                          <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                            Sahada yok
+                          </span>
+                        ) : null}
+                      </div>
                       {noteEditingId === row.workerId ? (
                         <div className="mt-1.5 flex flex-col gap-1">
                           <textarea

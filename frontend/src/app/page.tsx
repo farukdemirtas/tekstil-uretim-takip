@@ -34,6 +34,7 @@ import {
   GENEL_PROSES_UPDATED_EVENT,
   GENEL_VERIMLILIK_MODEL_CODE,
   getProsesMapForEfficiency,
+  makeProsesKey,
   replaceLocalGenelCacheFromServerRows,
 } from "@/lib/prosesVeri";
 import { averageWorkerEfficiency } from "@/lib/workerEfficiency";
@@ -474,9 +475,17 @@ export default function HomePage() {
   }, [hedefStageTotals]);
 
   const useIntradayEfficiency = selectedDate === todayWorkdayIsoTurkey();
-  const personnelEfficiencyAgg = useMemo(() => {
+  const personnelEfficiencyLive = useMemo(() => {
     const map = getProsesMapForEfficiency();
-    return averageWorkerEfficiency(rows, map, useIntradayEfficiency);
+    const agg = averageWorkerEfficiency(rows, map, useIntradayEfficiency);
+    const presentCount = rows.filter((r) => !r.absentForDay).length;
+    let withTarget = 0;
+    for (const row of rows) {
+      if (row.absentForDay) continue;
+      const dk = Number(map[makeProsesKey(row.team, row.process)]) || 0;
+      if (dk > 0) withTarget++;
+    }
+    return { avg: agg.avg, count: agg.count, presentCount, withTarget };
   }, [rows, useIntradayEfficiency, genelProsesTick]);
 
   const ekSayimTeamSections = useMemo(
@@ -945,33 +954,51 @@ export default function HomePage() {
           >
             Genel tamamlanan: {genelTamamlanan}
           </div>
-          {personnelEfficiencyAgg.count > 0 && (
+          {rows.length > 0 ? (
             <div
               className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-surface-sm ${
-                prevAvgEfficiency == null || personnelEfficiencyAgg.avg === prevAvgEfficiency
-                  ? "border-slate-200/80 bg-slate-50 text-slate-800 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100"
-                  : personnelEfficiencyAgg.avg > prevAvgEfficiency
-                    ? "border-emerald-300/90 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
-                    : "border-rose-300/90 bg-rose-50 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/35 dark:text-rose-200"
+                personnelEfficiencyLive.count > 0
+                  ? prevAvgEfficiency == null || personnelEfficiencyLive.avg === prevAvgEfficiency
+                    ? "border-slate-200/80 bg-slate-50 text-slate-800 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100"
+                    : prevAvgEfficiency != null && personnelEfficiencyLive.avg > prevAvgEfficiency
+                      ? "border-emerald-300/90 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                      : "border-rose-300/90 bg-rose-50 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/35 dark:text-rose-200"
+                  : "border-dashed border-slate-300/90 bg-slate-50/80 text-slate-600 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-400"
               }`}
               title={
                 useIntradayEfficiency
                   ? "Bugün: 9 ölçüm dilimine göre anlık saat ortalaması ÷ Veri Sayfası saat adedi. Tam gün: günlük üretim ÷ günlük adet."
-                  : "Günlük üretim ÷ Veri Sayfası günlük adet (proses bazlı hedef)."
+                  : "Seçilen günde günlük üretim ÷ Genel Verimlilik’teki dk hedeflerine göre günlük adet."
               }
             >
-              Ortalama verimlilik: %{personnelEfficiencyAgg.avg}
-              <span className="ml-1.5 font-normal opacity-90">
-                ({personnelEfficiencyAgg.count} personel)
-              </span>
-              {prevAvgEfficiency != null && personnelEfficiencyAgg.avg !== prevAvgEfficiency && (
-                <span className="ml-2 text-xs font-medium opacity-95">
-                  · önceki iş günü %{prevAvgEfficiency}
-                  {personnelEfficiencyAgg.avg > prevAvgEfficiency ? " (yükseliş)" : " (düşüş)"}
-                </span>
+              {personnelEfficiencyLive.count > 0 ? (
+                <>
+                  Ortalama verimlilik: %{personnelEfficiencyLive.avg}
+                  <span className="ml-1.5 font-normal opacity-90">
+                    ({personnelEfficiencyLive.count} personel)
+                  </span>
+                  {prevAvgEfficiency != null && personnelEfficiencyLive.avg !== prevAvgEfficiency && (
+                    <span className="ml-2 text-xs font-medium opacity-95">
+                      · önceki iş günü %{prevAvgEfficiency}
+                      {personnelEfficiencyLive.avg > prevAvgEfficiency ? " (yükseliş)" : " (düşüş)"}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  Anlık verimlilik:{" "}
+                  <span className="font-black text-slate-500 dark:text-slate-400">—</span>
+                  <span className="ml-1.5 text-xs font-medium">
+                    {personnelEfficiencyLive.presentCount === 0 && personnelEfficiencyLive.withTarget === 0
+                      ? "(sahada olan yok)"
+                      : personnelEfficiencyLive.withTarget === 0
+                        ? "(satırlarda dk hedefi yok)"
+                        : ""}
+                  </span>
+                </>
               )}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Aksiyon butonları — sarılabilir satır */}
