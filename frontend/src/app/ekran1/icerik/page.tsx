@@ -27,9 +27,10 @@ import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
 const AUTO_REFRESH_MS = 30_000;
-/** Tam ekran doğum günü: her gösterim süresi ve iki gösterim arası */
+/** Doğum günü: yalnızca periyodik overlay — ~10 sn görünür, ardından ~50 sn gizli (döngü 60 sn). Alt şerit yok. */
 const BDAY_OVERLAY_VISIBLE_MS = 10_000;
 const BDAY_OVERLAY_CYCLE_MS = 60_000;
+const BDAY_FETCH_INTERVAL_MS = 60_000;
 
 function nWorkdaysBack(fromIso: string, n: number): string {
   const [y, m, d] = fromIso.split("-").map(Number);
@@ -92,14 +93,14 @@ const STAGE_GLOWS = [
 
 /** TV / uzak mesafe: açık zeminde okunaklı koyu tonlar */
 const STAGE_TEXT = [
-  "text-emerald-800",
-  "text-sky-800",
-  "text-violet-800",
-  "text-amber-800",
-  "text-rose-800",
-  "text-cyan-800",
-  "text-fuchsia-800",
-  "text-lime-800",
+  "text-emerald-950",
+  "text-sky-950",
+  "text-violet-950",
+  "text-amber-950",
+  "text-rose-950",
+  "text-cyan-950",
+  "text-fuchsia-950",
+  "text-lime-950",
 ] as const;
 
 const BDAY_CONFETTI_SPECS: {
@@ -172,74 +173,6 @@ const BDAY_CONFETTI_SPECS: {
   { left: "10%", drift: "-26px", delay: "1.48s", dur: "2.71s", w: 11, h: 12, bg: "#0d9488" },
   { left: "63%", drift: "56px", delay: "0.22s", dur: "3.18s", w: 10, h: 10, bg: "#d8b4fe" },
 ];
-
-/** İsim alanının sol/sağ kenarından dışa doğru patlayan parçacıklar (sağ taraf için scale-x mirror) */
-const BDAY_EDGE_BURST_SPECS: {
-  offY: number;
-  tx: number;
-  ty: number;
-  w: number;
-  h: number;
-  bg: string;
-  rot: string;
-  delay: string;
-  dur: string;
-}[] = [
-  { offY: -52, tx: -78, ty: -58, w: 11, h: 12, bg: "#fbbf24", rot: "220deg", delay: "0ms", dur: "2.05s" },
-  { offY: -38, tx: -102, ty: -28, w: 9, h: 14, bg: "#ec4899", rot: "310deg", delay: "140ms", dur: "2.25s" },
-  { offY: -26, tx: -88, ty: -8, w: 12, h: 10, bg: "#a78bfa", rot: "180deg", delay: "60ms", dur: "1.92s" },
-  { offY: -14, tx: -110, ty: -42, w: 10, h: 12, bg: "#34d399", rot: "260deg", delay: "200ms", dur: "2.18s" },
-  { offY: 0, tx: -96, ty: 12, w: 11, h: 11, bg: "#38bdf8", rot: "400deg", delay: "0ms", dur: "2.12s" },
-  { offY: 14, tx: -118, ty: -18, w: 9, h: 13, bg: "#fb7185", rot: "195deg", delay: "260ms", dur: "2.08s" },
-  { offY: 26, tx: -84, ty: 48, w: 12, h: 9, bg: "#f97316", rot: "340deg", delay: "100ms", dur: "2.22s" },
-  { offY: 38, tx: -100, ty: 22, w: 10, h: 12, bg: "#e879f9", rot: "275deg", delay: "180ms", dur: "1.98s" },
-  { offY: 50, tx: -76, ty: 58, w: 13, h: 10, bg: "#facc15", rot: "210deg", delay: "320ms", dur: "2.28s" },
-  { offY: -62, tx: -68, ty: -32, w: 8, h: 13, bg: "#22d3ee", rot: "300deg", delay: "400ms", dur: "2.15s" },
-  { offY: 18, tx: -92, ty: 36, w: 10, h: 10, bg: "#4ade80", rot: "355deg", delay: "220ms", dur: "2.02s" },
-  { offY: -46, tx: -104, ty: -48, w: 10, h: 11, bg: "#f472b6", rot: "245deg", delay: "460ms", dur: "2.3s" },
-  { offY: 42, tx: -72, ty: -6, w: 9, h: 12, bg: "#fde047", rot: "190deg", delay: "540ms", dur: "1.96s" },
-  { offY: -22, tx: -114, ty: 44, w: 11, h: 9, bg: "#c084fc", rot: "415deg", delay: "300ms", dur: "2.06s" },
-  { offY: 62, tx: -90, ty: -24, w: 10, h: 12, bg: "#14b8a6", rot: "230deg", delay: "520ms", dur: "2.24s" },
-  { offY: -8, tx: -98, ty: 56, w: 12, h: 11, bg: "#fb923c", rot: "285deg", delay: "80ms", dur: "2.14s" },
-];
-
-function Ekran1BirthdayEdgeBursts({ side }: { side: "left" | "right" }) {
-  const mirror = side === "right";
-  return (
-    <div
-      className={`pointer-events-none absolute top-1/2 z-[38] h-[min(19rem,44vh)] w-[clamp(4.25rem,10vw,7rem)] -translate-y-1/2 ${
-        side === "left" ? "left-0" : "right-0"
-      }`}
-      aria-hidden
-    >
-      <div className={`relative h-full w-full overflow-visible ${mirror ? "scale-x-[-1]" : ""}`}>
-        {BDAY_EDGE_BURST_SPECS.map((s, i) => (
-          <div
-            key={`bday-burst-${side}-${i}`}
-            className="absolute right-[10px] top-1/2"
-            style={{ transform: `translateY(calc(-50% + ${s.offY}px))` }}
-          >
-            <span
-              className={`ekran1-bday-edge-burst-inner block ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
-              style={
-                {
-                  width: s.w,
-                  height: s.h,
-                  backgroundColor: s.bg,
-                  "--ebb-tx": `${s.tx}px`,
-                  "--ebb-ty": `${s.ty}px`,
-                  "--ebb-rot": s.rot,
-                  animationDelay: s.delay,
-                  animationDuration: s.dur,
-                } as CSSProperties
-              }
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function Ekran1BirthdayCake({ className }: { className?: string }) {
   return (
@@ -542,11 +475,6 @@ export default function Ekran1IcerikPage() {
         }),
       );
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
-      try {
-        setBirthdayToday(await getPersonnelBirthdaysToday());
-      } catch {
-        setBirthdayToday([]);
-      }
     } catch {
       setError("Veri alınamadı. Oturum veya bağlantıyı kontrol edin.");
     } finally {
@@ -605,7 +533,22 @@ export default function Ekran1IcerikPage() {
     return () => clearInterval(id);
   }, [hasToken, fetchData]);
 
-  /** Bugün doğum günü olanlar: 30 sn’lik fetch’ten bağımsız olarak her ~1 dk’da bir ~10 sn tam ekran */
+  /** Doğum günleri üretim özetinden bağımsız yüklenir (API hatasında da TV şeridi çalışsın) */
+  useEffect(() => {
+    if (!hasToken) return;
+    const load = async () => {
+      try {
+        setBirthdayToday(await getPersonnelBirthdaysToday());
+      } catch {
+        setBirthdayToday([]);
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), BDAY_FETCH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [hasToken]);
+
+  /** Bugün doğum günü: arka planda ~10 sn görünür / ~50 sn gizli döngü (60 sn). */
   useEffect(() => {
     if (!birthdayPeopleKey) {
       setBirthdayOverlayVisible(false);
@@ -702,177 +645,106 @@ export default function Ekran1IcerikPage() {
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
 
       {birthdayOverlayVisible && birthdayToday.length > 0 && (
-        <div
-          className="pointer-events-none fixed inset-0 z-[100] flex min-h-[100dvh] min-h-0 flex-col justify-start overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-8 [-webkit-overflow-scrolling:touch] sm:justify-center sm:py-12"
-          role="status"
-          aria-live="polite"
-          aria-label={`Doğum günü kutlaması — ${birthdayCelebration.title}`}
-        >
-          {/* Arka plan: derin gradient + aurora küreleri */}
-          <div
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_80%_-10%,rgba(244,114,182,0.28),transparent_52%),radial-gradient(ellipse_at_10%_90%,rgba(167,139,250,0.32),transparent_46%),linear-gradient(160deg,#0f172a_0%,#1e1b4b_42%,#4c0519_76%,#0f172a_100%)]"
-            aria-hidden
-          />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/35" aria-hidden />
-          <div
-            className="ekran1-bday-aurora pointer-events-none absolute -left-[15%] top-[-20%] h-[72%] w-[72%] rounded-full bg-[conic-gradient(from_120deg,#f472b6,#fb7185,#a78bfa,#38bdf8,#f472b6)] opacity-[0.22] blur-[100px]"
-            aria-hidden
-          />
-          <div
-            className="ekran1-bday-aurora pointer-events-none absolute -right-[18%] bottom-[-28%] h-[62%] w-[62%] rounded-full bg-[conic-gradient(from_280deg,#fbbf24,#fb923c,#e879f9,#fbbf24)] opacity-[0.2] blur-[92px]"
-            style={{ animationDelay: "-4s" }}
-            aria-hidden
-          />
-          <div className="pointer-events-none absolute inset-0 backdrop-blur-[3px]" aria-hidden />
-
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-5 backdrop-blur-[3px] sm:p-8 md:p-10">
           <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-            <span className="ekran1-bday-twinkle absolute left-[8%] top-[14%] text-3xl text-amber-200/90 drop-shadow-[0_0_20px_rgba(253,224,71,0.55)] md:text-5xl">
-              ✦
-            </span>
-            <span
-              className="ekran1-bday-twinkle absolute right-[11%] top-[22%] text-2xl text-rose-200/88 drop-shadow-[0_0_16px_rgba(251,113,133,0.5)] md:text-4xl"
-              style={{ animationDelay: "-1.1s" }}
-            >
-              ✧
-            </span>
-            <span
-              className="ekran1-bday-twinkle absolute bottom-[26%] left-[18%] text-xl text-fuchsia-200/80 md:text-3xl"
-              style={{ animationDelay: "-0.55s" }}
-            >
-              ✦
-            </span>
+            <div className="absolute inset-0 bg-gradient-to-br from-rose-900/25 via-slate-900/20 to-violet-900/20" />
+            <div className="absolute inset-0 overflow-hidden">
+              {BDAY_CONFETTI_SPECS.slice(0, 28).map((c, i) => (
+                <span
+                  key={`bday-confetti-${i}`}
+                  className={`ekran1-bday-confetti-piece opacity-[0.9] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
+                  style={{
+                    left: c.left,
+                    width: c.w,
+                    height: c.h,
+                    background: c.bg,
+                    animationDuration: c.dur,
+                    animationDelay: c.delay,
+                    ...( { "--ekran1-drift": c.drift } as CSSProperties ),
+                  }}
+                />
+              ))}
+            </div>
           </div>
 
-          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-            {BDAY_CONFETTI_SPECS.map((c, i) => (
-              <span
-                key={`bday-confetti-${i}`}
-                className={`ekran1-bday-confetti-piece opacity-[0.96] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
-                style={{
-                  left: c.left,
-                  width: c.w,
-                  height: c.h,
-                  background: c.bg,
-                  animationDuration: c.dur,
-                  animationDelay: c.delay,
-                  ...( { "--ekran1-drift": c.drift } as CSSProperties ),
-                }}
-              />
-            ))}
-          </div>
+          {/* Pencereli büyük kutlama — tam ekran değil */}
+          <div
+            className="ekran1-bday-overlay-card relative z-10 flex max-h-[min(88vh,820px)] w-full max-w-[min(94vw,42rem)] flex-col overflow-hidden rounded-xl border-[3px] border-slate-600 shadow-[0_32px_96px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.14)_inset] sm:max-w-[48rem] md:max-w-[52rem] lg:max-w-[min(88vw,56rem)]"
+            role="dialog"
+            aria-modal="true"
+            aria-live="polite"
+            aria-label={`Doğum günü kutlaması — ${birthdayCelebration.title}`}
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b-2 border-slate-500/90 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 px-4 py-2.5 sm:px-5 sm:py-3">
+              <span className="flex shrink-0 gap-2" aria-hidden>
+                <span className="inline-block h-3 w-3 rounded-full bg-red-500 shadow-sm ring-1 ring-red-700/30 sm:h-3.5 sm:w-3.5" />
+                <span className="inline-block h-3 w-3 rounded-full bg-amber-400 shadow-sm ring-1 ring-amber-700/30 sm:h-3.5 sm:w-3.5" />
+                <span className="inline-block h-3 w-3 rounded-full bg-emerald-500 shadow-sm ring-1 ring-emerald-800/25 sm:h-3.5 sm:w-3.5" />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-center font-bold uppercase tracking-[0.14em] text-slate-700 text-[11px] sm:text-xs sm:tracking-[0.2em]">
+                Doğum Günü Kutlaması
+              </span>
+              <span className="inline-block w-14 shrink-0 sm:w-[72px]" aria-hidden />
+            </div>
 
-          <div className="ekran1-bday-overlay-card relative z-10 mx-auto w-full max-w-[min(100%,54rem)] shrink-0 pb-4 sm:pb-6">
-            <div
-              className="relative overflow-visible rounded-[1.85rem] border border-white/40 bg-white/[0.93] px-6 pb-9 pt-8 text-center shadow-[0_24px_80px_-14px_rgba(15,23,42,0.55),0_0_0_1px_rgba(255,255,255,0.92)_inset] ring-1 ring-slate-900/[0.04] backdrop-blur-2xl sm:rounded-[2.15rem] sm:px-10 sm:pb-10 sm:pt-10 md:px-14 md:pb-11 md:pt-11"
-              style={{
-                boxShadow:
-                  "0 0 120px rgba(236,72,153,0.12), inset 0 1px 0 rgba(255,255,255,1)",
-              }}
+            <div className="relative min-h-0 flex-1 overflow-y-auto rounded-b-[10px] bg-white text-center">
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-violet-500 via-rose-500 to-amber-400"
+                aria-hidden
+              />
+
+              <div className="relative px-6 pb-8 pt-6 sm:px-10 sm:pb-10 sm:pt-8 md:px-14 md:pb-12 md:pt-10">
+            <span className="mb-4 inline-flex items-center gap-2 rounded-full border-2 border-rose-400 bg-rose-50 px-4 py-1.5 text-xs font-extrabold uppercase tracking-[0.26em] text-rose-800 sm:mb-5 sm:px-5 sm:py-2 sm:text-sm sm:tracking-[0.3em]">
+              <svg className="h-5 w-5 text-amber-500 sm:h-6 sm:w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path d="m12 2 1.74 5.57h5.8l-4.7 3.61 1.82 5.62L12 15.73 7.34 17.8l1.82-5.62-4.7-3.61h5.8L12 2z" />
+              </svg>
+              Bugün
+            </span>
+
+            <div className="mx-auto flex max-w-lg justify-center rounded-2xl bg-gradient-to-b from-rose-50 to-white p-4 ring-2 ring-rose-100/90 sm:max-w-xl sm:p-6 md:p-7">
+              <Ekran1BirthdayCake className="h-[5.5rem] w-auto sm:h-[6.5rem] md:h-[7.5rem]" />
+            </div>
+
+            <p
+              className="mt-6 font-black leading-tight tracking-wide text-teal-950 sm:mt-8"
+              style={{ fontSize: "clamp(1.35rem, 4.2vw, 2.5rem)" }}
             >
-              {/* Üst aksan */}
-              <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent opacity-90" aria-hidden />
-              <div
-                className="pointer-events-none absolute inset-x-0 top-0 h-2 bg-gradient-to-r from-violet-500 via-rose-500 to-amber-400"
-                aria-hidden
-              />
-              <div
-                className="pointer-events-none absolute -right-6 -top-6 h-36 w-36 rounded-full bg-gradient-to-br from-pink-300/45 to-violet-500/35 blur-[64px]"
-                aria-hidden
-              />
-              <div
-                className="pointer-events-none absolute -bottom-8 -left-8 h-40 w-40 rounded-full bg-gradient-to-tr from-amber-200/5 to-rose-400/35 blur-[72px]"
-                aria-hidden
-              />
+              {birthdayCelebration.title}
+            </p>
+            <p className="mt-3 text-sm font-semibold capitalize leading-snug text-slate-700 md:text-base">
+              {birthdayCelebration.dateLine}
+            </p>
 
-              {/* Bugün rozeti */}
-              <div className="relative z-30 mb-3 flex justify-center">
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/75 bg-white/95 px-4 py-2 text-[11px] font-extrabold uppercase tracking-[0.28em] text-rose-600 shadow-[0_8px_32px_-8px_rgba(244,63,94,0.35)] ring-1 ring-rose-200/70 sm:text-xs md:mb-5">
-                  <svg className="h-4 w-4 text-amber-500 drop-shadow-sm" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path d="m12 2 1.74 5.57h5.8l-4.7 3.61 1.82 5.62L12 15.73 7.34 17.8l1.82-5.62-4.7-3.61h5.8L12 2z" />
-                  </svg>
-                  Bugün
-                </span>
-              </div>
-
-              <div className="relative z-30 mx-auto mb-5 flex justify-center md:mb-6">
-                <div className="rounded-[1.75rem] bg-gradient-to-b from-white via-rose-50/90 to-orange-50/40 p-[3px] shadow-[0_20px_50px_-12px_rgba(244,63,94,0.35)] ring-1 ring-rose-200/65">
-                  <div className="rounded-[1.65rem] bg-gradient-to-b from-white to-rose-50/70 px-6 py-3.5 sm:px-8 sm:py-4 md:py-5">
-                    <Ekran1BirthdayCake className="mx-auto h-[4.5rem] w-auto drop-shadow-[0_16px_28px_rgba(15,23,42,0.14)] sm:h-[6rem] md:h-[7rem]" />
-                  </div>
-                </div>
-              </div>
-
+            {birthdayCelebration.people.length === 1 ? (
               <p
-                className="relative z-30 mx-auto mt-2 max-w-full bg-gradient-to-br from-emerald-900 via-teal-800 to-emerald-800 bg-clip-text font-black leading-[1.02] tracking-[0.06em] text-transparent"
-                style={{ fontSize: "clamp(2rem, 6.2vw, 3.75rem)", filter: "drop-shadow(0 1px 0 rgba(255,255,255,0.75))" }}
+                className="mt-7 font-black leading-tight text-neutral-950 sm:mt-8"
+                style={{ fontSize: "clamp(2rem, 7vw, 3.75rem)" }}
               >
-                {birthdayCelebration.title}
+                {birthdayCelebration.people[0]!.fullName}
               </p>
+            ) : (
+              <ul className="mx-auto mt-7 max-w-2xl space-y-3 sm:mt-9 sm:space-y-4 md:max-w-3xl">
+                {birthdayCelebration.people.map(({ id, fullName }) => (
+                  <li
+                    key={id}
+                    className="rounded-2xl border-[3px] border-rose-200 bg-rose-50/95 px-6 py-4 text-center font-bold leading-snug text-neutral-900 sm:px-8 sm:py-5"
+                    style={{ fontSize: "clamp(1.2rem, 3.8vw, 1.85rem)" }}
+                  >
+                    {fullName}
+                  </li>
+                ))}
+              </ul>
+            )}
 
-              <p className="relative z-30 mx-auto mt-3 max-w-lg text-[11px] font-semibold capitalize leading-snug text-slate-500 sm:text-xs md:text-sm">
-                {birthdayCelebration.dateLine}
+            <footer className="mx-auto mt-8 max-w-xl rounded-2xl border-2 border-emerald-900/45 bg-emerald-700 px-6 py-4 text-white shadow-lg sm:mt-10 sm:px-8 sm:py-5">
+              <p className="text-xs font-black uppercase tracking-[0.28em] sm:text-sm sm:tracking-[0.32em]">
+                YEŞİL İMAJ TEKSTİL
               </p>
-
-              <div className="relative z-30 mx-auto mt-7 w-full max-w-3xl sm:mt-10">
-                <div className="relative px-1 sm:px-2 md:px-4">
-                  <Ekran1BirthdayEdgeBursts side="left" />
-                  <Ekran1BirthdayEdgeBursts side="right" />
-                  {birthdayCelebration.people.length === 1 ? (
-                    <div className="relative z-40 mx-auto w-full max-w-2xl rounded-2xl border-2 border-white/95 bg-white/90 px-8 py-7 shadow-[0_20px_48px_-18px_rgba(15,23,42,0.25),inset_0_1px_0_rgba(255,255,255,1)] ring-2 ring-rose-300/55 backdrop-blur-md sm:rounded-[1.65rem] sm:px-14 sm:py-9 md:py-10">
-                      <p
-                        className="relative text-center font-black leading-[1.06] tracking-[0.02em] text-transparent"
-                        style={{
-                          fontSize: "clamp(2.15rem, 8vw, 4.35rem)",
-                          filter: "drop-shadow(0 4px 22px rgba(251,113,133,0.42))",
-                          backgroundImage:
-                            "linear-gradient(135deg,#0f172a 0%,#9f1239 38%,#be185d 62%,#312e81 100%)",
-                          backgroundClip: "text",
-                          WebkitBackgroundClip: "text",
-                        }}
-                      >
-                        {birthdayCelebration.people[0]!.fullName}
-                      </p>
-                      <div
-                        className="pointer-events-none absolute inset-x-4 top-1/2 -translate-y-1/2 -z-10 blur-2xl opacity-90 sm:inset-x-10"
-                        aria-hidden
-                      >
-                        <div className="mx-auto h-24 max-w-md rounded-full bg-white/80 sm:h-28" />
-                      </div>
-                    </div>
-                  ) : (
-                    <ul className="relative z-40 flex flex-wrap items-center justify-center gap-x-6 gap-y-5 md:gap-x-10 md:gap-y-6">
-                      {birthdayCelebration.people.map(({ id, fullName }) => (
-                        <li key={id} className="min-w-[min(100%,16rem)] max-w-xl flex-1 sm:min-w-[15rem] sm:flex-none md:max-w-none">
-                          <div className="rounded-2xl border-2 border-white/98 bg-white/92 px-6 py-5 text-center shadow-lg ring-2 ring-rose-200/55 backdrop-blur-md sm:rounded-3xl sm:py-7">
-                            <p
-                              className="text-balance font-black leading-tight tracking-tight text-transparent"
-                              style={{
-                                fontSize: "clamp(1.35rem, 4.2vw, 2.5rem)",
-                                backgroundImage:
-                                  "linear-gradient(135deg,#0f172a 0%,#9f1239 45%,#312e81 100%)",
-                                backgroundClip: "text",
-                                WebkitBackgroundClip: "text",
-                                filter: "drop-shadow(0 3px 16px rgba(244,114,182,0.35))",
-                              }}
-                            >
-                              {fullName}
-                            </p>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+              <p className="mt-2 text-sm font-semibold leading-snug text-emerald-50 sm:text-base">
+                Mutluluk, sağlık ve güzel yarınlar dileriz
+              </p>
+            </footer>
               </div>
-
-              <footer className="relative z-40 mt-8 rounded-xl border border-emerald-100/95 bg-gradient-to-r from-emerald-50 via-white to-teal-50/90 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] ring-1 ring-emerald-200/70 sm:mt-10 sm:py-5 md:mt-11">
-                <p className="text-sm font-black uppercase tracking-[0.28em] text-emerald-800 sm:text-base sm:tracking-[0.32em]">
-                  YEŞİL İMAJ TEKSTİL
-                </p>
-                <p className="mt-1.5 font-semibold leading-snug text-emerald-900/90" style={{ fontSize: 'clamp(0.85rem, 2vw, 1.125rem)' }}>
-                  Mutluluk, sağlık ve güzel yarınlar dileriz
-                </p>
-              </footer>
             </div>
           </div>
         </div>
@@ -885,7 +757,7 @@ export default function Ekran1IcerikPage() {
 
       {/* Ana içerik: üst sabit, alt aşamalar kalan yükseklikte kayar (TV’de kesilme olmasın) */}
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,120rem)] flex-col gap-3 px-3 py-2 sm:gap-4 sm:px-5 sm:py-3 md:gap-5 md:px-8 md:py-4 min-[1920px]:gap-5 min-[1920px]:px-10 min-[1920px]:py-5">
+        <div className="mx-auto flex min-h-0 w-full max-w-[min(100%,120rem)] flex-1 flex-col gap-3 px-3 py-2 sm:gap-4 sm:px-5 sm:py-3 md:gap-5 md:px-8 md:py-4 min-[1920px]:gap-5 min-[1920px]:px-10 min-[1920px]:py-5">
 
           {/* Header — opak zemin, TV’de saydam/ soluk okuma yok */}
           <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-slate-300 bg-white px-5 py-3.5 shadow-md">
@@ -1096,7 +968,7 @@ export default function Ekran1IcerikPage() {
                     <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${row.gradient}`} />
 
                     <div className="flex items-start justify-between gap-2 pt-1.5">
-                      <span className="min-w-0 text-left text-[11px] font-bold leading-snug text-slate-800 sm:text-xs md:text-sm dark:text-slate-100">
+                      <span className="min-w-0 text-left text-[11px] font-bold leading-snug text-slate-950 sm:text-xs md:text-sm dark:text-slate-100">
                         {row.label}
                       </span>
                       <span className={`shrink-0 text-base font-black tabular-nums sm:text-lg md:text-xl ${row.textColor} dark:opacity-95`}>
@@ -1112,7 +984,7 @@ export default function Ekran1IcerikPage() {
                       />
                     </div>
 
-                    <p className="mt-2 text-[11px] font-bold tabular-nums text-slate-800 sm:text-xs md:text-sm dark:text-slate-200">
+                    <p className="mt-2 text-[11px] font-bold tabular-nums text-slate-950 sm:text-xs md:text-sm dark:text-slate-200">
                       {row.value.toLocaleString("tr-TR")} / {target.toLocaleString("tr-TR")}
                     </p>
                   </div>

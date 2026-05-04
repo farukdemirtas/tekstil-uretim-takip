@@ -62,6 +62,7 @@ import {
   persistPermissions,
   clearStoredPermissions,
 } from "@/lib/permissions";
+import { openTvWindow } from "@/lib/openTvWindow";
 import { ProductionRow } from "@/lib/types";
 
 const EXPORT_TEAM_FALLBACK = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
@@ -1046,9 +1047,9 @@ export default function HomePage() {
           hasPermission("ekran2") ||
           hasPermission("ekran3") ||
           hasPermission("ekran4") ? (
-            <Link href="/ekran1" className="btn-nav" target="_blank" rel="noopener noreferrer">
+            <button type="button" className="btn-nav" onClick={() => openTvWindow("/ekran1")}>
               TV Ekranları
-            </Link>
+            </button>
           ) : null}
           <button
             type="button"

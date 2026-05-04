@@ -16,6 +16,7 @@ import {
   setAuthToken,
 } from "@/lib/api";
 import { hasPermission } from "@/lib/permissions";
+import { openTvWindow } from "@/lib/openTvWindow";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { rankTercileStyles } from "@/lib/rankTercile";
@@ -434,22 +435,20 @@ export default function AnalysisPage() {
             >
               Kişi analizi
             </Link>
-            <Link
-              href="/ekran2"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
               className="rounded-md border border-teal-600/50 bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500"
+              onClick={() => openTvWindow("/ekran2")}
             >
               EKRAN2
-            </Link>
-            <Link
-              href="/ekran3"
-              target="_blank"
-              rel="noopener noreferrer"
+            </button>
+            <button
+              type="button"
               className="rounded-md border border-emerald-600/50 bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-600 dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+              onClick={() => openTvWindow("/ekran3")}
             >
               EKRAN3
-            </Link>
+            </button>
             <Link href="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-700">
               Üretim Ekranı
             </Link>
