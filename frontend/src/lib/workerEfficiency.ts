@@ -32,7 +32,10 @@ export function workerEfficiencyPercent(
   return Math.min(Math.round((total / gunluk) * 100), 100);
 }
 
-/** Hedefi tanımlı ve sahada olan personel üzerinden aritmetik ortalama */
+/**
+ * Hedefi tanımlı, sahada ve en az bir adet üretim girmiş personel üzerinden aritmetik ortalama.
+ * Toplam adet 0 olanlar (henüz/gün boyu giriş yok) ortalamaya dahil edilmez; satır rozeti yine %0 gösterebilir.
+ */
 export function averageWorkerEfficiency(
   rows: ProductionRow[],
   prosesMap: ProsesMap,
@@ -41,6 +44,8 @@ export function averageWorkerEfficiency(
   let sum = 0;
   let n = 0;
   for (const row of rows) {
+    if (row.absentForDay) continue;
+    if (sumProductionRow(row) <= 0) continue;
     const p = workerEfficiencyPercent(row, prosesMap, useIntradayRate);
     if (p !== null) {
       sum += p;
