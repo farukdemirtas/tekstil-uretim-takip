@@ -13,7 +13,6 @@ import {
 } from "@/lib/api";
 import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
-import { openTvWindow } from "@/lib/openTvWindow";
 import { hasPermission } from "@/lib/permissions";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
@@ -272,20 +271,18 @@ export default function HedefTakip() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <button
-              type="button"
+            <Link
+              href="/ekran1"
               className="rounded-md border border-emerald-600/50 bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-              onClick={() => openTvWindow("/ekran1")}
             >
               EKRAN1
-            </button>
-            <button
-              type="button"
+            </Link>
+            <Link
+              href="/ekran2"
               className="rounded-md border border-teal-600/50 bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500"
-              onClick={() => openTvWindow("/ekran2")}
             >
               EKRAN2
-            </button>
+            </Link>
             <Link
               href="/"
               className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"

@@ -19,7 +19,11 @@ import {
   replaceLocalGenelCacheFromServerRows,
   GENEL_VERIMLILIK_MODEL_CODE,
 } from "@/lib/prosesVeri";
-import { previousWeekdayIso, todayIsoTurkey, todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
+import {
+  previousWeekdayIso,
+  todayIsoTurkey,
+  todayWorkdayIsoTurkey,
+} from "@/lib/businessCalendar";
 import { sumProductionRow } from "@/lib/productionSlots";
 import { averageWorkerEfficiency, workerEfficiencyPercent } from "@/lib/workerEfficiency";
 import { hasPermission } from "@/lib/permissions";
@@ -67,6 +71,18 @@ function formatDateTr(dateStr: string) {
   if (!dateStr) return "";
   const [y, m, d] = dateStr.split("-");
   return `${d}.${m}.${y}`;
+}
+
+/** Tamamlanmış yaş: `referenceIso` (YYYY-MM-DD) tarihindeki yaş. */
+function completedAgeAtReference(birthDateIso: string, referenceIso: string): number {
+  const p = birthDateIso.split("-").map(Number);
+  const r = referenceIso.split("-").map(Number);
+  if (p.length < 3 || r.length < 3) return 0;
+  const [by, bm, bd] = p;
+  const [ry, rm, rd] = r;
+  let age = ry - by;
+  if (rm < bm || (rm === bm && rd < bd)) age -= 1;
+  return Math.max(0, age);
 }
 
 const STAGE_GRADIENTS = [
@@ -174,9 +190,20 @@ const BDAY_CONFETTI_SPECS: {
   { left: "63%", drift: "56px", delay: "0.22s", dur: "3.18s", w: 10, h: 10, bg: "#d8b4fe" },
 ];
 
-function Ekran1BirthdayCake({ className }: { className?: string }) {
+function Ekran1BirthdayCake({ className, age }: { className?: string; age?: number | null }) {
+  const showAge = age != null && age >= 0 && age < 130;
+  const ageFont = showAge && age! > 99 ? 15 : showAge && age! > 9 ? 21 : 27;
   return (
-    <svg className={className} viewBox="0 0 200 128" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+    <svg
+      className={className}
+      viewBox="0 0 200 128"
+      width={200}
+      height={128}
+      preserveAspectRatio="xMidYMid meet"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
       <defs>
         <linearGradient id="bday-plate" x1="100" y1="108" x2="100" y2="124" gradientUnits="userSpaceOnUse">
           <stop stopColor="#f1f5f9" />
@@ -265,6 +292,23 @@ function Ekran1BirthdayCake({ className }: { className?: string }) {
       <ellipse cx="82" cy="9" rx="2" ry="3" fill="#fef9c3" opacity="0.9" />
       <ellipse cx="100" cy="7" rx="2.2" ry="3.2" fill="#fef9c3" />
       <ellipse cx="118" cy="9" rx="2" ry="3" fill="#fef9c3" opacity="0.9" />
+      {showAge && (
+        <text
+          x="100"
+          y="58"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="#5b21b6"
+          fontSize={ageFont}
+          fontWeight="800"
+          stroke="#fff"
+          strokeWidth="1.4"
+          paintOrder="stroke fill"
+          style={{ fontFamily: "system-ui, Segoe UI, sans-serif" }}
+        >
+          {age}
+        </text>
+      )}
     </svg>
   );
 }
@@ -288,10 +332,12 @@ export default function Ekran1IcerikPage() {
 
   const birthdayCelebration = useMemo(() => {
     if (birthdayToday.length === 0)
-      return { title: "", people: [] as { id: number; fullName: string }[], dateLine: "" };
+      return { title: "", people: [] as { id: number; fullName: string; age: number }[], dateLine: "" };
+    const refIso = todayIsoTurkey();
     const people = birthdayToday.map((p) => ({
       id: p.id,
       fullName: `${p.firstName} ${p.lastName}`.trim(),
+      age: completedAgeAtReference(p.birthDate, refIso),
     }));
     const title =
       birthdayToday.length === 1 ? "DOĞUM GÜNÜN KUTLU OLSUN!" : "DOĞUM GÜNÜNÜZ KUTLU OLSUN!";
@@ -645,14 +691,14 @@ export default function Ekran1IcerikPage() {
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
 
       {birthdayOverlayVisible && birthdayToday.length > 0 && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-5 backdrop-blur-[3px] sm:p-8 md:p-10">
-          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950/40 px-3 py-3 backdrop-blur-[3px] sm:px-5 sm:py-4">
+          <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
             <div className="absolute inset-0 bg-gradient-to-br from-rose-900/25 via-slate-900/20 to-violet-900/20" />
             <div className="absolute inset-0 overflow-hidden">
-              {BDAY_CONFETTI_SPECS.slice(0, 28).map((c, i) => (
+              {BDAY_CONFETTI_SPECS.map((c, i) => (
                 <span
                   key={`bday-confetti-${i}`}
-                  className={`ekran1-bday-confetti-piece opacity-[0.9] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
+                  className={`ekran1-bday-confetti-piece opacity-[0.92] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
                   style={{
                     left: c.left,
                     width: c.w,
@@ -667,83 +713,111 @@ export default function Ekran1IcerikPage() {
             </div>
           </div>
 
-          {/* Pencereli büyük kutlama — tam ekran değil */}
+          {/* TV: scroll yok — tüm içerik calc(100dvh) içinde sığar; taşma yok */}
           <div
-            className="ekran1-bday-overlay-card relative z-10 flex max-h-[min(88vh,820px)] w-full max-w-[min(94vw,42rem)] flex-col overflow-hidden rounded-xl border-[3px] border-slate-600 shadow-[0_32px_96px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.14)_inset] sm:max-w-[48rem] md:max-w-[52rem] lg:max-w-[min(88vw,56rem)]"
+            className="ekran1-bday-overlay-card relative z-10 flex h-[min(780px,calc(100dvh-1.25rem))] w-full max-w-[min(96vw,52rem)] flex-col overflow-hidden rounded-xl border-[3px] border-slate-600 shadow-[0_32px_96px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.14)_inset] sm:max-w-[58rem] md:max-w-[min(94vw,64rem)]"
             role="dialog"
             aria-modal="true"
             aria-live="polite"
             aria-label={`Doğum günü kutlaması — ${birthdayCelebration.title}`}
           >
-            <div className="flex shrink-0 items-center gap-3 border-b-2 border-slate-500/90 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 px-4 py-2.5 sm:px-5 sm:py-3">
-              <span className="flex shrink-0 gap-2" aria-hidden>
-                <span className="inline-block h-3 w-3 rounded-full bg-red-500 shadow-sm ring-1 ring-red-700/30 sm:h-3.5 sm:w-3.5" />
-                <span className="inline-block h-3 w-3 rounded-full bg-amber-400 shadow-sm ring-1 ring-amber-700/30 sm:h-3.5 sm:w-3.5" />
-                <span className="inline-block h-3 w-3 rounded-full bg-emerald-500 shadow-sm ring-1 ring-emerald-800/25 sm:h-3.5 sm:w-3.5" />
+            <div className="flex shrink-0 items-center gap-2 border-b-2 border-slate-500/90 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+              <span className="flex shrink-0 gap-1.5 sm:gap-2" aria-hidden>
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 shadow-sm ring-1 ring-red-700/30 sm:h-3 sm:w-3" />
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400 shadow-sm ring-1 ring-amber-700/30 sm:h-3 sm:w-3" />
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-sm ring-1 ring-emerald-800/25 sm:h-3 sm:w-3" />
               </span>
-              <span className="min-w-0 flex-1 truncate text-center font-bold uppercase tracking-[0.14em] text-slate-700 text-[11px] sm:text-xs sm:tracking-[0.2em]">
+              <span className="min-w-0 flex-1 truncate text-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-700 sm:text-[11px] sm:tracking-[0.18em]">
                 Doğum Günü Kutlaması
               </span>
-              <span className="inline-block w-14 shrink-0 sm:w-[72px]" aria-hidden />
+              <span className="inline-block w-12 shrink-0 sm:w-14" aria-hidden />
             </div>
 
-            <div className="relative min-h-0 flex-1 overflow-y-auto rounded-b-[10px] bg-white text-center">
-              <div
-                className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-violet-500 via-rose-500 to-amber-400"
-                aria-hidden
-              />
-
-              <div className="relative px-6 pb-8 pt-6 sm:px-10 sm:pb-10 sm:pt-8 md:px-14 md:pb-12 md:pt-10">
-            <span className="mb-4 inline-flex items-center gap-2 rounded-full border-2 border-rose-400 bg-rose-50 px-4 py-1.5 text-xs font-extrabold uppercase tracking-[0.26em] text-rose-800 sm:mb-5 sm:px-5 sm:py-2 sm:text-sm sm:tracking-[0.3em]">
-              <svg className="h-5 w-5 text-amber-500 sm:h-6 sm:w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path d="m12 2 1.74 5.57h5.8l-4.7 3.61 1.82 5.62L12 15.73 7.34 17.8l1.82-5.62-4.7-3.61h5.8L12 2z" />
-              </svg>
-              Bugün
-            </span>
-
-            <div className="mx-auto flex max-w-lg justify-center rounded-2xl bg-gradient-to-b from-rose-50 to-white p-4 ring-2 ring-rose-100/90 sm:max-w-xl sm:p-6 md:p-7">
-              <Ekran1BirthdayCake className="h-[5.5rem] w-auto sm:h-[6.5rem] md:h-[7.5rem]" />
-            </div>
-
-            <p
-              className="mt-6 font-black leading-tight tracking-wide text-teal-950 sm:mt-8"
-              style={{ fontSize: "clamp(1.35rem, 4.2vw, 2.5rem)" }}
-            >
-              {birthdayCelebration.title}
-            </p>
-            <p className="mt-3 text-sm font-semibold capitalize leading-snug text-slate-700 md:text-base">
-              {birthdayCelebration.dateLine}
-            </p>
-
-            {birthdayCelebration.people.length === 1 ? (
-              <p
-                className="mt-7 font-black leading-tight text-neutral-950 sm:mt-8"
-                style={{ fontSize: "clamp(2rem, 7vw, 3.75rem)" }}
-              >
-                {birthdayCelebration.people[0]!.fullName}
-              </p>
-            ) : (
-              <ul className="mx-auto mt-7 max-w-2xl space-y-3 sm:mt-9 sm:space-y-4 md:max-w-3xl">
-                {birthdayCelebration.people.map(({ id, fullName }) => (
-                  <li
-                    key={id}
-                    className="rounded-2xl border-[3px] border-rose-200 bg-rose-50/95 px-6 py-4 text-center font-bold leading-snug text-neutral-900 sm:px-8 sm:py-5"
-                    style={{ fontSize: "clamp(1.2rem, 3.8vw, 1.85rem)" }}
-                  >
-                    {fullName}
-                  </li>
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-b-[10px] bg-white text-center">
+              <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-b-[10px]" aria-hidden>
+                {BDAY_CONFETTI_SPECS.slice(0, 40).map((c, i) => (
+                  <span
+                    key={`bday-confetti-in-${i}`}
+                    className={`ekran1-bday-confetti-piece opacity-[0.62] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
+                    style={{
+                      left: c.left,
+                      width: Math.round(c.w * 0.72),
+                      height: Math.round(c.h * 0.72),
+                      background: c.bg,
+                      animationDuration: c.dur,
+                      animationDelay: c.delay,
+                      ...( { "--ekran1-drift": c.drift } as CSSProperties ),
+                    }}
+                  />
                 ))}
-              </ul>
-            )}
+              </div>
 
-            <footer className="mx-auto mt-8 max-w-xl rounded-2xl border-2 border-emerald-900/45 bg-emerald-700 px-6 py-4 text-white shadow-lg sm:mt-10 sm:px-8 sm:py-5">
-              <p className="text-xs font-black uppercase tracking-[0.28em] sm:text-sm sm:tracking-[0.32em]">
-                YEŞİL İMAJ TEKSTİL
-              </p>
-              <p className="mt-2 text-sm font-semibold leading-snug text-emerald-50 sm:text-base">
-                Mutluluk, sağlık ve güzel yarınlar dileriz
-              </p>
-            </footer>
+              <div className="relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <div
+                  className="pointer-events-none shrink-0 h-1 bg-gradient-to-r from-violet-500 via-rose-500 to-amber-400"
+                  aria-hidden
+                />
+
+                <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 py-2 sm:gap-3 sm:px-4 sm:py-3 md:flex-row md:items-stretch md:gap-0 md:px-0 md:py-0">
+                {/* Sol ~%70: Bugün → pasta (yaş) → kutlama → tarih → isim — blok dikey ortada */}
+                <div className="-translate-y-[10px] flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3 overflow-hidden py-2 text-center sm:gap-3.5 md:flex-[7] md:basis-0 md:border-r-2 md:border-slate-300 md:px-5 md:py-4 min-[1920px]:gap-4 min-[1920px]:px-6 min-[1920px]:py-5">
+                  <span className="mx-auto inline-flex shrink-0 items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-1.5 text-xs font-black uppercase tracking-widest text-white shadow min-[1920px]:px-4 min-[1920px]:py-2 min-[1920px]:text-sm">
+                    <svg className="h-4 w-4 shrink-0 text-white/95 min-[1920px]:h-5 min-[1920px]:w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path d="m12 2 1.74 5.57h5.8l-4.7 3.61 1.82 5.62L12 15.73 7.34 17.8l1.82-5.62-4.7-3.61h5.8L12 2z" />
+                    </svg>
+                    Bugün
+                  </span>
+
+                  <div className="relative z-[3] mx-auto flex w-full max-w-md min-h-[8rem] shrink-0 items-center justify-center rounded-2xl bg-slate-100 px-2 py-2 sm:min-h-[9rem] sm:px-3 sm:py-3 min-[1920px]:min-h-[10rem]">
+                    <Ekran1BirthdayCake
+                      age={birthdayCelebration.people.length === 1 ? birthdayCelebration.people[0]!.age : null}
+                      className="block aspect-[200/128] h-auto w-[min(240px,78vw)] min-h-[120px] min-w-[200px] max-h-[min(22vh,12rem)] max-w-full shrink-0 [overflow:visible]"
+                    />
+                  </div>
+
+                  <p
+                    className="shrink-0 text-center font-black uppercase leading-tight tracking-tight text-slate-900 min-[1920px]:tracking-wide"
+                    style={{ fontSize: "clamp(1.05rem, 4.2vmin, 2rem)" }}
+                  >
+                    {birthdayCelebration.title}
+                  </p>
+                  <p
+                    className="shrink-0 text-center font-bold capitalize leading-tight text-slate-600 min-[1920px]:text-base"
+                    style={{ fontSize: "clamp(0.8rem, 2vmin, 1.1rem)" }}
+                  >
+                    {birthdayCelebration.dateLine}
+                  </p>
+
+                  {birthdayCelebration.people.length === 1 ? (
+                    <p
+                      className="min-h-0 shrink text-center font-black leading-[1.06] text-slate-950 [text-shadow:0_1px_0_rgba(255,255,255,0.6)]"
+                      style={{ fontSize: "clamp(1.5rem, 6vmin, 3.25rem)" }}
+                    >
+                      {birthdayCelebration.people[0]!.fullName}
+                    </p>
+                  ) : (
+                    <ul className="grid min-h-0 w-full shrink grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5">
+                      {birthdayCelebration.people.map(({ id, fullName }) => (
+                        <li
+                          key={id}
+                          className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-center text-sm font-extrabold leading-tight text-slate-900 shadow-sm sm:text-base sm:leading-snug min-[1920px]:px-4 min-[1920px]:py-3 min-[1920px]:text-lg"
+                        >
+                          {fullName}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <footer className="flex w-full min-h-0 min-w-0 shrink-0 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-slate-300 bg-gradient-to-br from-emerald-500 via-teal-600 to-emerald-700 px-4 py-6 text-white shadow-lg sm:gap-3.5 sm:px-5 sm:py-7 md:flex-[3] md:basis-0 md:rounded-none md:border-0 md:shadow-none min-[1920px]:gap-4 min-[1920px]:px-6 min-[1920px]:py-8">
+                  <h2 className="w-full text-balance text-center text-[clamp(1rem,2.8vmin,1.85rem)] font-black uppercase leading-tight tracking-[0.14em] text-white [text-shadow:0_2px_8px_rgba(0,0,0,0.25)] min-[1920px]:text-[clamp(1.5rem,2vw,2.45rem)] min-[1920px]:tracking-[0.16em]">
+                    YEŞİL İMAJ TEKSTİL
+                  </h2>
+                  <p className="w-full text-balance text-center text-[clamp(0.95rem,2.4vmin,1.55rem)] font-semibold leading-snug text-white/95 min-[1920px]:text-[clamp(1.15rem,1.55vw,1.85rem)] min-[1920px]:leading-relaxed">
+                    Mutluluk, sağlık ve güzel yarınlar dileriz.
+                  </p>
+                </footer>
+                </div>
               </div>
             </div>
           </div>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Ekran3WorkerCard } from "@/components/Ekran3WorkerCard";
 import {
+  getPersonnelBirthdaysToday,
   getTeams,
   getTopWorkersAnalytics,
   getWorkerHourlyBreakdown,
@@ -18,6 +19,11 @@ const REFRESH_MS = 30_000;
 const TOP_LIMIT = 200;
 /** Geniş aralık: son kaç iş günü baz alınır */
 const WIDE_WORKING_DAYS = 30;
+
+/** Ayarlar’daki doğum günü kaydı ile vitrin ismini eşleştirmek için */
+function normalizeDisplayName(s: string): string {
+  return s.trim().replace(/\s+/g, " ").toLocaleUpperCase("tr-TR");
+}
 
 type CardData = {
   worker: TopWorkerAnalytics | null;
@@ -56,6 +62,7 @@ export default function Ekran3Page() {
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
   const [isFallbackMode, setIsFallbackMode] = useState(false);
+  const [birthdayNameSet, setBirthdayNameSet] = useState<Set<string>>(() => new Set());
   const firstFetchRef = useRef(true);
 
   const displayDate = todayWeekdayIso();
@@ -66,12 +73,17 @@ export default function Ekran3Page() {
     setError("");
     if (firstFetchRef.current) setLoading(true);
     try {
-      const [teams, rawToday, rawWide, rawYesterday] = await Promise.all([
+      const [teams, rawToday, rawWide, rawYesterday, todayBirthdays] = await Promise.all([
         getTeams(),
         getTopWorkersAnalytics({ startDate: displayDate, endDate: displayDate, limit: TOP_LIMIT }),
         getTopWorkersAnalytics({ startDate: wideStartDate, endDate: displayDate, limit: TOP_LIMIT }),
         getTopWorkersAnalytics({ startDate: yesterdayDate, endDate: yesterdayDate, limit: TOP_LIMIT }),
+        getPersonnelBirthdaysToday().catch(() => [] as { firstName: string; lastName: string }[]),
       ]);
+
+      setBirthdayNameSet(
+        new Set(todayBirthdays.map((b) => normalizeDisplayName(`${b.firstName} ${b.lastName}`)))
+      );
 
       const labelMap: Record<string, string> = Object.fromEntries(teams.map((t) => [t.code, t.label]));
 
@@ -142,6 +154,7 @@ export default function Ekran3Page() {
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
     } catch {
       setError("Veri alınamadı.");
+      setBirthdayNameSet(new Set());
       setCards([
         { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
         { worker: null, rank: null, teamLabel: "", hourly: null, multiDayTotal: 0, multiDayActiveDays: 0, prevDayTotal: 0 },
@@ -302,6 +315,9 @@ export default function Ekran3Page() {
             multiDayTotal={c.multiDayTotal}
             multiDayActiveDays={c.multiDayActiveDays}
             prevDayTotal={c.prevDayTotal}
+            birthdayBurst={
+              c.worker != null && birthdayNameSet.has(normalizeDisplayName(c.worker.name))
+            }
           />
         ))}
       </div>
