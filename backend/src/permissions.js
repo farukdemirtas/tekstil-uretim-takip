@@ -21,6 +21,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   prosesKontrol: false,
   /** Hata rapor ve analiz sayfası */
   hataRapor: false,
+  /** İş Hesaplama (proses hattı darboğaz) */
+  isBitirmeHesaplama: false,
   /** Girişte koyu mod (veri girişi kullanıcıları; yöneticiler her zaman açık mod varsayımı) */
   defaultDarkMode: false,
 };

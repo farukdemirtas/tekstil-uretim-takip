@@ -66,6 +66,14 @@ export function previousWeekdayIso(fromIso: string): string {
   return formatIsoLocal(d);
 }
 
+/** ISO YYYY-MM-DD üzerine takvim günü ekler (delta negatif olabilir) */
+export function addDaysToIso(iso: string, deltaDays: number): string {
+  const dt = parseIsoLocal(iso);
+  if (!dt) return iso;
+  const d = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + deltaDays);
+  return formatIsoLocal(d);
+}
+
 /** TR takvim günü, hafta sonu değil (EKRAN1 / verimlilik ile uyumlu) */
 export function todayWorkdayIsoTurkey(): string {
   return clampToWeekdayIso(todayIsoTurkey());

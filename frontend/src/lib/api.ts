@@ -1138,3 +1138,46 @@ export async function saveProsesVeriRowsToServer(
     throw new Error(d.message ?? "Proses veri kaydedilemedi");
   }
 }
+
+// ─── İş Hesaplama (model günü verimleri) ───────────────────────────────────
+
+export type JobCalcModelWorkerStatRow = {
+  workerId: number;
+  name: string;
+  team: string;
+  process: string;
+  nominalPerHour: number;
+  avgEfficiencyPercent: number | null;
+  modelRosterDays: number;
+  effSampleDays: number;
+  avgEffectivePerHour: number | null;
+};
+
+export type JobCalcModelWorkerStatsResponse = {
+  startDate: string;
+  endDate: string;
+  modelId: number;
+  modelCode: string;
+  workers: JobCalcModelWorkerStatRow[];
+  overallAvgEfficiencyPercent: number | null;
+};
+
+export async function getJobCalcModelWorkerStats(params: {
+  modelId: number;
+  modelCode: string;
+  startDate: string;
+  endDate: string;
+}): Promise<JobCalcModelWorkerStatsResponse> {
+  const q = new URLSearchParams({
+    modelId: String(params.modelId),
+    modelCode: params.modelCode,
+    startDate: params.startDate,
+    endDate: params.endDate,
+  }).toString();
+  const res = await apiFetch(`${apiBase()}/job-calc/model-worker-stats?${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Model verim özeti alınamadı");
+  return res.json() as Promise<JobCalcModelWorkerStatsResponse>;
+}

@@ -38,6 +38,11 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
   },
   { key: "prosesKontrol", label: "Proses Kontrol", description: "Numune bazlı hata takip sayfası (8 kontrol × 7 numune)" },
   { key: "hataRapor", label: "Hata Rapor", description: "Günlük hata oranı ve personel bazlı analiz sayfası" },
+  {
+    key: "isBitirmeHesaplama",
+    label: "İş Hesaplama",
+    description: "Hedef adet, personel ve proses verimine göre tahmini bitiş süresi (darboğaz modeli)",
+  },
 ];
 
 export function isAdminRole(): boolean {

@@ -2135,6 +2135,122 @@ export async function getRepairHistory(startDate, endDate) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   İş Hesaplama — model günlerine göre personel verim özeti
+═══════════════════════════════════════════════════════════ */
+
+/**
+ * Günlük meta `model_id` seçilen modele eşit olan tarihlerde, aynı modelin dk tablosunda
+ * tanımlı bölüm+proses istasyonundaki personelin günlük verimlilik ortalaması.
+ * Günlük hedef: dk × 60 × 9 (ana uygulama ile aynı).
+ */
+export async function getJobCalcModelWorkerStats(modelId, modelCode, startDate, endDate) {
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid < 1) {
+    throw new Error("Geçersiz modelId");
+  }
+  const code = String(modelCode ?? "").trim();
+  if (!code) throw new Error("modelCode gerekli");
+  const sd = String(startDate ?? "").trim();
+  const ed = String(endDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sd) || !/^\d{4}-\d{2}-\d{2}$/.test(ed)) {
+    throw new Error("Geçersiz tarih aralığı");
+  }
+
+  const line = HEDEF_PRODUCTION_LINE_SQL;
+  const rows = await dbAll(
+    `
+    SELECT
+      w.id AS workerId,
+      w.name AS name,
+      w.team AS team,
+      w.process AS process,
+      p.production_date AS productionDate,
+      (${line}) AS dayTotal,
+      CAST(TRIM(COALESCE(pv.dk_adet, '0')) AS REAL) AS dkAdet
+    FROM production_entries p
+    JOIN workers w ON w.id = p.worker_id
+    INNER JOIN daily_product_meta m ON m.production_date = p.production_date AND m.model_id = ?
+    INNER JOIN proses_veri_rows pv ON pv.model_code = ?
+      AND pv.team_code = w.team
+      AND TRIM(COALESCE(pv.process_name, '')) = TRIM(COALESCE(w.process, ''))
+    WHERE p.production_date BETWEEN ? AND ?
+      AND (w.created_at IS NULL OR date(w.created_at) <= p.production_date)
+      AND (w.deleted_at IS NULL OR date(w.deleted_at) > p.production_date)
+      AND NOT EXISTS (
+        SELECT 1 FROM worker_roster_day_hide h
+        WHERE h.worker_id = w.id AND h.hide_date = p.production_date
+      )
+      AND CAST(TRIM(COALESCE(pv.dk_adet, '0')) AS REAL) > 0
+    `,
+    [mid, code, sd, ed]
+  );
+
+  const byWorker = new Map();
+  for (const r of rows || []) {
+    const wid = Number(r.workerId);
+    const dk = Number(r.dkAdet) || 0;
+    const dayTotal = Number(r.dayTotal) || 0;
+    const gunluk = dk * 60 * 9;
+    let eff = null;
+    if (gunluk > 0 && dayTotal > 0) {
+      eff = Math.min(100, Math.round((dayTotal / gunluk) * 100));
+    }
+    if (!byWorker.has(wid)) {
+      byWorker.set(wid, {
+        workerId: wid,
+        name: r.name,
+        team: r.team,
+        process: r.process,
+        dkAdet: dk,
+        effs: [],
+        rosterDates: new Set(),
+      });
+    }
+    const o = byWorker.get(wid);
+    if (r.productionDate) o.rosterDates.add(String(r.productionDate));
+    if (eff !== null) o.effs.push(eff);
+  }
+
+  const workers = [];
+  for (const o of byWorker.values()) {
+    const n = o.effs.length;
+    const avgEff = n > 0 ? Math.round(o.effs.reduce((a, b) => a + b, 0) / n) : null;
+    const nominal = o.dkAdet * 60;
+    const nominalR = Math.round(nominal * 100) / 100;
+    const avgEffective =
+      avgEff != null ? Math.round(((nominal * avgEff) / 100) * 100) / 100 : null;
+    workers.push({
+      workerId: o.workerId,
+      name: o.name,
+      team: o.team,
+      process: o.process,
+      nominalPerHour: nominalR,
+      avgEfficiencyPercent: avgEff,
+      modelRosterDays: o.rosterDates.size,
+      effSampleDays: n,
+      avgEffectivePerHour: avgEffective,
+    });
+  }
+
+  workers.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "tr"));
+
+  const withEff = workers.filter((w) => w.avgEfficiencyPercent != null);
+  const overallAvgEfficiencyPercent =
+    withEff.length === 0
+      ? null
+      : Math.round(withEff.reduce((s, w) => s + w.avgEfficiencyPercent, 0) / withEff.length);
+
+  return {
+    startDate: sd,
+    endDate: ed,
+    modelId: mid,
+    modelCode: code,
+    workers,
+    overallAvgEfficiencyPercent,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════
    Proses Veri Rows  (sunucu tarafı kalıcı depolama)
 ═══════════════════════════════════════════════════════════ */
 

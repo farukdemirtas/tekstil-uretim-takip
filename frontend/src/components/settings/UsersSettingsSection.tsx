@@ -22,6 +22,7 @@ function emptyDraft(): AppPermissions {
     veriSayfasi: false,
     prosesKontrol: false,
     hataRapor: false,
+    isBitirmeHesaplama: false,
     defaultDarkMode: false,
   };
 }

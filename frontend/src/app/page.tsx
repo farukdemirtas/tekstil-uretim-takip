@@ -1004,18 +1004,9 @@ export default function HomePage() {
         {/* Aksiyon butonları — sarılabilir satır */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {hasPermission("veriSayfasi") ? (
-            <div
-              className="btn-nav-group"
-              role="group"
-              aria-label="Genel verimlilik ve model arşivi"
-            >
-              <Link href="/genel-verimlilik" className="btn-nav-segment">
-                Genel verimlilik
-              </Link>
-              <Link href="/veri-sayfasi" className="btn-nav-segment">
-                Model arşivi
-              </Link>
-            </div>
+            <Link href="/genel-verimlilik" className="btn-nav">
+              Genel verimlilik
+            </Link>
           ) : null}
           {hasPermission("prosesKontrol") ? (
             <Link href="/proses-kontrol" className="btn-nav">
@@ -1041,6 +1032,11 @@ export default function HomePage() {
             <button onClick={() => void pushToHedefTakip()} className="btn-nav" type="button">
               Hedef Takip
             </button>
+          ) : null}
+          {hasPermission("isBitirmeHesaplama") ? (
+            <Link href="/is-bitirme-hesaplama" className="btn-nav">
+              İş Hesaplama
+            </Link>
           ) : null}
           {hasPermission("ekran1") ||
           hasPermission("ekran2") ||

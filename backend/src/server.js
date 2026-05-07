@@ -70,6 +70,7 @@ import {
   deleteRepairEntries,
   getProsesVeriRows,
   saveProsesVeriRows,
+  getJobCalcModelWorkerStats,
   listPersonnelBirthdays,
   listPersonnelBirthdaysToday,
   addPersonnelBirthday,
@@ -1317,6 +1318,28 @@ app.get("/api/repairs/history", requireAuth, async (req, res) => {
     return res.json(history);
   } catch (err) {
     return res.status(500).json({ message: "Tamir geçmişi alınamadı", error: String(err) });
+  }
+});
+
+app.get("/api/job-calc/model-worker-stats", requireAuth, async (req, res) => {
+  const modelId = Number(req.query.modelId);
+  const modelCode = String(req.query.modelCode ?? "").trim();
+  const startDate = String(req.query.startDate ?? "").trim();
+  const endDate = String(req.query.endDate ?? "").trim();
+  if (!Number.isFinite(modelId) || modelId < 1) {
+    return res.status(400).json({ message: "modelId zorunlu" });
+  }
+  if (!modelCode) {
+    return res.status(400).json({ message: "modelCode zorunlu" });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    return res.status(400).json({ message: "startDate ve endDate YYYY-MM-DD zorunlu" });
+  }
+  try {
+    const data = await getJobCalcModelWorkerStats(modelId, modelCode, startDate, endDate);
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ message: String(err?.message || err) });
   }
 });
 

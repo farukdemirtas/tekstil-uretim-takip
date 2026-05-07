@@ -112,6 +112,20 @@ export function setProsesMap(map: ProsesMap, modelKey?: string | null): void {
   window.localStorage.setItem(resolveDkKey(modelKey), JSON.stringify(map));
 }
 
+/** Model arşivi veya API’den gelen satırlardan dk haritası üretir */
+export function buildProsesMapFromVeriRows(
+  rows: Array<{ teamCode: string; processName: string; dkAdet: string }>,
+): ProsesMap {
+  const map: ProsesMap = {};
+  for (const r of rows) {
+    const dk = Number(String(r.dkAdet ?? "").replace(",", "."));
+    if (r.dkAdet && Number.isFinite(dk) && dk > 0) {
+      map[makeProsesKey(r.teamCode, r.processName)] = String(r.dkAdet).trim();
+    }
+  }
+  return map;
+}
+
 function dispatchGenelProsesUpdated() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(GENEL_PROSES_UPDATED_EVENT));
