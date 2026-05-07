@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
+  applyHedefSession,
   createProductModel,
   deleteProductModel,
   getProcesses,
@@ -13,8 +16,21 @@ import {
   type ProductModelListItem,
   type TeamRow,
 } from "@/lib/api";
+import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { hasPermission } from "@/lib/permissions";
 
 const MAX_BASELINE_ROWS = 20;
+const HEDEF_TAKIP_SETTINGS_KEY = "hedef_takip_settings_v1";
+
+function persistHedefSettingsModelId(modelId: number | null) {
+  try {
+    const raw = window.localStorage.getItem(HEDEF_TAKIP_SETTINGS_KEY);
+    const prev = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    window.localStorage.setItem(HEDEF_TAKIP_SETTINGS_KEY, JSON.stringify({ ...prev, modelId }));
+  } catch {
+    /* ignore */
+  }
+}
 
 type BaselineRow = { teamCode: string; processName: string; arkaHalf: number };
 
@@ -33,6 +49,12 @@ export default function ProductModelsSection() {
   const [productName, setProductName] = useState("");
   const [baselines, setBaselines] = useState<BaselineRow[]>([emptyRow()]);
   const [saving, setSaving] = useState(false);
+  const [hedefApplyModelId, setHedefApplyModelId] = useState<number | "">("");
+  const [hedefApplyStart, setHedefApplyStart] = useState(() => clampToWeekdayIso(todayWeekdayIso()));
+  const [hedefApplyEnd, setHedefApplyEnd] = useState(() => clampToWeekdayIso(todayWeekdayIso()));
+  const [hedefApplyBusy, setHedefApplyBusy] = useState(false);
+  const [hedefApplyMsg, setHedefApplyMsg] = useState<string | null>(null);
+  const [hedefApplyErr, setHedefApplyErr] = useState<string | null>(null);
 
   const processNames = useMemo(() => processes.map((p) => p.name).sort((a, b) => a.localeCompare(b, "tr")), [processes]);
 
@@ -60,6 +82,27 @@ export default function ProductModelsSection() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (!list.length) return;
+    if (!hasPermission("hedefTakip")) return;
+    try {
+      const raw = window.localStorage.getItem(HEDEF_TAKIP_SETTINGS_KEY);
+      const saved = raw ? (JSON.parse(raw) as { modelId?: number | null }) : {};
+      if (
+        saved.modelId != null &&
+        Number.isFinite(Number(saved.modelId)) &&
+        list.some((x) => x.id === Number(saved.modelId))
+      ) {
+        setHedefApplyModelId(Number(saved.modelId));
+      } else if (list.length === 1) {
+        setHedefApplyModelId(list[0].id);
+        persistHedefSettingsModelId(list[0].id);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [list]);
 
   async function startNew() {
     setEditingId("new");
@@ -160,6 +203,54 @@ export default function ProductModelsSection() {
     }
   }
 
+  function handleHedefApplyModelPick(value: string) {
+    setHedefApplyMsg(null);
+    setHedefApplyErr(null);
+    if (value === "") {
+      setHedefApplyModelId("");
+      persistHedefSettingsModelId(null);
+      return;
+    }
+    const num = Number(value);
+    setHedefApplyModelId(num);
+    persistHedefSettingsModelId(num);
+  }
+
+  async function handleHedefApplyToProduction() {
+    setHedefApplyMsg(null);
+    setHedefApplyErr(null);
+    if (hedefApplyModelId === "") {
+      setHedefApplyErr("Önce bir ürün modeli seçin.");
+      return;
+    }
+    const start = clampToWeekdayIso(hedefApplyStart);
+    const end = clampToWeekdayIso(hedefApplyEnd);
+    if (!start || !end || start > end) {
+      setHedefApplyErr("Geçerli bir hafta içi tarih aralığı seçin.");
+      return;
+    }
+    setHedefApplyBusy(true);
+    try {
+      const m = await getProductModel(Number(hedefApplyModelId));
+      const { datesUpdated } = await applyHedefSession({
+        modelId: Number(hedefApplyModelId),
+        startDate: start,
+        endDate: end,
+        productName: m.productName,
+        productModel: m.modelCode,
+      });
+      setHedefApplyMsg(
+        datesUpdated > 0
+          ? `${datesUpdated} iş gününe ürün adı ve model kodu yazıldı. Ana üretim ekranında ilgili tarihlerde «Çalışılacak ürün» güncellenir.`
+          : "Aralıkta güncellenecek iş günü bulunamadı."
+      );
+    } catch (e) {
+      setHedefApplyErr(e instanceof Error ? e.message : "Uygulanamadı");
+    } finally {
+      setHedefApplyBusy(false);
+    }
+  }
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -180,6 +271,74 @@ export default function ProductModelsSection() {
           Yeni model
         </button>
       </div>
+
+      {hasPermission("hedefTakip") ? (
+        <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50/50 p-4 dark:border-teal-900/40 dark:bg-teal-950/20">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Hedef Takip: üretim günlerine model uygula
+              </h3>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                Seçilen hafta içi günlere ürün adı ve model kodu yazılır; ana üretim ekranında «Çalışılacak ürün» alanı
+                bu kaynaktan güncellenir.
+              </p>
+            </div>
+            <Link
+              href="/hedef-takip"
+              className="shrink-0 text-xs font-medium text-teal-700 underline-offset-2 hover:underline dark:text-teal-400"
+            >
+              Hedef Takip
+            </Link>
+          </div>
+          <label className="mt-3 block text-xs font-medium text-slate-600 dark:text-slate-300">Ürün modeli</label>
+          <select
+            value={hedefApplyModelId === "" ? "" : String(hedefApplyModelId)}
+            onChange={(e) => handleHedefApplyModelPick(e.target.value)}
+            className="mt-1 w-full max-w-xl rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          >
+            <option value="">Model seçin…</option>
+            {list.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.modelCode} — {m.productName || "—"}
+              </option>
+            ))}
+          </select>
+          {list.length === 0 ? (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Önce yukarıdan model ekleyin.</p>
+          ) : null}
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <WeekdayDatePicker
+              label="Başlangıç"
+              value={hedefApplyStart}
+              onChange={(v) => setHedefApplyStart(coerceWeekdayPickerValue(v))}
+              className="min-w-[12rem] flex-1"
+            />
+            <WeekdayDatePicker
+              label="Bitiş"
+              value={hedefApplyEnd}
+              onChange={(v) => setHedefApplyEnd(coerceWeekdayPickerValue(v))}
+              className="min-w-[12rem] flex-1"
+            />
+            <button
+              type="button"
+              disabled={hedefApplyBusy || hedefApplyModelId === ""}
+              onClick={() => void handleHedefApplyToProduction()}
+              className="rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500"
+            >
+              {hedefApplyBusy ? "Uygulanıyor…" : "Üretim ekranına uygula"}
+            </button>
+          </div>
+          {hedefApplyMsg ? (
+            <p className="mt-3 rounded-md border border-teal-200 bg-teal-50/80 px-3 py-2 text-xs text-teal-900 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">
+              {hedefApplyMsg}
+            </p>
+          ) : null}
+          {hedefApplyErr ? (
+            <p className="mt-2 text-xs text-red-600 dark:text-red-400">{hedefApplyErr}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading && list.length === 0 ? (
         <p className="mt-4 text-sm text-slate-500">Liste yükleniyor…</p>

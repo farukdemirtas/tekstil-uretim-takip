@@ -1100,9 +1100,10 @@ export default function HomePage() {
           )}
         </div>
         <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-          Bu bilgiler <strong className="font-medium text-slate-700 dark:text-slate-300">Hedef Takip</strong> ekranından
-          tarih aralığı uygulandığında otomatik yazılır; ana sayfada değiştirilemez. Günlük özet ve hedef rakamları,
-          Ayarlar’da tanımlı modele göre seçilen bölüm ve proseslerden hesaplanır.
+          Bu bilgiler <strong className="font-medium text-slate-700 dark:text-slate-300">Hedef Takip</strong> veya{" "}
+          <strong className="font-medium text-slate-700 dark:text-slate-300">Ayarlar → Ürün modelleri</strong> üzerinden
+          tarih aralığı uygulandığında otomatik yazılır; bu alanlarda doğrudan düzenleme yapılamaz. Günlük özet ve hedef
+          rakamları, tanımlı modele göre seçilen bölüm ve proseslerden hesaplanır.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
