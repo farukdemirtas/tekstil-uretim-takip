@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getJobCalcModelWorkerStats,
   getProcesses,
   getProduction,
   getProsesVeriRowsFromServer,
-  getWorkers,
+  getTeams,
+  getWorkersForAnalytics,
   listProductModels,
   setAuthToken,
   type JobCalcModelWorkerStatsResponse,
@@ -30,6 +31,7 @@ import {
   setProsesMap as writeProsesMapToLocal,
   type ProsesMap,
 } from "@/lib/prosesVeri";
+import { downloadIsBitirmeHesaplamaPdf } from "@/lib/exportIsBitirmePdf";
 import type { ProductionRow, Worker } from "@/lib/types";
 
 const STORAGE_KEY = "is_bitirme_hesaplama_v1";
@@ -38,10 +40,43 @@ type Row = {
   id: string;
   workerId: number | "";
   processName: string;
+  /** Model dk satırlarından otomatik; kullanıcı «Ek personel» ile eklenenler manuel */
+  source: "model" | "manual";
+  /** Manuel satır: hesapta kullanılacak bölüm kodu; boşsa personel kartındaki bölüm */
+  manualTeamCode?: string;
 };
 
-function newRow(): Row {
-  return { id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`, workerId: "", processName: "" };
+function randomRowId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function newManualRow(): Row {
+  return { id: randomRowId("manual"), workerId: "", processName: "", source: "manual", manualTeamCode: "" };
+}
+
+/** Model geçmiş tablosunda aynı bölüm+proses eşleşmesi varsa onu, yoksa personel genel satırını kullan */
+function historicalEffPctForRow(
+  modelStats: JobCalcModelWorkerStatsResponse | null,
+  workerId: number,
+  team: string,
+  process: string
+): number | undefined {
+  if (!modelStats?.workers?.length) return undefined;
+  const procNorm = process.trim();
+  const teamNorm = team.trim();
+  const exact = modelStats.workers.find(
+    (x) =>
+      x.workerId === workerId &&
+      x.team === teamNorm &&
+      x.process.trim() === procNorm &&
+      x.effSampleDays > 0 &&
+      x.avgEfficiencyPercent != null
+  );
+  if (exact?.avgEfficiencyPercent != null) return exact.avgEfficiencyPercent;
+  const anyStation = modelStats.workers.find(
+    (x) => x.workerId === workerId && x.effSampleDays > 0 && x.avgEfficiencyPercent != null
+  );
+  return anyStation?.avgEfficiencyPercent ?? undefined;
 }
 
 function loadDraft(): { qty: string; hpd: string; refDate?: string; modelCode?: string; rows: Row[] } | null {
@@ -63,10 +98,22 @@ function loadDraft(): { qty: string; hpd: string; refDate?: string; modelCode?: 
           const widRaw = o.workerId;
           const wid: number | "" =
             widRaw === "" || widRaw === null || widRaw === undefined ? "" : Number(widRaw) || "";
+          const srcRaw = o.source;
+          const source: Row["source"] =
+            srcRaw === "manual"
+              ? "manual"
+              : srcRaw === "model"
+                ? "model"
+                : wid !== ""
+                  ? "model"
+                  : "manual";
+          const mtc = o.manualTeamCode;
           return {
-            id: typeof o.id === "string" ? o.id : newRow().id,
+            id: typeof o.id === "string" ? o.id : randomRowId("draft"),
             workerId: wid,
             processName: typeof o.processName === "string" ? o.processName : "",
+            source,
+            manualTeamCode: typeof mtc === "string" ? mtc : source === "manual" ? "" : undefined,
           };
         })
       : [];
@@ -84,6 +131,7 @@ function loadDraft(): { qty: string; hpd: string; refDate?: string; modelCode?: 
 
 export default function IsBitirmeHesaplamaPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [teamMeta, setTeamMeta] = useState<Array<{ code: string; label: string }>>([]);
   const [processNames, setProcessNames] = useState<string[]>([]);
   const [productModels, setProductModels] = useState<ProductModelListItem[]>([]);
   const [selectedModelCode, setSelectedModelCode] = useState<string>("");
@@ -94,13 +142,16 @@ export default function IsBitirmeHesaplamaPage() {
   const [quantity, setQuantity] = useState("10000");
   const [hoursPerDay, setHoursPerDay] = useState("9");
   const [referenceDate, setReferenceDate] = useState<string>(() => clampToWeekdayIso(todayWeekdayIso()));
-  const [rows, setRows] = useState<Row[]>([newRow()]);
+  const [rows, setRows] = useState<Row[]>([]);
   const [productionRows, setProductionRows] = useState<ProductionRow[]>([]);
   const [productionErr, setProductionErr] = useState<string>("");
   const [productionLoading, setProductionLoading] = useState(false);
   const [modelStats, setModelStats] = useState<JobCalcModelWorkerStatsResponse | null>(null);
   const [modelStatsLoading, setModelStatsLoading] = useState(false);
   const [modelStatsErr, setModelStatsErr] = useState<string>("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  /** Model listesinden «Kaldır» ile çıkarılan personel (aynı modelde yeniden eklenmez) */
+  const excludedModelWorkerIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -116,9 +167,13 @@ export default function IsBitirmeHesaplamaPage() {
       if (draft.refDate) setReferenceDate(clampToWeekdayIso(draft.refDate));
       if (draft.rows.length > 0) setRows(draft.rows);
     }
-    void Promise.all([getWorkers(), getProcesses(), listProductModels()])
-      .then(([w, proc, mds]) => {
-        setWorkers(w.filter((x) => !x.deleted_at));
+    void Promise.all([getWorkersForAnalytics(), getTeams(), getProcesses(), listProductModels()])
+      .then(([w, teams, proc, mds]) => {
+        /* Kişi analizi ile aynı kapsam: aktif + üretim geçmişi olan pasif kayıtlar */
+        setWorkers(w);
+        setTeamMeta(
+          teams.map((t) => ({ code: t.code, label: t.label })).sort((a, b) => a.label.localeCompare(b.label, "tr"))
+        );
         setProcessNames(proc.map((p) => p.name).filter(Boolean));
         setProductModels(mds);
         const fromDraft =
@@ -234,55 +289,85 @@ export default function IsBitirmeHesaplamaPage() {
     }
   }, []);
 
-  /** Model dk tablosundaki istasyonlarda çalışan personeli satırlara dök */
+  /**
+   * Otomatik satırlar: yalnızca bu modelde günlük meta (model_id) + üretim kaydı olan personel
+   * (`getJobCalcModelWorkerStats` / «Bu modelde geçmiş verimler» ile aynı küme), dk tablosunda
+   * mevcut bölüm+proses ile filtrelenir. Manuel satırlar korunur.
+   */
   useEffect(() => {
-    if (modelMapLoading || !selectedModelCode) return;
+    if (modelMapLoading || !selectedModelCode || selectedModelId == null) return;
+
+    const statsAligned =
+      modelStats != null &&
+      !modelStatsLoading &&
+      modelStats.modelCode === selectedModelCode &&
+      modelStats.modelId === selectedModelId;
+
+    const allowedWorkerIds = new Set(
+      statsAligned ? modelStats.workers.map((x) => x.workerId) : [],
+    );
+
     const map = modelProsesMap;
     const keys = Object.keys(map);
-    let next: Row[];
-    if (keys.length === 0) {
-      next = [newRow()];
-    } else {
-      const matching = workers.filter((w) => {
-        const dk = map[makeProsesKey(w.team, w.process)];
-        return dk != null && String(dk).trim() !== "" && Number(String(dk).replace(",", ".")) > 0;
-      });
-      matching.sort(
-        (a, b) =>
-          a.team.localeCompare(b.team, "tr") ||
-          a.process.localeCompare(b.process, "tr") ||
-          a.name.localeCompare(b.name, "tr")
-      );
-      next =
-        matching.length > 0
-          ? matching.map((w) => ({
-              id: `row-${w.id}-${selectedModelCode}-${Math.random().toString(36).slice(2, 9)}`,
-              workerId: w.id,
-              processName: w.process,
-            }))
-          : [newRow()];
-    }
-    setRows(next);
-    persist(quantity, hoursPerDay, next, referenceDate, selectedModelCode);
-  }, [selectedModelCode, modelProsesMap, modelMapLoading, workers, persist]);
+
+    setRows((prev) => {
+      const manual = prev.filter((r) => r.source === "manual");
+      let modelRows: Row[] = [];
+      if (keys.length > 0 && statsAligned) {
+        const matching = workers.filter((w) => {
+          if (excludedModelWorkerIdsRef.current.has(w.id)) return false;
+          if (!allowedWorkerIds.has(w.id)) return false;
+          const dk = map[makeProsesKey(w.team, w.process)];
+          return dk != null && String(dk).trim() !== "" && Number(String(dk).replace(",", ".")) > 0;
+        });
+        matching.sort(
+          (a, b) =>
+            a.team.localeCompare(b.team, "tr") ||
+            a.process.localeCompare(b.process, "tr") ||
+            a.name.localeCompare(b.name, "tr")
+        );
+        if (matching.length > 0) {
+          modelRows = matching.map((w) => ({
+            id: `model-${w.id}-${selectedModelCode}`,
+            workerId: w.id,
+            processName: w.process,
+            source: "model" as const,
+          }));
+        }
+      }
+      const next = [...modelRows, ...manual];
+      persist(quantity, hoursPerDay, next, referenceDate, selectedModelCode);
+      return next;
+    });
+  }, [
+    selectedModelCode,
+    selectedModelId,
+    modelProsesMap,
+    modelMapLoading,
+    workers,
+    persist,
+    modelStats,
+    modelStatsLoading,
+  ]);
 
   const productionByWorkerId = useMemo(
     () => new Map(productionRows.map((r) => [r.workerId, r])),
     [productionRows]
   );
 
-  const historicalEffByWorkerId = useMemo(() => {
-    const m = new Map<number, number>();
-    if (!modelStats?.workers) return m;
-    for (const w of modelStats.workers) {
-      if (w.effSampleDays > 0 && w.avgEfficiencyPercent != null) {
-        m.set(w.workerId, w.avgEfficiencyPercent);
-      }
-    }
-    return m;
-  }, [modelStats]);
-
   const todayIso = todayWeekdayIso();
+
+  const processesForTeamInModel = useCallback(
+    (teamCode: string) => {
+      const tc = teamCode.trim();
+      if (!tc) return processNames;
+      return processNames.filter((name) => {
+        const dk = modelProsesMap[makeProsesKey(tc, name)];
+        return dk != null && String(dk).trim() !== "" && Number(String(dk).replace(",", ".")) > 0;
+      });
+    },
+    [processNames, modelProsesMap]
+  );
 
   const rowDerived = useMemo(() => {
     const map = new Map<
@@ -293,13 +378,15 @@ export default function IsBitirmeHesaplamaPage() {
       if (row.workerId === "") continue;
       const w = workers.find((x) => x.id === row.workerId);
       if (!w) continue;
+      const teamForCalc =
+        row.source === "manual" ? (row.manualTeamCode?.trim() || w.team) : w.team;
       const proc = row.processName.trim() || w.process;
       const prod = productionByWorkerId.get(row.workerId);
-      const hist = historicalEffByWorkerId.get(row.workerId);
+      const hist = historicalEffPctForRow(modelStats, row.workerId, teamForCalc, proc);
       map.set(
         row.id,
         deriveWorkerHourlyRateForJobCalc(
-          w.team,
+          teamForCalc,
           proc,
           modelProsesMap,
           prod,
@@ -310,7 +397,7 @@ export default function IsBitirmeHesaplamaPage() {
       );
     }
     return map;
-  }, [rows, workers, productionByWorkerId, modelProsesMap, referenceDate, todayIso, historicalEffByWorkerId]);
+  }, [rows, workers, productionByWorkerId, modelProsesMap, referenceDate, todayIso, modelStats]);
 
   const assignments: AssignmentInput[] = useMemo(() => {
     const out: AssignmentInput[] = [];
@@ -360,7 +447,7 @@ export default function IsBitirmeHesaplamaPage() {
 
   function addRow() {
     setRows((prev) => {
-      const next = [...prev, newRow()];
+      const next = [...prev, newManualRow()];
       persist(quantity, hoursPerDay, next, referenceDate, selectedModelCode);
       return next;
     });
@@ -368,10 +455,13 @@ export default function IsBitirmeHesaplamaPage() {
 
   function removeRow(id: string) {
     setRows((prev) => {
+      const row = prev.find((r) => r.id === id);
+      if (row?.source === "model" && typeof row.workerId === "number") {
+        excludedModelWorkerIdsRef.current.add(row.workerId);
+      }
       const next = prev.filter((r) => r.id !== id);
-      const fixed = next.length > 0 ? next : [newRow()];
-      persist(quantity, hoursPerDay, fixed, referenceDate, selectedModelCode);
-      return fixed;
+      persist(quantity, hoursPerDay, next, referenceDate, selectedModelCode);
+      return next;
     });
   }
 
@@ -392,8 +482,30 @@ export default function IsBitirmeHesaplamaPage() {
   }
 
   function onModelChange(code: string) {
+    excludedModelWorkerIdsRef.current.clear();
     setSelectedModelCode(code);
     persist(quantity, hoursPerDay, rows, referenceDate, code);
+  }
+
+  async function handleDownloadResultPdf() {
+    if (!result) return;
+    setPdfBusy(true);
+    try {
+      await downloadIsBitirmeHesaplamaPdf({
+        result,
+        split,
+        splitSeq,
+        modelCode: selectedModelCode,
+        productName: selectedModelLabel,
+        quantityLabel: quantity,
+        referenceDate,
+        hoursPerDayLabel: hoursPerDay,
+      });
+    } catch {
+      /* kullanıcı iptal / tarayıcı engeli */
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
   const selectedModelLabel = useMemo(
@@ -410,7 +522,9 @@ export default function IsBitirmeHesaplamaPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">İş Hesaplama</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
             Hedef adedi girin; <strong className="font-semibold text-slate-800 dark:text-slate-200">ürün modeli</strong> seçin —
-            dk tablosundaki istasyonlara uyan personel otomatik listelenir. Önce{" "}
+            <strong className="font-semibold text-slate-800 dark:text-slate-200"> Bu modelde</strong> günlük kayıtta model seçilmiş günlerde üretim girişi olan
+            personel otomatik listelenir (aşağıdaki özet tablo ile aynı küme); başka personel için{" "}
+            <strong className="font-semibold text-slate-800 dark:text-slate-200">Ek personel satırı</strong> kullanın. Önce{" "}
             <strong className="font-semibold text-slate-800 dark:text-slate-200">günlük meta bu modele işaretlenmiş</strong> geçmiş
             günlerdeki ortalama verim kullanılır (özet tablo); yoksa referans günü satırı veya %100 hedef. Süre ≈ adet ÷ hat hızı (darboğaz).
           </p>
@@ -582,92 +696,195 @@ export default function IsBitirmeHesaplamaPage() {
           <div>
             <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Personel ve prosesler</h2>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Model veya dk tablosu yüklendiğinde, bu modelde tanımlı istasyonlardaki personel otomatik doldurulur; yeni personel
-              eklemek için satır ekleyebilirsiniz.
+              Otomatik satırlar yalnızca bu modelde günlük ürün kaydında model işaretli günlerde üretim kaydı olan personelden
+              gelir («Bu modelde geçmiş verimler» özetindeki küme; referans gününe kadar 180 gün). «Ek personel satırı» ile
+              listeye başka personel ekleyebilir, bu modelde hesaba katılacak{" "}
+              <strong className="font-medium text-slate-600 dark:text-slate-300">bölüm ve proses</strong>i seçebilirsiniz; verim
+              seçtiğiniz istasyona göre hesaplanır.
             </p>
           </div>
           <button
             type="button"
             onClick={addRow}
-            className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-teal-700 dark:bg-teal-600 dark:hover:bg-teal-500"
+            className="rounded-lg border border-teal-600 bg-white px-3 py-1.5 text-sm font-medium text-teal-800 shadow-sm hover:bg-teal-50 dark:border-teal-500 dark:bg-slate-900 dark:text-teal-200 dark:hover:bg-teal-950/40"
           >
-            Satır ekle
+            Ek personel satırı
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-600 dark:text-slate-400">
-                <th className="py-2 pr-3 font-medium">Personel</th>
-                <th className="py-2 pr-3 font-medium">Proses</th>
-                <th className="py-2 pr-3 font-medium">Efektif adet/saat</th>
-                <th className="py-2 font-medium w-24"> </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
+        {rows.length === 0 ? (
+          <p className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-900/40 dark:text-slate-400">
+            {modelStatsLoading ? (
+              <>
+                Bu model için üretim özeti yükleniyor; otomatik personel satırları hazır olunca doldurulur. Biraz bekleyin veya «Ek
+                personel satırı» ile hemen ekleyin.
+              </>
+            ) : (
+              <>
+                Otomatik liste boş: seçili dönemde bu modelde günlük meta + üretim kaydı olan personel yok veya dk tablosunda
+                kartlarındaki bölüm+proses henüz tanımlı değil. «Bu modelde geçmiş verimler» bölümüne bakın; başkalarını «Ek personel
+                satırı» ile ekleyin.
+              </>
+            )}
+          </p>
+        ) : (
+          <>
+            <div className="w-full min-w-0">
+              <table className="w-full table-fixed border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-600 dark:text-slate-400">
+                    <th className="w-[26%] py-2 pr-2 font-medium">Personel / kaynak</th>
+                    <th className="w-[17%] py-2 pr-2 font-medium">Bölüm</th>
+                    <th className="w-[17%] py-2 pr-2 font-medium">Proses</th>
+                    <th className="min-w-0 w-[31%] py-2 pr-2 font-medium">Efektif adet/saat</th>
+                    <th className="w-[9%] min-w-14 py-2 pr-0 font-medium"> </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
                 const w = row.workerId !== "" ? workerById.get(row.workerId) : undefined;
                 const derived = rowDerived.get(row.id);
+                const teamForProcOpts =
+                  row.source === "manual" ? (row.manualTeamCode ?? "").trim() || w?.team || "" : "";
+                const procOptsManual =
+                  row.source === "manual" ? processesForTeamInModel(teamForProcOpts) : [];
                 return (
                   <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="py-2 pr-3 align-top">
-                      <select
-                        value={row.workerId === "" ? "" : String(row.workerId)}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (!v) {
-                            updateRow(row.id, { workerId: "", processName: row.processName });
-                            return;
-                          }
-                          const wid = Number(v);
-                          const ww = workerById.get(wid);
-                          updateRow(row.id, {
-                            workerId: wid,
-                            processName: ww?.process && !row.processName.trim() ? ww.process : row.processName,
-                          });
-                        }}
-                        className="w-full max-w-[220px] rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      >
-                        <option value="">Seçin…</option>
-                        {workers.map((x) => (
-                          <option key={x.id} value={x.id}>
-                            {x.name}
-                            {x.process ? ` · ${x.process}` : ""}
+                    <td className="min-w-0 py-2 pr-2 align-top">
+                      {row.source === "model" && w ? (
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <span className="font-medium text-slate-900 dark:text-slate-100">{w.name}</span>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {w.team}
+                            {w.process ? ` · ${w.process}` : ""}
+                          </span>
+                          <span className="inline-flex w-fit rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
+                            Model listesi
+                          </span>
+                        </div>
+                      ) : row.source === "model" ? (
+                        <span className="text-sm text-amber-700 dark:text-amber-300">
+                          Personel kaydı bulunamadı (no: {row.workerId})
+                        </span>
+                      ) : (
+                        <select
+                          value={row.workerId === "" ? "" : String(row.workerId)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!v) {
+                              updateRow(row.id, {
+                                workerId: "",
+                                processName: "",
+                                manualTeamCode: "",
+                              });
+                              return;
+                            }
+                            const widR = Number(v);
+                            const ww = workerById.get(widR);
+                            updateRow(row.id, {
+                              workerId: widR,
+                              manualTeamCode: ww?.team ?? "",
+                              processName: ww?.process ?? "",
+                            });
+                          }}
+                          className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">Personel seçin…</option>
+                          {workers.map((x) => (
+                            <option key={x.id} value={x.id}>
+                              {x.name}
+                              {x.process ? ` · ${x.process}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+                    <td className="min-w-0 py-2 pr-2 align-top">
+                      {row.source === "model" && w ? (
+                        <div className="min-w-0 text-sm break-words">
+                          <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {teamMeta.find((t) => t.code === w.team)?.label ?? w.team}
+                          </span>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">{w.team}</p>
+                        </div>
+                      ) : row.source === "model" ? (
+                        <span className="text-slate-400">—</span>
+                      ) : (
+                        <select
+                          value={row.manualTeamCode ?? ""}
+                          onChange={(e) => {
+                            const tc = e.target.value;
+                            let pn = row.processName;
+                            if (tc.trim()) {
+                              const opts = processesForTeamInModel(tc);
+                              if (!pn.trim() || !opts.includes(pn)) pn = opts[0] ?? "";
+                            }
+                            updateRow(row.id, { manualTeamCode: tc, processName: pn });
+                          }}
+                          className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">Bölüm seçin…</option>
+                          {teamMeta.map((t) => (
+                            <option key={t.code} value={t.code}>
+                              {t.label} ({t.code})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+                    <td className="min-w-0 py-2 pr-2 align-top">
+                      {row.source === "model" ? (
+                        <input
+                          list={processNames.length > 0 ? "proc-list-is-bitirme" : undefined}
+                          value={row.processName}
+                          onChange={(e) => updateRow(row.id, { processName: e.target.value })}
+                          placeholder={w?.process || "Örn. Dikim"}
+                          className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                      ) : (
+                        <select
+                          value={row.processName}
+                          onChange={(e) => updateRow(row.id, { processName: e.target.value })}
+                          disabled={teamMeta.length === 0}
+                          className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">
+                            {teamForProcOpts.trim()
+                              ? "Proses seçin…"
+                              : "Önce personel veya bölüm seçin"}
                           </option>
-                        ))}
-                      </select>
+                          {procOptsManual.map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </td>
-                    <td className="py-2 pr-3 align-top">
-                      <input
-                        list={processNames.length > 0 ? "proc-list-is-bitirme" : undefined}
-                        value={row.processName}
-                        onChange={(e) => updateRow(row.id, { processName: e.target.value })}
-                        placeholder={w?.process || "Örn. Dikim"}
-                        className="w-full max-w-[200px] rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      />
-                    </td>
-                    <td className="py-2 pr-3 align-top">
+                    <td className="min-w-0 py-2 pr-2 align-top">
                       {row.workerId === "" ? (
                         <span className="text-slate-400">—</span>
                       ) : !derived ? (
                         <span className="text-slate-400">—</span>
                       ) : !derived.ok ? (
-                        <span className="text-amber-800 dark:text-amber-300" title={derived.hint}>
+                        <span
+                          className="block break-words text-[11px] leading-snug text-amber-800 dark:text-amber-300"
+                          title={derived.hint}
+                        >
                           {derived.hint}
                         </span>
                       ) : (
-                        <div>
+                        <div className="min-w-0">
                           <span className="font-semibold tabular-nums text-slate-900 dark:text-white">
                             {derived.effectivePerHour}
                           </span>
-                          <p className="mt-0.5 max-w-[280px] text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                          <p className="mt-0.5 break-words text-[11px] leading-snug text-slate-500 dark:text-slate-400">
                             {derived.hint}
                           </p>
                         </div>
                       )}
                     </td>
-                    <td className="py-2 align-top">
+                    <td className="py-2 pr-0 align-top">
                       <button
                         type="button"
                         onClick={() => removeRow(row.id)}
@@ -681,14 +898,16 @@ export default function IsBitirmeHesaplamaPage() {
               })}
             </tbody>
           </table>
-        </div>
-        {processNames.length > 0 ? (
-          <datalist id="proc-list-is-bitirme">
-            {processNames.map((n) => (
-              <option key={n} value={n} />
-            ))}
-          </datalist>
-        ) : null}
+            </div>
+            {processNames.length > 0 ? (
+              <datalist id="proc-list-is-bitirme">
+                {processNames.map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+            ) : null}
+          </>
+        )}
       </section>
 
       {duplicateWorkers.size > 0 ? (
@@ -698,100 +917,196 @@ export default function IsBitirmeHesaplamaPage() {
         </p>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <div className="surface-card p-5 dark:border-slate-700">
-          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Sonuç (darboğaz modeli)</h2>
-          {!result ? (
-            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-              Geçerli bir hedef adet girin; seçilen ürün modelinde bölüm+proses dk&apos;ları tanımlı olsun ve personel satırlarında
-              efektif hız çıkabilsin.
-            </p>
-          ) : (
-            <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between gap-4 border-b border-slate-100 pb-2 dark:border-slate-800">
-                <dt className="text-slate-500 dark:text-slate-400">Hat hızı (tahmini)</dt>
-                <dd className="font-semibold tabular-nums text-slate-900 dark:text-white">
-                  {Math.round(result.lineThroughputPerHour * 100) / 100} adet/saat
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-100 pb-2 dark:border-slate-800">
-                <dt className="text-slate-500 dark:text-slate-400">Darboğaz proses</dt>
-                <dd className="font-semibold text-teal-700 dark:text-teal-400">{result.bottleneckProcessKey}</dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-100 pb-2 dark:border-slate-800">
-                <dt className="text-slate-500 dark:text-slate-400">Toplam süre</dt>
-                <dd className="font-semibold tabular-nums text-slate-900 dark:text-white">
-                  {formatHoursHuman(result.totalHoursBottleneck)}{" "}
-                  <span className="font-normal text-slate-500 dark:text-slate-400">
-                    ({result.totalHoursBottleneck.toFixed(2)} sa)
-                  </span>
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-500 dark:text-slate-400">İş günü karşılığı</dt>
-                <dd className="text-right font-semibold tabular-nums text-slate-900 dark:text-white">
-                  {split.fullDays} gün + {split.remainderHours.toFixed(2)} sa
-                  <span className="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400">
-                    ({split.hoursPerWorkday} sa/gün bazında; ≈ {(result.totalHoursBottleneck / split.hoursPerWorkday).toFixed(2)}{" "}
-                    iş günü)
-                  </span>
-                </dd>
-              </div>
-            </dl>
-          )}
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={!result || pdfBusy}
+            onClick={() => void handleDownloadResultPdf()}
+            className="rounded-lg border border-teal-700/40 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-900 shadow-sm transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-teal-700/50 dark:bg-teal-950/40 dark:text-teal-100 dark:hover:bg-teal-900/50"
+          >
+            {pdfBusy ? "PDF hazırlanıyor…" : "Sonucu PDF indir"}
+          </button>
         </div>
-
-        <div className="surface-card p-5 dark:border-slate-700">
-          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Proses detayı</h2>
-          {!result ? (
-            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">—</p>
-          ) : (
-            <ul className="mt-3 space-y-2 text-sm">
-              {result.processes.map((p) => {
-                const isBn = p.processKey === result.bottleneckProcessKey;
-                const hoursOnly = result.quantity / p.totalRatePerHour;
-                return (
-                  <li
-                    key={p.processKey}
-                    className={`rounded-lg border px-3 py-2 ${
-                      isBn
-                        ? "border-teal-300 bg-teal-50/80 dark:border-teal-800 dark:bg-teal-950/40"
-                        : "border-slate-200 dark:border-slate-700"
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="font-medium text-slate-900 dark:text-white">
-                        {p.processKey}
-                        {isBn ? (
-                          <span className="ml-2 text-xs font-semibold text-teal-700 dark:text-teal-400">darboğaz</span>
-                        ) : null}
-                      </span>
-                      <span className="tabular-nums text-slate-600 dark:text-slate-300">
-                        Σ verim: {Math.round(p.totalRatePerHour * 100) / 100} /sa · bu aşama tek başına:{" "}
-                        {hoursOnly.toFixed(2)} sa
-                      </span>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50/90 shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-teal-500 via-emerald-400 to-teal-600"
+              aria-hidden
+            />
+            <div className="p-5 pt-6 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Sonuç</h2>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Darboğaz (sürekli hat) modeli
+                  </p>
+                </div>
+                <span className="inline-flex shrink-0 items-center rounded-full bg-teal-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-teal-800 ring-1 ring-teal-600/15 dark:bg-teal-950/80 dark:text-teal-200 dark:ring-teal-500/30">
+                  Özet
+                </span>
+              </div>
+              {!result ? (
+                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center dark:border-slate-700 dark:bg-slate-800/20">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Geçerli hedef adet ve modele göre dk/personel satırları hazır olduğunda burada hat hızı, süre ve iş günü
+                    karşılığı görünür.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-5 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Hat hızı
+                      </p>
+                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
+                        {Math.round(result.lineThroughputPerHour * 100) / 100}
+                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400"> adet/sa</span>
+                      </p>
                     </div>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {p.lines.map((l) => `${l.workerName} (${l.ratePerHour}/sa)`).join(" · ")}
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Toplam süre
+                      </p>
+                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
+                        {formatHoursHuman(result.totalHoursBottleneck)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+                        {result.totalHoursBottleneck.toFixed(2)} saat
+                      </p>
+                    </div>
+                  </div>
+                  <div className="relative overflow-hidden rounded-xl border-2 border-teal-300/70 bg-gradient-to-br from-teal-50 via-white to-emerald-50/90 p-4 shadow-sm dark:border-teal-700/60 dark:from-teal-950/50 dark:via-slate-900 dark:to-emerald-950/30">
+                    <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-teal-400/15 blur-2xl dark:bg-teal-500/10" aria-hidden />
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
+                      Darboğaz proses
                     </p>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {result ? (
-            <p className="mt-4 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-              <strong className="font-medium text-slate-600 dark:text-slate-300">Karşılaştırma:</strong> Ardışık çalışıp
-              ara stok beklemeden her aşama kendi hızıyla tüm Q&apos;yu bitirse toplam{" "}
-              <span className="tabular-nums">{result.sequentialNoWipHours.toFixed(2)} sa</span> (
-              {formatHoursHuman(result.sequentialNoWipHours)}) — yaklaşık{" "}
-              <span className="tabular-nums">
-                {splitSeq.fullDays} gün + {splitSeq.remainderHours.toFixed(2)} sa
-              </span>{" "}
-              ({split.hoursPerWorkday} sa/gün). Sürekli hat akışında genellikle darboğaz süresi ({result.totalHoursBottleneck.toFixed(2)}{" "}
-              sa) daha gerçekçidir.
-            </p>
-          ) : null}
+                    <p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{result.bottleneckProcessKey}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      İş günü karşılığı
+                    </p>
+                    <p className="mt-2 text-lg font-bold tabular-nums text-slate-900 dark:text-white">
+                      {split.fullDays}{" "}
+                      <span className="text-base font-semibold text-slate-600 dark:text-slate-300">gün</span> +{" "}
+                      {split.remainderHours.toFixed(2)}{" "}
+                      <span className="text-base font-semibold text-slate-600 dark:text-slate-300">sa</span>
+                    </p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                      {split.hoursPerWorkday} sa/gün bazında · yaklaşık{" "}
+                      <span className="font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+                        {(result.totalHoursBottleneck / split.hoursPerWorkday).toFixed(2)}
+                      </span>{" "}
+                      iş günü
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/30 to-white shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-slate-500 via-slate-400 to-teal-500 opacity-90 dark:from-slate-600 dark:via-slate-500 dark:to-teal-600"
+              aria-hidden
+            />
+            <div className="p-5 pt-6 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Proses detayı</h2>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Aşama bazlı verim ve tek başına süre
+                  </p>
+                </div>
+                <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 ring-1 ring-slate-300/50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/50">
+                  {result ? `${result.processes.length} aşama` : "—"}
+                </span>
+              </div>
+              {!result ? (
+                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/20 dark:text-slate-400">
+                  Hesap sonucu oluşunca proses listesi burada görünür.
+                </div>
+              ) : (
+                <>
+                  <ul className="mt-5 max-h-[min(28rem,55vh)] space-y-2.5 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
+                    {result.processes.map((p) => {
+                      const isBn = p.processKey === result.bottleneckProcessKey;
+                      const hoursOnly = result.quantity / p.totalRatePerHour;
+                      const rate = Math.round(p.totalRatePerHour * 100) / 100;
+                      return (
+                        <li
+                          key={p.processKey}
+                          className={`relative overflow-hidden rounded-xl border transition-shadow ${
+                            isBn
+                              ? "border-teal-300/80 bg-gradient-to-r from-teal-50/90 to-white pl-4 shadow-md shadow-teal-900/5 ring-1 ring-teal-500/15 dark:border-teal-800/80 dark:from-teal-950/40 dark:to-slate-900/80 dark:shadow-teal-950/20 dark:ring-teal-500/20"
+                              : "border-slate-200/90 bg-white/90 pl-3.5 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-slate-600"
+                          }`}
+                        >
+                          <div
+                            className={`absolute bottom-2 left-0 top-2 w-1 rounded-full ${isBn ? "bg-teal-500 shadow-sm shadow-teal-600/40" : "bg-slate-200 dark:bg-slate-600"}`}
+                            aria-hidden
+                          />
+                          <div className="py-3.5 pl-4 pr-3 sm:pl-5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                                  {p.processKey}
+                                </span>
+                                {isBn ? (
+                                  <span className="inline-flex items-center rounded-md bg-teal-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm dark:bg-teal-500">
+                                    Darboğaz
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium">
+                                <span className="rounded-md bg-slate-100 px-2 py-1 tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                  Σ {rate} /sa
+                                </span>
+                                <span className="rounded-md border border-slate-200/90 bg-white px-2 py-1 tabular-nums text-slate-600 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
+                                  {hoursOnly.toFixed(2)} sa
+                                </span>
+                              </div>
+                            </div>
+                            <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                              {p.lines.map((l, idx) => (
+                                <span key={`${p.processKey}-${idx}-${l.workerName}`}>
+                                  <span className="font-medium text-slate-600 dark:text-slate-300">{l.workerName}</span>
+                                  <span className="tabular-nums text-slate-400"> ({l.ratePerHour}/sa)</span>
+                                  {idx < p.lines.length - 1 ? (
+                                    <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+                                  ) : null}
+                                </span>
+                              ))}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="mt-5 rounded-xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 text-xs leading-relaxed text-slate-600 dark:border-slate-700 dark:from-slate-800/50 dark:to-slate-900/50 dark:text-slate-400">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Karşılaştırma
+                    </p>
+                    <p className="mt-2">
+                      Ardışık çalışıp ara stok beklemeden her aşama kendi hızıyla tüm Q&apos;yu bitirse toplam{" "}
+                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                        {result.sequentialNoWipHours.toFixed(2)} sa
+                      </span>{" "}
+                      ({formatHoursHuman(result.sequentialNoWipHours)}) — yaklaşık{" "}
+                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                        {splitSeq.fullDays} gün + {splitSeq.remainderHours.toFixed(2)} sa
+                      </span>{" "}
+                      ({split.hoursPerWorkday} sa/gün). Sürekli hat akışında genellikle{" "}
+                      <span className="font-semibold text-teal-700 dark:text-teal-400">darboğaz süresi</span> (
+                      {result.totalHoursBottleneck.toFixed(2)} sa) daha gerçekçidir.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </section>
     </main>

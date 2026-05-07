@@ -1,7 +1,8 @@
 import { sumProductionRow } from "@/lib/productionSlots";
 import type { ProductionRow } from "@/lib/types";
 import type { ProsesMap } from "@/lib/prosesVeri";
-import { makeProsesKey } from "@/lib/prosesVeri";
+import { calcFromDk, makeProsesKey } from "@/lib/prosesVeri";
+import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import { workerEfficiencyPercent } from "@/lib/workerEfficiency";
 
 export type DerivedWorkerHourlyRate =
@@ -15,8 +16,9 @@ export type DerivedWorkerHourlyRate =
   | { ok: false; hint: string };
 
 /**
- * Genel verimlilik (bölüm+proses dk) → nominal saatlik adet = dk×60.
- * Aynı gün üretim satırı aynı bölüm+proses ise verimlilik % ile çarpılır; aksi halde hedef hız (%100) kullanılır.
+ * Proses veri / üretim tablosu ile aynı dk → saatlik & günlük (calcFromDk).
+ * Aynı gün aynı istasyonda üretim varsa efektif adet/saat, vardiya dilimlerine göre ölçülen saatlik (bugün)
+ * veya tam gün toplamı ÷ 9 (geçmiş gün) — yüzdeyi tersine çevirmek yerine tablodaki mantıkla doğrudan.
  */
 export function deriveWorkerHourlyRateForJobCalc(
   workerTeam: string,
@@ -32,32 +34,15 @@ export function deriveWorkerHourlyRateForJobCalc(
   if (!proc) {
     return { ok: false, hint: "Proses adı gerekli." };
   }
-  const dk = Number(prosesMap[makeProsesKey(workerTeam, proc)]) || 0;
-  const nominal = dk * 60;
-  if (nominal <= 0) {
+  const dkKey = makeProsesKey(workerTeam, proc);
+  const tablo = calcFromDk(String(prosesMap[dkKey] ?? ""));
+  if (!tablo) {
     return {
       ok: false,
       hint: "Seçilen ürün modelinde bu bölüm + proses için dk hedefi yok.",
     };
   }
-  const nominalR = Math.round(nominal * 100) / 100;
-
-  if (modelHistoricalAvgEffPct != null && Number.isFinite(modelHistoricalAvgEffPct)) {
-    const eff = Math.min(100, Math.max(0, Math.round(modelHistoricalAvgEffPct)));
-    let effective = Math.round(((nominal * eff) / 100) * 100) / 100;
-    let hint = `Model geçmişi ort. %${eff} · hedef ${nominalR}/sa`;
-    if (effective <= 0 && nominal > 0) {
-      effective = nominalR;
-      hint = "Ort. verim %0; hesap için hedef hız kullanıldı.";
-    }
-    return {
-      ok: true,
-      effectivePerHour: effective,
-      nominalPerHour: nominalR,
-      effPct: eff,
-      hint,
-    };
-  }
+  const nominalR = tablo.saatlik;
 
   const sameStation =
     productionRow &&
@@ -75,16 +60,22 @@ export function deriveWorkerHourlyRateForJobCalc(
         effectivePerHour: nominalR,
         nominalPerHour: nominalR,
         effPct: null,
-        hint: "Bugün henüz adet yok; hedef hız kullanıldı.",
+        hint: `Bugün henüz adet yok; dk tablosu hedef saatlik ${nominalR}/sa kullanıldı.`,
       };
     }
-    const eff = workerEfficiencyPercent(productionRow, prosesMap, useIntraday);
-    if (eff !== null) {
-      let effective = Math.round(((nominal * eff) / 100) * 100) / 100;
-      let hint = `%${eff} verim · hedef ${nominalR}/sa`;
-      if (effective <= 0 && nominal > 0) {
+    if (total > 0) {
+      const measured = useIntraday
+        ? computeShiftHourAverages(productionRow, total).perHourInWindow
+        : Math.round((total / SHIFT_NOMINAL_HOURS) * 100) / 100;
+      const eff = workerEfficiencyPercent(productionRow, prosesMap, useIntraday);
+      let effective = measured;
+      let hint =
+        eff !== null
+          ? `Dk/saat tablosu: hedef ${nominalR}/sa · verim %${eff} · ölçülen ${measured}/sa (üretim ekranı ile aynı mantık)`
+          : `Ölçülen ${measured}/sa · tablo hedef ${nominalR}/sa`;
+      if (effective <= 0 && nominalR > 0) {
         effective = nominalR;
-        hint = "Verim %0; hesap için hedef hız kullanıldı.";
+        hint = "Verim/ölçüm 0; hesap için tablo hedef saatlik kullanıldı.";
       }
       return {
         ok: true,
@@ -94,6 +85,41 @@ export function deriveWorkerHourlyRateForJobCalc(
         hint,
       };
     }
+    if (!useIntraday) {
+      const eff = workerEfficiencyPercent(productionRow, prosesMap, false);
+      if (eff !== null) {
+        let effective = Math.round(((nominalR * eff) / 100) * 100) / 100;
+        let hint = `Dk tablosu: hedef ${nominalR}/sa · verim %${eff} (günlük ÷ ${SHIFT_NOMINAL_HOURS} sa)`;
+        if (effective <= 0 && nominalR > 0) {
+          effective = nominalR;
+          hint = "Verim %0; hesap için tablo hedef saatlik kullanıldı.";
+        }
+        return {
+          ok: true,
+          effectivePerHour: effective,
+          nominalPerHour: nominalR,
+          effPct: eff,
+          hint,
+        };
+      }
+    }
+  }
+
+  if (modelHistoricalAvgEffPct != null && Number.isFinite(modelHistoricalAvgEffPct)) {
+    const eff = Math.min(100, Math.max(0, Math.round(modelHistoricalAvgEffPct)));
+    let effective = Math.round(((nominalR * eff) / 100) * 100) / 100;
+    let hint = `Model geçmişi ort. %${eff} · dk tablosu saatlik ${nominalR}/sa`;
+    if (effective <= 0 && nominalR > 0) {
+      effective = nominalR;
+      hint = "Ort. verim %0; hesap için tablo hedef saatlik kullanıldı.";
+    }
+    return {
+      ok: true,
+      effectivePerHour: effective,
+      nominalPerHour: nominalR,
+      effPct: eff,
+      hint,
+    };
   }
 
   return {
@@ -102,7 +128,7 @@ export function deriveWorkerHourlyRateForJobCalc(
     nominalPerHour: nominalR,
     effPct: null,
     hint: sameStation
-      ? "Verim hesaplanamadı; hedef hız kullanıldı."
-      : "Üretim satırı yok veya farklı proses; hedef hız (%100) kullanıldı.",
+      ? "Verim hesaplanamadı; dk tablosu hedef saatlik kullanıldı."
+      : "Seçilen günde bu bölüm + proses için üretim satırı yok (veya farklı istasyonda); tablo hedef saatlik (%100).",
   };
 }
