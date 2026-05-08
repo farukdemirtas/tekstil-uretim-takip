@@ -440,7 +440,23 @@ export default function IsBitirmeHesaplamaPage() {
 
   const qtyNum = Number(String(quantity).replace(/\s/g, "").replace(",", "."));
   const hpdNum = Number(String(hoursPerDay).replace(",", "."));
-  const result = useMemo(() => computeJobCompletion(qtyNum, assignments), [qtyNum, assignments]);
+  const result = useMemo(
+    () =>
+      computeJobCompletion(qtyNum, assignments, {
+        hoursPerWorkday: hpdNum,
+        modelPace:
+          modelStats &&
+          modelStats.modelMetaDayCount > 0 &&
+          modelStats.completedGenelTotal > 0
+            ? {
+                completedGenelTotal: modelStats.completedGenelTotal,
+                modelMetaDayCount: modelStats.modelMetaDayCount,
+                overallAvgEfficiencyPercent: modelStats.overallAvgEfficiencyPercent,
+              }
+            : null,
+      }),
+    [qtyNum, assignments, hpdNum, modelStats],
+  );
   const split = result ? splitWorkingDays(result.totalHoursBottleneck, hpdNum) : splitWorkingDays(0, hpdNum);
   const splitSeq = result ? splitWorkingDays(result.sequentialNoWipHours, hpdNum) : splitWorkingDays(0, hpdNum);
 
@@ -537,8 +553,10 @@ export default function IsBitirmeHesaplamaPage() {
             <strong className="font-semibold text-slate-800 dark:text-slate-200"> Bu modelde</strong> günlük kayıtta model seçilmiş günlerde üretim girişi olan
             personel otomatik listelenir (aşağıdaki özet tablo ile aynı küme); başka personel için{" "}
             <strong className="font-semibold text-slate-800 dark:text-slate-200">Ek personel satırı</strong> kullanın. Önce{" "}
-            <strong className="font-semibold text-slate-800 dark:text-slate-200">günlük meta bu modele işaretlenmiş</strong> geçmiş
-            günlerdeki ortalama verim kullanılır (özet tablo); yoksa bugünkü üretim satırı veya %100 hedef. Süre ≈ adet ÷ hat hızı (darboğaz).
+            <strong className="font-semibold text-slate-800 dark:text-slate-200">            günlük meta bu modele işaretlenmiş</strong> geçmiş
+            günlerdeki ortalama verim kullanılır (özet tablo); yoksa bugünkü üretim satırı veya %100 hedef. Süre, bu modelde
+            yapılan iş (günlük ortalama genel tamamlanan) ve ortalama verim verisine göre belirlenir; model geçmişi yoksa
+            listelenen personelin saatlik verimleri toplanır.
           </p>
         </div>
         <Link
@@ -671,7 +689,11 @@ export default function IsBitirmeHesaplamaPage() {
                 <div>
                   <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Sonuç</h2>
                   <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Darboğaz (sürekli hat) modeli
+                    {!result
+                      ? "Hedef adet ve hesap verisi girildiğinde yöntem burada görünür"
+                      : result.durationMode === "model_genel_pace"
+                        ? "Model geçmişi: günlük ortalama genel tamamlanan ÷ çalışma saati"
+                        : "Personel verimleri toplamı (model geçmişi yok)"}
                   </p>
                 </div>
                 <span className="inline-flex shrink-0 items-center rounded-full bg-teal-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-teal-800 ring-1 ring-teal-600/15 dark:bg-teal-950/80 dark:text-teal-200 dark:ring-teal-500/30">
@@ -690,7 +712,7 @@ export default function IsBitirmeHesaplamaPage() {
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Hat hızı
+                        Tahmini hat hızı
                       </p>
                       <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
                         {Math.round(result.lineThroughputPerHour * 100) / 100}
@@ -721,12 +743,47 @@ export default function IsBitirmeHesaplamaPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="relative overflow-hidden rounded-xl border-2 border-teal-300/70 bg-gradient-to-br from-teal-50 via-white to-emerald-50/90 p-4 shadow-sm dark:border-teal-700/60 dark:from-teal-950/50 dark:via-slate-900 dark:to-emerald-950/30">
+                  <div className="relative overflow-hidden rounded-xl border border-teal-200/80 bg-gradient-to-br from-teal-50 via-white to-emerald-50/90 p-4 shadow-sm dark:border-teal-800/50 dark:from-teal-950/50 dark:via-slate-900 dark:to-emerald-950/30">
                     <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-teal-400/15 blur-2xl dark:bg-teal-500/10" aria-hidden />
                     <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-                      Darboğaz proses
+                      Model özeti (hesap kaynağı)
                     </p>
-                    <p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{result.bottleneckProcessKey}</p>
+                    {result.durationMode === "model_genel_pace" ? (
+                      <ul className="mt-2 space-y-1 text-sm text-slate-800 dark:text-slate-200">
+                        <li>
+                          <span className="text-slate-500 dark:text-slate-400">Yapılan iş (genel toplam):</span>{" "}
+                          <span className="font-semibold tabular-nums">
+                            {(result.modelCompletedGenelTotal ?? 0).toLocaleString("tr-TR")} adet
+                          </span>
+                        </li>
+                        <li>
+                          <span className="text-slate-500 dark:text-slate-400">Kayıtlı iş günü:</span>{" "}
+                          <span className="font-semibold tabular-nums">{result.modelMetaDayCount ?? "—"}</span>
+                        </li>
+                        <li>
+                          <span className="text-slate-500 dark:text-slate-400">Günlük ort. genel:</span>{" "}
+                          <span className="font-semibold tabular-nums text-teal-800 dark:text-teal-200">
+                            {result.modelAvgDailyGenel != null
+                              ? `${result.modelAvgDailyGenel.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} adet/gün`
+                              : "—"}
+                          </span>
+                        </li>
+                        <li>
+                          <span className="text-slate-500 dark:text-slate-400">Ortalama verimlilik (personel):</span>{" "}
+                          <span className="font-semibold tabular-nums">
+                            {result.modelOverallEfficiencyPercent != null
+                              ? `%${result.modelOverallEfficiencyPercent}`
+                              : "—"}
+                          </span>
+                        </li>
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+                        Bu model için yeterli günlük meta / genel tamamlanan özeti yok. Tahmini hız, seçili personel
+                        satırlarındaki efektif adet/saat değerlerinin <strong className="font-semibold">toplamı</strong>{" "}
+                        (paralel çalışma varsayımı) ile hesaplandı.
+                      </p>
+                    )}
                   </div>
                   <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-800/50">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -761,7 +818,7 @@ export default function IsBitirmeHesaplamaPage() {
                 <div>
                   <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Proses detayı</h2>
                   <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Aşama bazlı verim ve tek başına süre
+                    Liste referansı — ana süre yukarıdaki modele göre
                   </p>
                 </div>
                 <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 ring-1 ring-slate-300/50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/50">
@@ -776,20 +833,15 @@ export default function IsBitirmeHesaplamaPage() {
                 <>
                   <ul className="mt-5 max-h-[min(28rem,55vh)] space-y-2.5 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
                     {result.processes.map((p) => {
-                      const isBn = p.processKey === result.bottleneckProcessKey;
                       const hoursOnly = result.quantity / p.totalRatePerHour;
                       const rate = Math.round(p.totalRatePerHour * 100) / 100;
                       return (
                         <li
                           key={p.processKey}
-                          className={`relative overflow-hidden rounded-xl border transition-shadow ${
-                            isBn
-                              ? "border-teal-300/80 bg-gradient-to-r from-teal-50/90 to-white pl-4 shadow-md shadow-teal-900/5 ring-1 ring-teal-500/15 dark:border-teal-800/80 dark:from-teal-950/40 dark:to-slate-900/80 dark:shadow-teal-950/20 dark:ring-teal-500/20"
-                              : "border-slate-200/90 bg-white/90 pl-3.5 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-slate-600"
-                          }`}
+                          className="relative overflow-hidden rounded-xl border border-slate-200/90 bg-white/90 pl-3.5 transition-shadow hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-slate-600"
                         >
                           <div
-                            className={`absolute bottom-2 left-0 top-2 w-1 rounded-full ${isBn ? "bg-teal-500 shadow-sm shadow-teal-600/40" : "bg-slate-200 dark:bg-slate-600"}`}
+                            className="absolute bottom-2 left-0 top-2 w-1 rounded-full bg-slate-200 dark:bg-slate-600"
                             aria-hidden
                           />
                           <div className="py-3.5 pl-4 pr-3 sm:pl-5">
@@ -798,11 +850,6 @@ export default function IsBitirmeHesaplamaPage() {
                                 <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
                                   {p.processKey}
                                 </span>
-                                {isBn ? (
-                                  <span className="inline-flex items-center rounded-md bg-teal-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm dark:bg-teal-500">
-                                    Darboğaz
-                                  </span>
-                                ) : null}
                               </div>
                               <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium">
                                 <span className="rounded-md bg-slate-100 px-2 py-1 tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
@@ -834,17 +881,40 @@ export default function IsBitirmeHesaplamaPage() {
                       Karşılaştırma
                     </p>
                     <p className="mt-2">
-                      Ardışık çalışıp ara stok beklemeden her aşama kendi hızıyla tüm Q&apos;yu bitirse toplam{" "}
-                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
-                        {result.sequentialNoWipHours.toFixed(2)} sa
-                      </span>{" "}
-                      ({formatHoursHuman(result.sequentialNoWipHours)}) — yaklaşık{" "}
-                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
-                        {splitSeq.fullDays} gün + {splitSeq.remainderHours.toFixed(2)} sa
-                      </span>{" "}
-                      ({split.hoursPerWorkday} sa/gün). Sürekli hat akışında genellikle{" "}
-                      <span className="font-semibold text-teal-700 dark:text-teal-400">darboğaz süresi</span> (
-                      {result.totalHoursBottleneck.toFixed(2)} sa) daha gerçekçidir.
+                      {result.durationMode === "model_genel_pace" ? (
+                        <>
+                          Ana süre, model geçmişindeki günlük ortalama genel tamamlanan ve sizin girdiğiniz çalışma saatine göre
+                          hesaplandı (
+                          <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                            {result.totalHoursBottleneck.toFixed(2)} sa
+                          </span>
+                          ). Ardışık aşama varsayımı (her proses tüm Q&apos;yu tek başına bitirir):{" "}
+                          <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                            {result.sequentialNoWipHours.toFixed(2)} sa
+                          </span>{" "}
+                          ({formatHoursHuman(result.sequentialNoWipHours)}) — yaklaşık{" "}
+                          <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                            {splitSeq.fullDays} gün + {splitSeq.remainderHours.toFixed(2)} sa
+                          </span>
+                          .
+                        </>
+                      ) : (
+                        <>
+                          Ana süre, seçili personellerin saatlik verimlerinin toplamına göre hesaplandı (
+                          <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                            {result.totalHoursBottleneck.toFixed(2)} sa
+                          </span>
+                          ). Ardışık aşama (her proses tüm Q):{" "}
+                          <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                            {result.sequentialNoWipHours.toFixed(2)} sa
+                          </span>{" "}
+                          — yaklaşık{" "}
+                          <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                            {splitSeq.fullDays} gün + {splitSeq.remainderHours.toFixed(2)} sa
+                          </span>
+                          .
+                        </>
+                      )}
                     </p>
                   </div>
                 </>

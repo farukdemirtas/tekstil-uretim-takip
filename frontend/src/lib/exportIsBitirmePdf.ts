@@ -39,7 +39,7 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
 
   const lineTp = Math.round(result.lineThroughputPerHour * 100) / 100;
   const dailyProd = Math.round(result.lineThroughputPerHour * split.hoursPerWorkday * 100) / 100;
-  const bnLabel = result.bottleneckProcessKey ? escapeHtml(result.bottleneckProcessKey) : "—";
+  const modelPace = result.durationMode === "model_genel_pace";
   const modelTitle = productName.trim()
     ? `${escapeHtml(productName.trim())} <span style="color:#64748b;font-weight:500;">(${escapeHtml(modelCode)})</span>`
     : escapeHtml(modelCode);
@@ -58,15 +58,12 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
   const tableRows = result.processes
     .map((proc) => {
       const hoursOnly = result.quantity / proc.totalRatePerHour;
-      const isBn = proc.processKey === result.bottleneckProcessKey;
       const workers = proc.lines
         .map((l) => `${escapeHtml(l.workerName.trim() || "—")} <span style="color:#64748b;">(${l.ratePerHour}/sa)</span>`)
         .join(" · ");
-      const bg = isBn ? "background:#ecfdf5;border-left:4px solid #0d9488;" : "border-left:4px solid transparent;";
-      return `<tr class="pdf-avoid-break" style="${bg}">
+      return `<tr class="pdf-avoid-break">
         <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;vertical-align:top;font-weight:600;color:#0f172a;">
           ${escapeHtml(proc.processKey)}
-          ${isBn ? `<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;background:#0d9488;color:white;font-size:9px;font-weight:700;letter-spacing:0.04em;">DARBOĞAZ</span>` : ""}
         </td>
         <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;color:#334155;">${Math.round(proc.totalRatePerHour * 100) / 100}</td>
         <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;color:#334155;">${hoursOnly.toFixed(2)}</td>
@@ -74,6 +71,28 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
       </tr>`;
     })
     .join("");
+
+  const hatSub = modelPace
+    ? `Günlük ort. genel ÷ ${split.hoursPerWorkday} sa/gün (model geçmişi)`
+    : "Seçili personel saatlik verimleri toplamı (paralel tahmin)";
+
+  const modelInfoHtml = modelPace
+    ? `<div style="background:#ecfdf5;border:1px solid #99f6e4;border-radius:14px;padding:14px 16px;margin-bottom:14px;">
+        <div style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Model özeti (hesap)</div>
+        <div style="font-size:12px;line-height:1.55;color:#134e4a;">
+          <div>Yapılan iş (genel toplam): <strong>${(result.modelCompletedGenelTotal ?? 0).toLocaleString("tr-TR")}</strong> adet</div>
+          <div>Kayıtlı iş günü: <strong>${result.modelMetaDayCount ?? "—"}</strong></div>
+          <div>Günlük ort. genel: <strong>${result.modelAvgDailyGenel != null ? result.modelAvgDailyGenel.toLocaleString("tr-TR", { maximumFractionDigits: 1 }) : "—"}</strong> adet/gün</div>
+          <div>Ortalama verimlilik: <strong>${result.modelOverallEfficiencyPercent != null ? `%${result.modelOverallEfficiencyPercent}` : "—"}</strong></div>
+        </div>
+      </div>`
+    : `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:12px;line-height:1.5;color:#78350f;">
+        Model geçmişi yetersiz; hız, listelenen personelin efektif adet/saat toplamı ile tahmin edildi.
+      </div>`;
+
+  const karsilastirmaHtml = modelPace
+    ? `Ana süre, model geçmişindeki günlük ortalama genel tamamlanan ve çalışma saatine göre hesaplandı (<strong>${result.totalHoursBottleneck.toFixed(2)} sa</strong>). Ardışık aşama (her proses tüm Q’yu yalnız bitirir): <strong>${result.sequentialNoWipHours.toFixed(2)} sa</strong> (${escapeHtml(formatHoursHuman(result.sequentialNoWipHours))}) — yaklaşık <strong>${splitSeq.fullDays} gün + ${splitSeq.remainderHours.toFixed(2)} sa</strong>.`
+    : `Ana süre, seçili personel saatlik verimleri toplamına göre (<strong>${result.totalHoursBottleneck.toFixed(2)} sa</strong>). Ardışık aşama: <strong>${result.sequentialNoWipHours.toFixed(2)} sa</strong> — yaklaşık <strong>${splitSeq.fullDays} gün + ${splitSeq.remainderHours.toFixed(2)} sa</strong>.`;
 
   const html = `
 <div class="is-bitirme-pdf-root" style="
@@ -103,12 +122,13 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
     </div>
   </div>
 
-  <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.07em;margin:0 0 14px;">Özet — darboğaz modeli</div>
+  <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.07em;margin:0 0 14px;">Özet — ${modelPace ? "model geçmişi" : "personel toplamı"}</div>
+  ${modelInfoHtml}
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
     ${statCard(
-      "Hat hızı (tahmini)",
+      "Tahmini hat hızı",
       `${lineTp} <span style="font-size:14px;font-weight:600;color:#64748b;">adet/saat</span>`,
-      "Sürekli hat: min. proses verimi"
+      hatSub
     )}
     ${statCard(
       "Günlük üretim (tahmini)",
@@ -116,17 +136,12 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
       `Hat hızı × ${split.hoursPerWorkday} sa/gün`
     )}
     ${statCard(
-      "Toplam süre",
+      "Toplam süre (ana tahmin)",
       `${escapeHtml(formatHoursHuman(result.totalHoursBottleneck))}`,
       `${result.totalHoursBottleneck.toFixed(2)} saat`
     )}
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px;">
-    ${statCard(
-      "Darboğaz proses",
-      bnLabel,
-      "Darboğaz, üretim hızını sınırlayan aşama"
-    )}
+  <div style="margin-bottom:22px;">
     ${statCard(
       "İş günü karşılığı",
       `${split.fullDays} gün + ${split.remainderHours.toFixed(2)} sa`,
@@ -150,11 +165,8 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
   </div>
 
   <div style="background:linear-gradient(180deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:14px;padding:16px 18px;font-size:11px;line-height:1.55;color:#475569;">
-    <div style="font-weight:700;color:#334155;margin-bottom:6px;">Karşılaştırma — ardışık çalışma</div>
-    Ara stok beklemeden her aşama kendi hızıyla tüm Q’yu bitirse toplam <strong style="color:#0f172a;">${result.sequentialNoWipHours.toFixed(2)} sa</strong>
-    (${escapeHtml(formatHoursHuman(result.sequentialNoWipHours))}) — yaklaşık
-    <strong style="color:#0f172a;">${splitSeq.fullDays} gün + ${splitSeq.remainderHours.toFixed(2)} sa</strong>
-    (${splitSeq.hoursPerWorkday} sa/gün). Sürekli hat akışında genellikle <strong style="color:#0f766e;">darboğaz süresi</strong> daha gerçekçidir.
+    <div style="font-weight:700;color:#334155;margin-bottom:6px;">Karşılaştırma</div>
+    ${karsilastirmaHtml}
   </div>
 </div>`.trim();
 
