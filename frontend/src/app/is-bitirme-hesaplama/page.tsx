@@ -649,6 +649,211 @@ export default function IsBitirmeHesaplamaPage() {
         ) : null}
       </section>
 
+      <section className="mb-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={!result || pdfBusy}
+            onClick={() => void handleDownloadResultPdf()}
+            className="rounded-lg border border-teal-700/40 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-900 shadow-sm transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-teal-700/50 dark:bg-teal-950/40 dark:text-teal-100 dark:hover:bg-teal-900/50"
+          >
+            {pdfBusy ? "PDF hazırlanıyor…" : "Sonucu PDF indir"}
+          </button>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50/90 shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-teal-500 via-emerald-400 to-teal-600"
+              aria-hidden
+            />
+            <div className="p-5 pt-6 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Sonuç</h2>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Darboğaz (sürekli hat) modeli
+                  </p>
+                </div>
+                <span className="inline-flex shrink-0 items-center rounded-full bg-teal-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-teal-800 ring-1 ring-teal-600/15 dark:bg-teal-950/80 dark:text-teal-200 dark:ring-teal-500/30">
+                  Özet
+                </span>
+              </div>
+              {!result ? (
+                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center dark:border-slate-700 dark:bg-slate-800/20">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Geçerli hedef adet ve modele göre dk/personel satırları hazır olduğunda burada hat hızı, süre ve iş günü
+                    karşılığı görünür.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-5 space-y-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Hat hızı
+                      </p>
+                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
+                        {Math.round(result.lineThroughputPerHour * 100) / 100}
+                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400"> adet/sa</span>
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Günlük üretim
+                      </p>
+                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
+                        {Math.round(result.lineThroughputPerHour * split.hoursPerWorkday * 100) / 100}
+                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400"> adet/gün</span>
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        Hat hızı × {split.hoursPerWorkday} sa/gün
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Toplam süre
+                      </p>
+                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
+                        {formatHoursHuman(result.totalHoursBottleneck)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+                        {result.totalHoursBottleneck.toFixed(2)} saat
+                      </p>
+                    </div>
+                  </div>
+                  <div className="relative overflow-hidden rounded-xl border-2 border-teal-300/70 bg-gradient-to-br from-teal-50 via-white to-emerald-50/90 p-4 shadow-sm dark:border-teal-700/60 dark:from-teal-950/50 dark:via-slate-900 dark:to-emerald-950/30">
+                    <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-teal-400/15 blur-2xl dark:bg-teal-500/10" aria-hidden />
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
+                      Darboğaz proses
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{result.bottleneckProcessKey}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      İş günü karşılığı
+                    </p>
+                    <p className="mt-2 text-lg font-bold tabular-nums text-slate-900 dark:text-white">
+                      {split.fullDays}{" "}
+                      <span className="text-base font-semibold text-slate-600 dark:text-slate-300">gün</span> +{" "}
+                      {split.remainderHours.toFixed(2)}{" "}
+                      <span className="text-base font-semibold text-slate-600 dark:text-slate-300">sa</span>
+                    </p>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                      {split.hoursPerWorkday} sa/gün bazında · yaklaşık{" "}
+                      <span className="font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+                        {(result.totalHoursBottleneck / split.hoursPerWorkday).toFixed(2)}
+                      </span>{" "}
+                      iş günü
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/30 to-white shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-slate-500 via-slate-400 to-teal-500 opacity-90 dark:from-slate-600 dark:via-slate-500 dark:to-teal-600"
+              aria-hidden
+            />
+            <div className="p-5 pt-6 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Proses detayı</h2>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Aşama bazlı verim ve tek başına süre
+                  </p>
+                </div>
+                <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 ring-1 ring-slate-300/50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/50">
+                  {result ? `${result.processes.length} aşama` : "—"}
+                </span>
+              </div>
+              {!result ? (
+                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/20 dark:text-slate-400">
+                  Hesap sonucu oluşunca proses listesi burada görünür.
+                </div>
+              ) : (
+                <>
+                  <ul className="mt-5 max-h-[min(28rem,55vh)] space-y-2.5 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
+                    {result.processes.map((p) => {
+                      const isBn = p.processKey === result.bottleneckProcessKey;
+                      const hoursOnly = result.quantity / p.totalRatePerHour;
+                      const rate = Math.round(p.totalRatePerHour * 100) / 100;
+                      return (
+                        <li
+                          key={p.processKey}
+                          className={`relative overflow-hidden rounded-xl border transition-shadow ${
+                            isBn
+                              ? "border-teal-300/80 bg-gradient-to-r from-teal-50/90 to-white pl-4 shadow-md shadow-teal-900/5 ring-1 ring-teal-500/15 dark:border-teal-800/80 dark:from-teal-950/40 dark:to-slate-900/80 dark:shadow-teal-950/20 dark:ring-teal-500/20"
+                              : "border-slate-200/90 bg-white/90 pl-3.5 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-slate-600"
+                          }`}
+                        >
+                          <div
+                            className={`absolute bottom-2 left-0 top-2 w-1 rounded-full ${isBn ? "bg-teal-500 shadow-sm shadow-teal-600/40" : "bg-slate-200 dark:bg-slate-600"}`}
+                            aria-hidden
+                          />
+                          <div className="py-3.5 pl-4 pr-3 sm:pl-5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                                  {p.processKey}
+                                </span>
+                                {isBn ? (
+                                  <span className="inline-flex items-center rounded-md bg-teal-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm dark:bg-teal-500">
+                                    Darboğaz
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium">
+                                <span className="rounded-md bg-slate-100 px-2 py-1 tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                  Σ {rate} /sa
+                                </span>
+                                <span className="rounded-md border border-slate-200/90 bg-white px-2 py-1 tabular-nums text-slate-600 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
+                                  {hoursOnly.toFixed(2)} sa
+                                </span>
+                              </div>
+                            </div>
+                            <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                              {p.lines.map((l, idx) => (
+                                <span key={`${p.processKey}-${idx}-${l.workerName}`}>
+                                  <span className="font-medium text-slate-600 dark:text-slate-300">{l.workerName}</span>
+                                  <span className="tabular-nums text-slate-400"> ({l.ratePerHour}/sa)</span>
+                                  {idx < p.lines.length - 1 ? (
+                                    <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+                                  ) : null}
+                                </span>
+                              ))}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="mt-5 rounded-xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 text-xs leading-relaxed text-slate-600 dark:border-slate-700 dark:from-slate-800/50 dark:to-slate-900/50 dark:text-slate-400">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Karşılaştırma
+                    </p>
+                    <p className="mt-2">
+                      Ardışık çalışıp ara stok beklemeden her aşama kendi hızıyla tüm Q&apos;yu bitirse toplam{" "}
+                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                        {result.sequentialNoWipHours.toFixed(2)} sa
+                      </span>{" "}
+                      ({formatHoursHuman(result.sequentialNoWipHours)}) — yaklaşık{" "}
+                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                        {splitSeq.fullDays} gün + {splitSeq.remainderHours.toFixed(2)} sa
+                      </span>{" "}
+                      ({split.hoursPerWorkday} sa/gün). Sürekli hat akışında genellikle{" "}
+                      <span className="font-semibold text-teal-700 dark:text-teal-400">darboğaz süresi</span> (
+                      {result.totalHoursBottleneck.toFixed(2)} sa) daha gerçekçidir.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="surface-card mb-6 space-y-3 p-5 dark:border-slate-700">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Bu modelde geçmiş verimler</h2>
@@ -947,211 +1152,6 @@ export default function IsBitirmeHesaplamaPage() {
           çalışıyorsa süre bu hesaptan uzun olabilir.
         </p>
       ) : null}
-
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            disabled={!result || pdfBusy}
-            onClick={() => void handleDownloadResultPdf()}
-            className="rounded-lg border border-teal-700/40 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-900 shadow-sm transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-teal-700/50 dark:bg-teal-950/40 dark:text-teal-100 dark:hover:bg-teal-900/50"
-          >
-            {pdfBusy ? "PDF hazırlanıyor…" : "Sonucu PDF indir"}
-          </button>
-        </div>
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50/90 shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-teal-500 via-emerald-400 to-teal-600"
-              aria-hidden
-            />
-            <div className="p-5 pt-6 sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Sonuç</h2>
-                  <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Darboğaz (sürekli hat) modeli
-                  </p>
-                </div>
-                <span className="inline-flex shrink-0 items-center rounded-full bg-teal-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-teal-800 ring-1 ring-teal-600/15 dark:bg-teal-950/80 dark:text-teal-200 dark:ring-teal-500/30">
-                  Özet
-                </span>
-              </div>
-              {!result ? (
-                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center dark:border-slate-700 dark:bg-slate-800/20">
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Geçerli hedef adet ve modele göre dk/personel satırları hazır olduğunda burada hat hızı, süre ve iş günü
-                    karşılığı görünür.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-5 space-y-4">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Hat hızı
-                      </p>
-                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
-                        {Math.round(result.lineThroughputPerHour * 100) / 100}
-                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400"> adet/sa</span>
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Günlük üretim
-                      </p>
-                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
-                        {Math.round(result.lineThroughputPerHour * split.hoursPerWorkday * 100) / 100}
-                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400"> adet/gün</span>
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                        Hat hızı × {split.hoursPerWorkday} sa/gün
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Toplam süre
-                      </p>
-                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
-                        {formatHoursHuman(result.totalHoursBottleneck)}
-                      </p>
-                      <p className="mt-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
-                        {result.totalHoursBottleneck.toFixed(2)} saat
-                      </p>
-                    </div>
-                  </div>
-                  <div className="relative overflow-hidden rounded-xl border-2 border-teal-300/70 bg-gradient-to-br from-teal-50 via-white to-emerald-50/90 p-4 shadow-sm dark:border-teal-700/60 dark:from-teal-950/50 dark:via-slate-900 dark:to-emerald-950/30">
-                    <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-teal-400/15 blur-2xl dark:bg-teal-500/10" aria-hidden />
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-                      Darboğaz proses
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{result.bottleneckProcessKey}</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-800/50">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      İş günü karşılığı
-                    </p>
-                    <p className="mt-2 text-lg font-bold tabular-nums text-slate-900 dark:text-white">
-                      {split.fullDays}{" "}
-                      <span className="text-base font-semibold text-slate-600 dark:text-slate-300">gün</span> +{" "}
-                      {split.remainderHours.toFixed(2)}{" "}
-                      <span className="text-base font-semibold text-slate-600 dark:text-slate-300">sa</span>
-                    </p>
-                    <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                      {split.hoursPerWorkday} sa/gün bazında · yaklaşık{" "}
-                      <span className="font-semibold tabular-nums text-slate-700 dark:text-slate-300">
-                        {(result.totalHoursBottleneck / split.hoursPerWorkday).toFixed(2)}
-                      </span>{" "}
-                      iş günü
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/30 to-white shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-slate-500 via-slate-400 to-teal-500 opacity-90 dark:from-slate-600 dark:via-slate-500 dark:to-teal-600"
-              aria-hidden
-            />
-            <div className="p-5 pt-6 sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Proses detayı</h2>
-                  <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Aşama bazlı verim ve tek başına süre
-                  </p>
-                </div>
-                <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 ring-1 ring-slate-300/50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/50">
-                  {result ? `${result.processes.length} aşama` : "—"}
-                </span>
-              </div>
-              {!result ? (
-                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/20 dark:text-slate-400">
-                  Hesap sonucu oluşunca proses listesi burada görünür.
-                </div>
-              ) : (
-                <>
-                  <ul className="mt-5 max-h-[min(28rem,55vh)] space-y-2.5 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
-                    {result.processes.map((p) => {
-                      const isBn = p.processKey === result.bottleneckProcessKey;
-                      const hoursOnly = result.quantity / p.totalRatePerHour;
-                      const rate = Math.round(p.totalRatePerHour * 100) / 100;
-                      return (
-                        <li
-                          key={p.processKey}
-                          className={`relative overflow-hidden rounded-xl border transition-shadow ${
-                            isBn
-                              ? "border-teal-300/80 bg-gradient-to-r from-teal-50/90 to-white pl-4 shadow-md shadow-teal-900/5 ring-1 ring-teal-500/15 dark:border-teal-800/80 dark:from-teal-950/40 dark:to-slate-900/80 dark:shadow-teal-950/20 dark:ring-teal-500/20"
-                              : "border-slate-200/90 bg-white/90 pl-3.5 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-slate-600"
-                          }`}
-                        >
-                          <div
-                            className={`absolute bottom-2 left-0 top-2 w-1 rounded-full ${isBn ? "bg-teal-500 shadow-sm shadow-teal-600/40" : "bg-slate-200 dark:bg-slate-600"}`}
-                            aria-hidden
-                          />
-                          <div className="py-3.5 pl-4 pr-3 sm:pl-5">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                                  {p.processKey}
-                                </span>
-                                {isBn ? (
-                                  <span className="inline-flex items-center rounded-md bg-teal-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm dark:bg-teal-500">
-                                    Darboğaz
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium">
-                                <span className="rounded-md bg-slate-100 px-2 py-1 tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                                  Σ {rate} /sa
-                                </span>
-                                <span className="rounded-md border border-slate-200/90 bg-white px-2 py-1 tabular-nums text-slate-600 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
-                                  {hoursOnly.toFixed(2)} sa
-                                </span>
-                              </div>
-                            </div>
-                            <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                              {p.lines.map((l, idx) => (
-                                <span key={`${p.processKey}-${idx}-${l.workerName}`}>
-                                  <span className="font-medium text-slate-600 dark:text-slate-300">{l.workerName}</span>
-                                  <span className="tabular-nums text-slate-400"> ({l.ratePerHour}/sa)</span>
-                                  {idx < p.lines.length - 1 ? (
-                                    <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
-                                  ) : null}
-                                </span>
-                              ))}
-                            </p>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  <div className="mt-5 rounded-xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 text-xs leading-relaxed text-slate-600 dark:border-slate-700 dark:from-slate-800/50 dark:to-slate-900/50 dark:text-slate-400">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Karşılaştırma
-                    </p>
-                    <p className="mt-2">
-                      Ardışık çalışıp ara stok beklemeden her aşama kendi hızıyla tüm Q&apos;yu bitirse toplam{" "}
-                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
-                        {result.sequentialNoWipHours.toFixed(2)} sa
-                      </span>{" "}
-                      ({formatHoursHuman(result.sequentialNoWipHours)}) — yaklaşık{" "}
-                      <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
-                        {splitSeq.fullDays} gün + {splitSeq.remainderHours.toFixed(2)} sa
-                      </span>{" "}
-                      ({split.hoursPerWorkday} sa/gün). Sürekli hat akışında genellikle{" "}
-                      <span className="font-semibold text-teal-700 dark:text-teal-400">darboğaz süresi</span> (
-                      {result.totalHoursBottleneck.toFixed(2)} sa) daha gerçekçidir.
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
     </main>
   );
 }

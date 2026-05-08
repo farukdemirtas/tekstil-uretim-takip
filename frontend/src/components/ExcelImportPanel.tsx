@@ -517,7 +517,7 @@ export default function ExcelImportPanel({ teamMeta, onImported, open: openProp,
             setTargetDate(todayWeekdayIso());
             setOpen(true);
           }}
-          className="btn-nav"
+          className="btn-nav shrink-0"
         >
           Excel içe aktar
         </button>
