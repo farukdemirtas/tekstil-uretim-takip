@@ -1038,6 +1038,11 @@ export default function HomePage() {
               İş Hesaplama
             </Link>
           ) : null}
+          {hasPermission("modelAnalizi") ? (
+            <Link href="/model-analizi" className="btn-nav">
+              Model Analizi
+            </Link>
+          ) : null}
           {hasPermission("ekran1") ||
           hasPermission("ekran2") ||
           hasPermission("ekran3") ||

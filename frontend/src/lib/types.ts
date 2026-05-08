@@ -112,6 +112,8 @@ export type AppPermissions = {
   hataRapor: boolean;
   /** İş Hesaplama sayfası (darboğaz modeli) */
   isBitirmeHesaplama: boolean;
+  /** Ürün modeli analizi — iş günü, genel tamamlanan ve proses üretim özeti */
+  modelAnalizi: boolean;
   /** Girişte koyu tema; açık mod için false (yöneticilerde API’de false döner) */
   defaultDarkMode: boolean;
 };

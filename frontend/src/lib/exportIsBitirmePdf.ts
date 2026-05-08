@@ -38,6 +38,7 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
   } = params;
 
   const lineTp = Math.round(result.lineThroughputPerHour * 100) / 100;
+  const dailyProd = Math.round(result.lineThroughputPerHour * split.hoursPerWorkday * 100) / 100;
   const bnLabel = result.bottleneckProcessKey ? escapeHtml(result.bottleneckProcessKey) : "—";
   const modelTitle = productName.trim()
     ? `${escapeHtml(productName.trim())} <span style="color:#64748b;font-weight:500;">(${escapeHtml(modelCode)})</span>`
@@ -103,21 +104,28 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
   </div>
 
   <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.07em;margin:0 0 14px;">Özet — darboğaz modeli</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px;">
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
     ${statCard(
       "Hat hızı (tahmini)",
       `${lineTp} <span style="font-size:14px;font-weight:600;color:#64748b;">adet/saat</span>`,
       "Sürekli hat: min. proses verimi"
     )}
     ${statCard(
-      "Darboğaz proses",
-      bnLabel,
-      "Darboğaz, üretim hızını sınırlayan aşama"
+      "Günlük üretim (tahmini)",
+      `${dailyProd} <span style="font-size:14px;font-weight:600;color:#64748b;">adet/gün</span>`,
+      `Hat hızı × ${split.hoursPerWorkday} sa/gün`
     )}
     ${statCard(
       "Toplam süre",
       `${escapeHtml(formatHoursHuman(result.totalHoursBottleneck))}`,
       `${result.totalHoursBottleneck.toFixed(2)} saat`
+    )}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px;">
+    ${statCard(
+      "Darboğaz proses",
+      bnLabel,
+      "Darboğaz, üretim hızını sınırlayan aşama"
     )}
     ${statCard(
       "İş günü karşılığı",

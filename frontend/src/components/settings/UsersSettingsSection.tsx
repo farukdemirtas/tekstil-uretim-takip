@@ -23,6 +23,7 @@ function emptyDraft(): AppPermissions {
     prosesKontrol: false,
     hataRapor: false,
     isBitirmeHesaplama: false,
+    modelAnalizi: false,
     defaultDarkMode: false,
   };
 }

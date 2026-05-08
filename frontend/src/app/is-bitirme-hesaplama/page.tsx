@@ -53,6 +53,26 @@ function newManualRow(): Row {
   return { id: randomRowId("manual"), workerId: "", processName: "", source: "manual", manualTeamCode: "" };
 }
 
+/** YYYY-MM-DD → gg.aa.yyyy (tr-TR) */
+function formatIsoDateTr(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+  if (Number.isNaN(dt.getTime())) return iso;
+  return dt.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/** İşin yapıldığı günlerin listesi; çok fazlaysa kısalt */
+function formatWorkDatesListTr(datesIso: string[]): string {
+  const sorted = [...datesIso].sort();
+  const maxShow = 15;
+  const head = sorted.slice(0, maxShow).map(formatIsoDateTr);
+  const rest = sorted.length - maxShow;
+  if (rest <= 0) return head.join(", ");
+  return `${head.join(", ")} ve ${rest} gün daha`;
+}
+
 /** Model geçmiş tablosunda aynı bölüm+proses eşleşmesi varsa onu, yoksa personel genel satırını kullan */
 function historicalEffPctForRow(
   modelStats: JobCalcModelWorkerStatsResponse | null,
@@ -589,6 +609,31 @@ export default function IsBitirmeHesaplamaPage() {
             />
           </label>
         </div>
+        {modelStats && !modelStatsLoading ? (
+          <p className="text-sm text-slate-700 dark:text-slate-200">
+            <span className="text-slate-600 dark:text-slate-400">Bu modelde tamamlanan iş (genel):</span>{" "}
+            <span className="font-semibold tabular-nums text-teal-700 dark:text-teal-400">
+              {(modelStats.completedGenelTotal ?? 0).toLocaleString("tr-TR")} adet
+            </span>
+            {modelStats.modelMetaDayCount != null && modelStats.modelMetaDayCount > 0 ? (
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                {" "}
+                ({modelStats.modelMetaDayCount} iş günü
+                {modelStats.modelWorkDates && modelStats.modelWorkDates.length > 0
+                  ? `: ${formatWorkDatesListTr(modelStats.modelWorkDates)}`
+                  : null}
+                )
+              </span>
+            ) : (
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                {" "}
+                (seçili dönemde bu modele ait günlük kayıt yok)
+              </span>
+            )}
+          </p>
+        ) : modelStatsLoading && selectedModelCode ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">Tamamlanan iş toplamı hesaplanıyor…</p>
+        ) : null}
         {modelMapErr ? (
           <p className="text-xs text-amber-700 dark:text-amber-300">
             {selectedModelLabel}: {modelMapErr}
@@ -941,7 +986,7 @@ export default function IsBitirmeHesaplamaPage() {
                 </div>
               ) : (
                 <div className="mt-5 space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Hat hızı
@@ -949,6 +994,18 @@ export default function IsBitirmeHesaplamaPage() {
                       <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
                         {Math.round(result.lineThroughputPerHour * 100) / 100}
                         <span className="text-sm font-semibold text-slate-500 dark:text-slate-400"> adet/sa</span>
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Günlük üretim
+                      </p>
+                      <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
+                        {Math.round(result.lineThroughputPerHour * split.hoursPerWorkday * 100) / 100}
+                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400"> adet/gün</span>
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        Hat hızı × {split.hoursPerWorkday} sa/gün
                       </p>
                     </div>
                     <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">

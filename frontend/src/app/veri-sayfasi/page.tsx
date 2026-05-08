@@ -11,6 +11,7 @@ import {
   makeProsesKey,
   setProsesMap,
   rowsKeyForModel,
+  GENEL_VERIMLILIK_MODEL_CODE,
 } from "@/lib/prosesVeri";
 
 /* ─── Tipler ─────────────────────────────────────────────── */
@@ -219,16 +220,54 @@ export default function VeriSayfasiPage() {
   }
 
   /* ── Aktarma ────────────────────────────────────────────── */
-  function handleTransfer() {
-    const source = transferSource || otherModels[0] || "";
-    if (!source || !activeModel) return;
-    const sourceRows = loadModelRows(source);
+  async function handleTransfer() {
+    const source =
+      transferSource ||
+      (otherModels.length > 0 ? otherModels[0]! : GENEL_VERIMLILIK_MODEL_CODE);
+    if (!activeModel) return;
+
+    let raw: { teamCode: string; teamLabel: string; processName: string; dkAdet: string }[] = [];
+    try {
+      if (source === GENEL_VERIMLILIK_MODEL_CODE) {
+        raw = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE);
+      } else {
+        raw = loadModelRows(source);
+        if (raw.length === 0) {
+          raw = await getProsesVeriRowsFromServer(source);
+        }
+      }
+    } catch {
+      alert(
+        source === GENEL_VERIMLILIK_MODEL_CODE
+          ? "Genel verimlilik satırları sunucudan alınamadı. /genel-verimlilik sayfasında dk tanımlı olduğunu kontrol edin."
+          : "Kaynak model verisi alınamadı."
+      );
+      return;
+    }
+
+    if (raw.length === 0) {
+      alert(
+        source === GENEL_VERIMLILIK_MODEL_CODE
+          ? "Genel verimlilikte henüz dk satırı yok; önce Genel verimlilik sayfasından ekleyin."
+          : "Kaynak modelde aktarılacak satır yok."
+      );
+      return;
+    }
+
+    const normalized: Row[] = raw.map((r) => ({
+      id: 0,
+      teamCode: r.teamCode,
+      teamLabel: r.teamLabel,
+      processName: r.processName,
+      dkAdet: String(r.dkAdet ?? ""),
+    }));
+
     let next: Row[];
     if (transferMode === "replace") {
-      next = sourceRows.map((r) => ({ ...r, id: nextId++ }));
+      next = normalized.map((r) => ({ ...r, id: nextId++ }));
     } else {
       const existing = new Set(rows.map((r) => makeProsesKey(r.teamCode, r.processName)));
-      const toAdd    = sourceRows
+      const toAdd = normalized
         .filter((r) => !existing.has(makeProsesKey(r.teamCode, r.processName)))
         .map((r) => ({ ...r, id: nextId++ }));
       next = [...rows, ...toAdd];
@@ -438,21 +477,22 @@ export default function VeriSayfasiPage() {
             ))}
 
             {/* Aktar butonu — her zaman erişilebilir */}
-            {activeModel && otherModels.length > 0 && (
+            {activeModel && (
               <button
                 type="button"
                 onClick={() => {
-                  const first = otherModels[0] ?? "";
+                  const first = otherModels[0] ?? GENEL_VERIMLILIK_MODEL_CODE;
                   setTransferSource(first);
                   setTransferMode("merge");
                   setShowTransfer(true);
                 }}
+                title="Başka ürün modeli veya genel verimlilik dk tablosundan kopyala"
                 className="flex items-center gap-1.5 rounded-xl border border-violet-300 bg-violet-50 px-3.5 py-1.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-700/60 dark:bg-violet-950/20 dark:text-violet-400"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/>
                 </svg>
-                Başka Modelden Aktar
+                Model / genel verimlilikten aktar
               </button>
             )}
           </div>
@@ -832,21 +872,32 @@ export default function VeriSayfasiPage() {
             className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Modelden Aktar</h3>
+            <h3 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Model / genel verimlilikten aktar</h3>
             <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-              Seçilen modelin verilerini <strong>{activeModel}</strong> modeline aktarır.
+              <strong>{activeModel}</strong> modeline kaynak satırları kopyalar.{" "}
+              <strong>Genel verimlilik</strong> seçildiğinde canlı dk tablosu (saatlik / günlük hesap kaynağı) sunucudan
+              çekilir.
             </p>
 
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Kaynak Model</label>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Kaynak</label>
             <div className="relative mb-4">
               <select
-                value={transferSource || otherModels[0] || ""}
+                value={
+                  transferSource ||
+                  (otherModels.length > 0 ? otherModels[0]! : GENEL_VERIMLILIK_MODEL_CODE)
+                }
                 onChange={(e) => setTransferSource(e.target.value)}
                 className="w-full appearance-none rounded-xl border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm text-slate-800 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               >
+                <option value={GENEL_VERIMLILIK_MODEL_CODE}>
+                  Genel verimlilik — dk · saatlik hedefleri (otomatik)
+                </option>
                 {otherModels.map((m) => (
                   <option key={m} value={m}>
-                    {m} {apiModels.find(a => a.modelCode === m)?.productName ? `— ${apiModels.find(a => a.modelCode === m)!.productName}` : ""}
+                    {m}{" "}
+                    {apiModels.find((a) => a.modelCode === m)?.productName
+                      ? `— ${apiModels.find((a) => a.modelCode === m)!.productName}`
+                      : ""}
                   </option>
                 ))}
               </select>
@@ -877,9 +928,13 @@ export default function VeriSayfasiPage() {
               <button type="button" onClick={() => setShowTransfer(false)}
                 className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300"
               >İptal</button>
-              <button type="button" onClick={handleTransfer}
+              <button
+                type="button"
+                onClick={() => void handleTransfer()}
                 className="rounded-xl border border-violet-500 bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
-              >Aktar</button>
+              >
+                Aktar
+              </button>
             </div>
           </div>
         </div>

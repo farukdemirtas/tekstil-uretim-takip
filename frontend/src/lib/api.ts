@@ -1160,6 +1160,12 @@ export type JobCalcModelWorkerStatsResponse = {
   modelCode: string;
   workers: JobCalcModelWorkerStatRow[];
   overallAvgEfficiencyPercent: number | null;
+  /** Hedef takip formülü: bu model günlük meta ile işaretli günlerde genel tamamlanan toplamı */
+  completedGenelTotal: number;
+  /** Aynı dönemde bu modele ait günlük ürün kaydı olan iş günü sayısı */
+  modelMetaDayCount: number;
+  /** Bu modele kayıtlı üretim günlerinin YYYY-MM-DD listesi (sıralı) */
+  modelWorkDates: string[];
 };
 
 export async function getJobCalcModelWorkerStats(params: {
@@ -1180,4 +1186,59 @@ export async function getJobCalcModelWorkerStats(params: {
   });
   if (!res.ok) throw new Error("Model verim özeti alınamadı");
   return res.json() as Promise<JobCalcModelWorkerStatsResponse>;
+}
+
+// ─── Model Analizi ───────────────────────────────────────────────────────────
+
+export type ModelAnalysisDayLine = {
+  teamCode: string;
+  processName: string;
+  adet: number;
+};
+
+export type ModelAnalysisDayRow = {
+  date: string;
+  genelTamamlanan: number;
+  lines: ModelAnalysisDayLine[];
+  totalProsesAdet: number;
+};
+
+export type ModelAnalysisProcessTotal = {
+  teamCode: string;
+  processName: string;
+  adet: number;
+  activeDays: number;
+};
+
+export type ModelAnalysisResponse = {
+  modelId: number;
+  modelCode: string;
+  productName: string | null;
+  startDate: string;
+  endDate: string;
+  workDayCount: number;
+  completedGenelTotal: number;
+  totalProsesAdetAllDays: number;
+  days: ModelAnalysisDayRow[];
+  processTotals: ModelAnalysisProcessTotal[];
+};
+
+export async function getModelAnalysisReport(params: {
+  modelId: number;
+  modelCode: string;
+  startDate: string;
+  endDate: string;
+}): Promise<ModelAnalysisResponse> {
+  const q = new URLSearchParams({
+    modelId: String(params.modelId),
+    modelCode: params.modelCode,
+    startDate: params.startDate,
+    endDate: params.endDate,
+  }).toString();
+  const res = await apiFetch(`${apiBase()}/model-analysis?${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Model analizi alınamadı");
+  return res.json() as Promise<ModelAnalysisResponse>;
 }

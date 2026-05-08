@@ -43,6 +43,11 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
     label: "İş Hesaplama",
     description: "Hedef adet, personel ve proses verimine göre tahmini bitiş süresi (darboğaz modeli)",
   },
+  {
+    key: "modelAnalizi",
+    label: "Model Analizi",
+    description: "Seçilen ürün modeli için iş günü, genel tamamlanan ve proses bazlı üretim raporu",
+  },
 ];
 
 export function isAdminRole(): boolean {

@@ -2240,6 +2240,38 @@ export async function getJobCalcModelWorkerStats(modelId, modelCode, startDate, 
       ? null
       : Math.round(withEff.reduce((s, w) => s + w.avgEfficiencyPercent, 0) / withEff.length);
 
+  /** Gün bazında hedef takip «genel tamamlanan» (aşama minimumu), sadece bu model günlük meta ile işaretli günler — toplam adet */
+  const metaDays = await dbAll(
+    `
+    SELECT production_date AS d
+    FROM daily_product_meta
+    WHERE model_id = ? AND production_date BETWEEN ? AND ?
+    ORDER BY production_date
+    `,
+    [mid, sd, ed]
+  );
+  let completedGenelTotal = 0;
+  for (const md of metaDays || []) {
+    const d = md.d;
+    if (!d) continue;
+    try {
+      const stageTotals = await getHedefTakipStageTotals(String(d), String(d), mid);
+      const stages = stageTotals.stages ?? [];
+      const nums = stages
+        .map((s) => (typeof s.total === "number" && s.total > 0 ? s.total : null))
+        .filter((n) => n !== null);
+      const genel = nums.length > 0 ? Math.min(...nums) : 0;
+      completedGenelTotal += Math.round(Number(genel)) || 0;
+    } catch {
+      /* gün atlanır */
+    }
+  }
+  const modelMetaDayCount = (metaDays || []).length;
+  const modelWorkDates = (metaDays || [])
+    .map((md) => String(md.d || "").trim())
+    .filter(Boolean)
+    .sort();
+
   return {
     startDate: sd,
     endDate: ed,
@@ -2247,6 +2279,149 @@ export async function getJobCalcModelWorkerStats(modelId, modelCode, startDate, 
     modelCode: code,
     workers,
     overallAvgEfficiencyPercent,
+    completedGenelTotal,
+    modelMetaDayCount,
+    modelWorkDates,
+  };
+}
+
+/**
+ * Model Analizi: seçilen model günlük meta ile işaretli iş günlerinde genel tamamlanan,
+ * günlük proses bazlı üretim toplamları ve dönem özeti.
+ */
+export async function getModelAnalysisReport(modelId, modelCode, startDate, endDate) {
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid < 1) {
+    throw new Error("Geçersiz modelId");
+  }
+  const code = String(modelCode ?? "").trim();
+  if (!code) throw new Error("modelCode gerekli");
+  const sd = String(startDate ?? "").trim();
+  const ed = String(endDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sd) || !/^\d{4}-\d{2}-\d{2}$/.test(ed)) {
+    throw new Error("Geçersiz tarih aralığı");
+  }
+
+  const pm = await dbGet(
+    `SELECT model_code AS modelCode, product_name AS productName FROM product_models WHERE id = ? LIMIT 1`,
+    [mid]
+  );
+  if (!pm) throw new Error("Model bulunamadı");
+  if (String(pm.modelCode || "").trim() !== code) {
+    throw new Error("modelCode modelId ile eşleşmiyor");
+  }
+
+  const metaDays = await dbAll(
+    `
+    SELECT production_date AS d
+    FROM daily_product_meta
+    WHERE model_id = ? AND production_date BETWEEN ? AND ?
+    ORDER BY production_date
+    `,
+    [mid, sd, ed]
+  );
+
+  const line = HEDEF_PRODUCTION_LINE_SQL;
+  const prodRows = await dbAll(
+    `
+    SELECT
+      p.production_date AS d,
+      w.team AS team,
+      TRIM(COALESCE(w.process, '')) AS processName,
+      SUM((${line})) AS adet
+    FROM production_entries p
+    JOIN workers w ON w.id = p.worker_id
+    INNER JOIN daily_product_meta m ON m.production_date = p.production_date AND m.model_id = ?
+    WHERE p.production_date BETWEEN ? AND ?
+      AND (w.created_at IS NULL OR date(w.created_at) <= p.production_date)
+      AND (w.deleted_at IS NULL OR date(w.deleted_at) > p.production_date)
+      AND NOT EXISTS (
+        SELECT 1 FROM worker_roster_day_hide h
+        WHERE h.worker_id = w.id AND h.hide_date = p.production_date
+      )
+    GROUP BY p.production_date, w.team, TRIM(COALESCE(w.process, ''))
+    `,
+    [mid, sd, ed]
+  );
+
+  const byDate = new Map();
+  const procAgg = new Map();
+  for (const r of prodRows || []) {
+    const d = r.d;
+    const team = String(r.team || "");
+    const proc = String(r.processName || "");
+    const adet = Math.round(Number(r.adet)) || 0;
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d).push({ teamCode: team, processName: proc, adet });
+
+    const pk = `${team}\t${proc}`;
+    if (!procAgg.has(pk)) {
+      procAgg.set(pk, { teamCode: team, processName: proc, adet: 0, dates: new Set() });
+    }
+    const o = procAgg.get(pk);
+    o.adet += adet;
+    if (adet > 0) o.dates.add(d);
+  }
+
+  const days = [];
+  let completedGenelTotal = 0;
+  let totalProsesAdetAllDays = 0;
+
+  for (const md of metaDays || []) {
+    const d = md.d;
+    if (!d) continue;
+    let genelTamamlanan = 0;
+    try {
+      const stageTotals = await getHedefTakipStageTotals(String(d), String(d), mid);
+      const stages = stageTotals.stages ?? [];
+      const nums = stages
+        .map((s) => (typeof s.total === "number" && s.total > 0 ? s.total : null))
+        .filter((n) => n !== null);
+      genelTamamlanan = nums.length > 0 ? Math.round(Math.min(...nums)) : 0;
+    } catch {
+      genelTamamlanan = 0;
+    }
+    const lines = (byDate.get(d) || []).slice().sort((a, b) => {
+      const tc = a.teamCode.localeCompare(b.teamCode, "tr");
+      if (tc !== 0) return tc;
+      return a.processName.localeCompare(b.processName, "tr");
+    });
+    const totalProsesAdet = lines.reduce((s, x) => s + x.adet, 0);
+    completedGenelTotal += genelTamamlanan;
+    totalProsesAdetAllDays += totalProsesAdet;
+    days.push({
+      date: d,
+      genelTamamlanan,
+      lines,
+      totalProsesAdet,
+    });
+  }
+
+  const processTotals = [...procAgg.values()]
+    .map((o) => ({
+      teamCode: o.teamCode,
+      processName: o.processName,
+      adet: Math.round(o.adet),
+      activeDays: o.dates.size,
+    }))
+    .sort(
+      (a, b) =>
+        b.adet - a.adet ||
+        a.teamCode.localeCompare(b.teamCode, "tr") ||
+        a.processName.localeCompare(b.processName, "tr")
+    );
+
+  return {
+    modelId: mid,
+    modelCode: code,
+    productName: pm.productName ? String(pm.productName) : null,
+    startDate: sd,
+    endDate: ed,
+    workDayCount: (metaDays || []).length,
+    completedGenelTotal,
+    totalProsesAdetAllDays,
+    days,
+    processTotals,
   };
 }
 

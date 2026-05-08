@@ -23,6 +23,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   hataRapor: false,
   /** İş Hesaplama (proses hattı darboğaz) */
   isBitirmeHesaplama: false,
+  /** Ürün modeli analizi */
+  modelAnalizi: false,
   /** Girişte koyu mod (veri girişi kullanıcıları; yöneticiler her zaman açık mod varsayımı) */
   defaultDarkMode: false,
 };
