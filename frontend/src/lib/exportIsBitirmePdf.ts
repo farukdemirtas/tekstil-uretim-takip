@@ -97,7 +97,7 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;font-size:12px;color:#334155;">
       <div><span style="color:#64748b;">Model</span><br/><span style="font-weight:600;color:#0f172a;">${modelTitle}</span></div>
       <div><span style="color:#64748b;">Hedef adet (Q)</span><br/><span style="font-weight:600;font-variant-numeric:tabular-nums;">${safeText(quantityLabel)}</span></div>
-      <div><span style="color:#64748b;">Referans günü</span><br/><span style="font-weight:600;font-variant-numeric:tabular-nums;">${escapeHtml(referenceDate)}</span></div>
+      <div><span style="color:#64748b;">Üretim ve verim tarihi</span><br/><span style="font-weight:600;font-variant-numeric:tabular-nums;">${escapeHtml(referenceDate)}</span></div>
       <div><span style="color:#64748b;">Gün başına çalışma</span><br/><span style="font-weight:600;">${safeText(hoursPerDayLabel)} saat</span></div>
     </div>
   </div>

@@ -15,7 +15,6 @@ import {
   type ProductModelListItem,
 } from "@/lib/api";
 import { addDaysToIso, clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
-import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
   computeJobCompletion,
   formatHoursHuman,
@@ -79,7 +78,7 @@ function historicalEffPctForRow(
   return anyStation?.avgEfficiencyPercent ?? undefined;
 }
 
-function loadDraft(): { qty: string; hpd: string; refDate?: string; modelCode?: string; rows: Row[] } | null {
+function loadDraft(): { qty: string; hpd: string; modelCode?: string; rows: Row[] } | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -87,7 +86,6 @@ function loadDraft(): { qty: string; hpd: string; refDate?: string; modelCode?: 
     const j = JSON.parse(raw) as {
       qty?: string;
       hpd?: string;
-      refDate?: string;
       modelCode?: string;
       rows?: unknown[];
     };
@@ -120,7 +118,6 @@ function loadDraft(): { qty: string; hpd: string; refDate?: string; modelCode?: 
     return {
       qty: typeof j.qty === "string" ? j.qty : String(j.qty ?? ""),
       hpd: typeof j.hpd === "string" ? j.hpd : String(j.hpd ?? ""),
-      refDate: typeof j.refDate === "string" ? j.refDate : undefined,
       modelCode: typeof j.modelCode === "string" ? j.modelCode : undefined,
       rows,
     };
@@ -141,7 +138,6 @@ export default function IsBitirmeHesaplamaPage() {
   const [loadErr, setLoadErr] = useState<string>("");
   const [quantity, setQuantity] = useState("10000");
   const [hoursPerDay, setHoursPerDay] = useState("9");
-  const [referenceDate, setReferenceDate] = useState<string>(() => clampToWeekdayIso(todayWeekdayIso()));
   const [rows, setRows] = useState<Row[]>([]);
   const [productionRows, setProductionRows] = useState<ProductionRow[]>([]);
   const [productionErr, setProductionErr] = useState<string>("");
@@ -152,6 +148,9 @@ export default function IsBitirmeHesaplamaPage() {
   const [pdfBusy, setPdfBusy] = useState(false);
   /** Model listesinden «Kaldır» ile çıkarılan personel (aynı modelde yeniden eklenmez) */
   const excludedModelWorkerIdsRef = useRef<Set<number>>(new Set());
+
+  /** Üretim + model verim penceresi bitişi: her zaman bugün (iş günü). Ayrı referans tarihi seçimi yok. */
+  const efficiencyDateIso = clampToWeekdayIso(todayWeekdayIso());
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -164,7 +163,6 @@ export default function IsBitirmeHesaplamaPage() {
     if (draft) {
       if (draft.qty) setQuantity(draft.qty);
       if (draft.hpd) setHoursPerDay(draft.hpd);
-      if (draft.refDate) setReferenceDate(clampToWeekdayIso(draft.refDate));
       if (draft.rows.length > 0) setRows(draft.rows);
     }
     void Promise.all([getWorkersForAnalytics(), getTeams(), getProcesses(), listProductModels()])
@@ -230,14 +228,14 @@ export default function IsBitirmeHesaplamaPage() {
   useEffect(() => {
     setProductionLoading(true);
     setProductionErr("");
-    void getProduction(referenceDate)
+    void getProduction(efficiencyDateIso)
       .then((r) => setProductionRows(r))
       .catch(() => {
         setProductionRows([]);
-        setProductionErr("Bu tarih için üretim verisi alınamadı.");
+        setProductionErr("Bugünkü üretim verisi alınamadı.");
       })
       .finally(() => setProductionLoading(false));
-  }, [referenceDate]);
+  }, [efficiencyDateIso]);
 
   const selectedModelId = useMemo(() => {
     return productModels.find((m) => m.modelCode === selectedModelCode)?.id ?? null;
@@ -250,7 +248,7 @@ export default function IsBitirmeHesaplamaPage() {
       setModelStatsLoading(false);
       return;
     }
-    const end = referenceDate;
+    const end = efficiencyDateIso;
     const start = addDaysToIso(end, -180);
     let cancelled = false;
     setModelStatsLoading(true);
@@ -276,13 +274,13 @@ export default function IsBitirmeHesaplamaPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedModelCode, selectedModelId, referenceDate]);
+  }, [selectedModelCode, selectedModelId, efficiencyDateIso]);
 
-  const persist = useCallback((q: string, hpd: string, r: Row[], ref: string, modelCode: string) => {
+  const persist = useCallback((q: string, hpd: string, r: Row[], modelCode: string) => {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ qty: q, hpd, refDate: ref, modelCode: modelCode || undefined, rows: r }),
+        JSON.stringify({ qty: q, hpd, modelCode: modelCode || undefined, rows: r }),
       );
     } catch {
       /* ignore */
@@ -336,7 +334,7 @@ export default function IsBitirmeHesaplamaPage() {
         }
       }
       const next = [...modelRows, ...manual];
-      persist(quantity, hoursPerDay, next, referenceDate, selectedModelCode);
+      persist(quantity, hoursPerDay, next, selectedModelCode);
       return next;
     });
   }, [
@@ -390,14 +388,14 @@ export default function IsBitirmeHesaplamaPage() {
           proc,
           modelProsesMap,
           prod,
-          referenceDate,
+          efficiencyDateIso,
           todayIso,
           hist !== undefined ? hist : undefined
         )
       );
     }
     return map;
-  }, [rows, workers, productionByWorkerId, modelProsesMap, referenceDate, todayIso, modelStats]);
+  }, [rows, workers, productionByWorkerId, modelProsesMap, efficiencyDateIso, todayIso, modelStats]);
 
   const assignments: AssignmentInput[] = useMemo(() => {
     const out: AssignmentInput[] = [];
@@ -440,7 +438,7 @@ export default function IsBitirmeHesaplamaPage() {
   function updateRow(id: string, patch: Partial<Row>) {
     setRows((prev) => {
       const next = prev.map((r) => (r.id === id ? { ...r, ...patch } : r));
-      persist(quantity, hoursPerDay, next, referenceDate, selectedModelCode);
+      persist(quantity, hoursPerDay, next, selectedModelCode);
       return next;
     });
   }
@@ -448,7 +446,7 @@ export default function IsBitirmeHesaplamaPage() {
   function addRow() {
     setRows((prev) => {
       const next = [...prev, newManualRow()];
-      persist(quantity, hoursPerDay, next, referenceDate, selectedModelCode);
+      persist(quantity, hoursPerDay, next, selectedModelCode);
       return next;
     });
   }
@@ -460,31 +458,25 @@ export default function IsBitirmeHesaplamaPage() {
         excludedModelWorkerIdsRef.current.add(row.workerId);
       }
       const next = prev.filter((r) => r.id !== id);
-      persist(quantity, hoursPerDay, next, referenceDate, selectedModelCode);
+      persist(quantity, hoursPerDay, next, selectedModelCode);
       return next;
     });
   }
 
   function onQuantityChange(v: string) {
     setQuantity(v);
-    persist(v, hoursPerDay, rows, referenceDate, selectedModelCode);
+    persist(v, hoursPerDay, rows, selectedModelCode);
   }
 
   function onHpdChange(v: string) {
     setHoursPerDay(v);
-    persist(quantity, v, rows, referenceDate, selectedModelCode);
-  }
-
-  function onReferenceDateChange(v: string) {
-    const d = clampToWeekdayIso(v);
-    setReferenceDate(d);
-    persist(quantity, hoursPerDay, rows, d, selectedModelCode);
+    persist(quantity, v, rows, selectedModelCode);
   }
 
   function onModelChange(code: string) {
     excludedModelWorkerIdsRef.current.clear();
     setSelectedModelCode(code);
-    persist(quantity, hoursPerDay, rows, referenceDate, code);
+    persist(quantity, hoursPerDay, rows, code);
   }
 
   async function handleDownloadResultPdf() {
@@ -498,7 +490,7 @@ export default function IsBitirmeHesaplamaPage() {
         modelCode: selectedModelCode,
         productName: selectedModelLabel,
         quantityLabel: quantity,
-        referenceDate,
+        referenceDate: efficiencyDateIso,
         hoursPerDayLabel: hoursPerDay,
       });
     } catch {
@@ -526,7 +518,7 @@ export default function IsBitirmeHesaplamaPage() {
             personel otomatik listelenir (aşağıdaki özet tablo ile aynı küme); başka personel için{" "}
             <strong className="font-semibold text-slate-800 dark:text-slate-200">Ek personel satırı</strong> kullanın. Önce{" "}
             <strong className="font-semibold text-slate-800 dark:text-slate-200">günlük meta bu modele işaretlenmiş</strong> geçmiş
-            günlerdeki ortalama verim kullanılır (özet tablo); yoksa referans günü satırı veya %100 hedef. Süre ≈ adet ÷ hat hızı (darboğaz).
+            günlerdeki ortalama verim kullanılır (özet tablo); yoksa bugünkü üretim satırı veya %100 hedef. Süre ≈ adet ÷ hat hızı (darboğaz).
           </p>
         </div>
         <Link
@@ -584,12 +576,6 @@ export default function IsBitirmeHesaplamaPage() {
               className="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
             />
           </label>
-          <WeekdayDatePicker
-            label="Verim için referans günü"
-            value={referenceDate}
-            onChange={onReferenceDateChange}
-            className="min-w-[200px]"
-          />
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Gün başına çalışma (saat)
@@ -623,7 +609,7 @@ export default function IsBitirmeHesaplamaPage() {
           <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Bu modelde geçmiş verimler</h2>
           {modelStats ? (
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              {modelStats.startDate} → {modelStats.endDate} (referans gününe kadar 180 gün)
+              {modelStats.startDate} → {modelStats.endDate} (bugüne kadar 180 gün)
             </span>
           ) : null}
         </div>
@@ -631,7 +617,7 @@ export default function IsBitirmeHesaplamaPage() {
           Günlük ürün kaydında <strong className="font-medium text-slate-600 dark:text-slate-300">bu model_id</strong> ile işaretlenmiş
           tarihlerde, aynı modelin dk tablosundaki bölüm+proses istasyonunda kaydı olan personel için ortalama verim (günlük adet ÷
           dk×60×9) hesaplanır. Bu ortalama aşağıda listelenir; <strong className="font-medium">İş hesabında önce bu değer</strong>{" "}
-          kullanılır. Personelde geçmiş örnek yoksa referans günü verimliliği veya hedef hız devreye girer.
+          kullanılır. Personelde geçmiş örnek yoksa bugünkü üretim verimliliği veya hedef hız devreye girer.
         </p>
         {modelStatsErr ? (
           <p className="text-xs text-amber-700 dark:text-amber-300">{modelStatsErr}</p>
@@ -697,7 +683,7 @@ export default function IsBitirmeHesaplamaPage() {
             <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Personel ve prosesler</h2>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Otomatik satırlar yalnızca bu modelde günlük ürün kaydında model işaretli günlerde üretim kaydı olan personelden
-              gelir («Bu modelde geçmiş verimler» özetindeki küme; referans gününe kadar 180 gün). «Ek personel satırı» ile
+              gelir («Bu modelde geçmiş verimler» özetindeki küme; bugüne kadar 180 gün). «Ek personel satırı» ile
               listeye başka personel ekleyebilir, bu modelde hesaba katılacak{" "}
               <strong className="font-medium text-slate-600 dark:text-slate-300">bölüm ve proses</strong>i seçebilirsiniz; verim
               seçtiğiniz istasyona göre hesaplanır.
