@@ -9,10 +9,11 @@ import PersonnelNamesSection from "@/components/settings/PersonnelNamesSection";
 import ProductModelsSection from "@/components/settings/ProductModelsSection";
 import TeamsProcessesSection from "@/components/settings/TeamsProcessesSection";
 import UsersSettingsSection from "@/components/settings/UsersSettingsSection";
+import DecisionSupportSection from "@/components/settings/DecisionSupportSection";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "kullanici" | "personel" | "dogum" | "proses" | "modeller" | "loglar";
+type TabId = "kullanici" | "personel" | "dogum" | "proses" | "modeller" | "karar-destegi" | "loglar";
 
 export default function AyarlarPageClient() {
   const searchParams = useSearchParams();
@@ -45,6 +46,7 @@ export default function AyarlarPageClient() {
     const raw = searchParams.get("tab");
     if (raw === "loglar" && canLoglar) return "loglar";
     if (raw === "modeller" && canAyarlar) return "modeller";
+    if (raw === "karar-destegi" && canAyarlar) return "karar-destegi";
     if (raw === "proses" && canAyarlar) return "proses";
     if (raw === "dogum" && canAyarlar) return "dogum";
     if (raw === "personel" && canAyarlar) return "personel";
@@ -70,6 +72,7 @@ export default function AyarlarPageClient() {
           { id: "dogum" as const, label: "Doğum günleri" },
           { id: "proses" as const, label: "Proses ve bölüm" },
           { id: "modeller" as const, label: "Ürün modelleri" },
+          { id: "karar-destegi" as const, label: "Rapor ve uyarılar" },
         ] as const)
       : []),
     ...(canLoglar ? [{ id: "loglar" as const, label: "Loglar" }] : []),
@@ -118,6 +121,7 @@ export default function AyarlarPageClient() {
       {activeTab === "dogum" && canAyarlar && <BirthdaysSection />}
       {activeTab === "proses" && canAyarlar && <TeamsProcessesSection />}
       {activeTab === "modeller" && canAyarlar && <ProductModelsSection />}
+      {activeTab === "karar-destegi" && canAyarlar && <DecisionSupportSection />}
       {activeTab === "loglar" && canLoglar && <LogsSection />}
     </main>
   );

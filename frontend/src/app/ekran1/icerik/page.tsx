@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import {
+  evaluateHedefAlertEval,
   getHedefTakipStageTotals,
   getTopWorkersAnalytics,
   getProduction,
   getProsesVeriRowsFromServer,
   getPersonnelBirthdaysToday,
   setAuthToken,
+  type HedefAlertEvalPayload,
   type HedefStageLineDto,
   type PersonnelBirthdayRow,
 } from "@/lib/api";
@@ -31,10 +33,21 @@ import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
 const AUTO_REFRESH_MS = 30_000;
-/** Doğum günü: yalnızca periyodik overlay — ~10 sn görünür, ardından ~50 sn gizli (döngü 60 sn). Alt şerit yok. */
+/** Doğum günü: yalnızca periyodik overlay — tek kişide ~10 sn görünür, ardından ~50 sn gizli (döngü 60 sn). Çoklu kişide süre uzar; sırayla dönüş. */
 const BDAY_OVERLAY_VISIBLE_MS = 10_000;
 const BDAY_OVERLAY_CYCLE_MS = 60_000;
 const BDAY_FETCH_INTERVAL_MS = 60_000;
+/** Kişi başı slayt süresi (çoğul kutlamada). */
+const BDAY_MULTI_SLIDE_MS = 4_800;
+const BDAY_MULTI_CAP_VISIBLE_MS = 48_000;
+
+function birthdayOverlayDurationMs(personCount: number): number {
+  if (personCount <= 1) return BDAY_OVERLAY_VISIBLE_MS;
+  return Math.min(
+    BDAY_MULTI_CAP_VISIBLE_MS,
+    Math.max(BDAY_OVERLAY_VISIBLE_MS, BDAY_MULTI_SLIDE_MS * personCount)
+  );
+}
 
 function nWorkdaysBack(fromIso: string, n: number): string {
   const [y, m, d] = fromIso.split("-").map(Number);
@@ -328,17 +341,21 @@ export default function Ekran1IcerikPage() {
   const [prevAvgEfficiency, setPrevAvgEfficiency] = useState<number | null>(null);
   const [birthdayToday, setBirthdayToday] = useState<PersonnelBirthdayRow[]>([]);
   const [birthdayOverlayVisible, setBirthdayOverlayVisible] = useState(false);
+  const [birthdaySlideIndex, setBirthdaySlideIndex] = useState(0);
+  const [hedefAlertServer, setHedefAlertServer] = useState<HedefAlertEvalPayload | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const birthdayCelebration = useMemo(() => {
     if (birthdayToday.length === 0)
       return { title: "", people: [] as { id: number; fullName: string; age: number }[], dateLine: "" };
     const refIso = todayIsoTurkey();
-    const people = birthdayToday.map((p) => ({
-      id: p.id,
-      fullName: `${p.firstName} ${p.lastName}`.trim(),
-      age: completedAgeAtReference(p.birthDate, refIso),
-    }));
+    const people = birthdayToday
+      .map((p) => ({
+        id: p.id,
+        fullName: `${p.firstName} ${p.lastName}`.trim(),
+        age: completedAgeAtReference(p.birthDate, refIso),
+      }))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, "tr", { sensitivity: "base" }));
     const title =
       birthdayToday.length === 1 ? "DOĞUM GÜNÜN KUTLU OLSUN!" : "DOĞUM GÜNÜNÜZ KUTLU OLSUN!";
     const dateLine = new Intl.DateTimeFormat("tr-TR", {
@@ -361,6 +378,13 @@ export default function Ekran1IcerikPage() {
             .join(","),
     [birthdayToday]
   );
+
+  const birthdayFocusPerson = useMemo(() => {
+    const list = birthdayCelebration.people;
+    if (list.length === 0) return null;
+    if (list.length === 1) return list[0]!;
+    return list[birthdaySlideIndex % list.length]!;
+  }, [birthdayCelebration.people, birthdaySlideIndex]);
 
   const genelTamamlanan = useMemo(() => {
     if (!stages.length) return 0;
@@ -594,17 +618,19 @@ export default function Ekran1IcerikPage() {
     return () => clearInterval(id);
   }, [hasToken]);
 
-  /** Bugün doğum günü: arka planda ~10 sn görünür / ~50 sn gizli döngü (60 sn). */
+  /** Bugün doğum günü: arka planda görünür / gizli döngü. Çoklu kişide görünür süre kişi sayısına göre uzar. */
   useEffect(() => {
     if (!birthdayPeopleKey) {
       setBirthdayOverlayVisible(false);
       return;
     }
+    const n = birthdayToday.length;
+    const visibleMs = birthdayOverlayDurationMs(n);
     let hideId: ReturnType<typeof setTimeout> | undefined;
     const flashCelebration = () => {
       setBirthdayOverlayVisible(true);
       if (hideId) clearTimeout(hideId);
-      hideId = setTimeout(() => setBirthdayOverlayVisible(false), BDAY_OVERLAY_VISIBLE_MS);
+      hideId = setTimeout(() => setBirthdayOverlayVisible(false), visibleMs);
     };
     flashCelebration();
     const intervalId = setInterval(flashCelebration, BDAY_OVERLAY_CYCLE_MS);
@@ -613,7 +639,34 @@ export default function Ekran1IcerikPage() {
       if (hideId) clearTimeout(hideId);
       setBirthdayOverlayVisible(false);
     };
-  }, [birthdayPeopleKey]);
+  }, [birthdayPeopleKey, birthdayToday.length]);
+
+  /** Aynı gün birden fazla doğum günü: overlay açıkken isimleri sırayla göster */
+  useEffect(() => {
+    if (!birthdayOverlayVisible || birthdayToday.length <= 1) return;
+    const n = birthdayToday.length;
+    setBirthdaySlideIndex(0);
+    const totalMs = birthdayOverlayDurationMs(n);
+    const stepMs = Math.max(1_200, Math.floor(totalMs / n));
+    const id = setInterval(() => {
+      setBirthdaySlideIndex((i) => (i + 1) % n);
+    }, stepMs);
+    return () => clearInterval(id);
+  }, [birthdayOverlayVisible, birthdayPeopleKey, birthdayToday.length]);
+
+  useEffect(() => {
+    if (!hasToken) return;
+    const load = async () => {
+      try {
+        setHedefAlertServer(await evaluateHedefAlertEval(startDate));
+      } catch {
+        setHedefAlertServer(null);
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [hasToken, startDate]);
 
   /**
    * TR takvim günü değişince tam yenileme: state + localStorage sıfırdan, `fetchData` o güne ait veriyi çeker.
@@ -719,7 +772,7 @@ export default function Ekran1IcerikPage() {
             role="dialog"
             aria-modal="true"
             aria-live="polite"
-            aria-label={`Doğum günü kutlaması — ${birthdayCelebration.title}`}
+            aria-label={`Doğum günü kutlaması — ${birthdayFocusPerson?.fullName ?? ""}`}
           >
             <div className="flex shrink-0 items-center gap-2 border-b-2 border-slate-500/90 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
               <span className="flex shrink-0 gap-1.5 sm:gap-2" aria-hidden>
@@ -770,7 +823,7 @@ export default function Ekran1IcerikPage() {
 
                   <div className="relative z-[3] mx-auto flex w-full max-w-md min-h-[8rem] shrink-0 items-center justify-center rounded-2xl bg-slate-100 px-2 py-2 sm:min-h-[9rem] sm:px-3 sm:py-3 min-[1920px]:min-h-[10rem]">
                     <Ekran1BirthdayCake
-                      age={birthdayCelebration.people.length === 1 ? birthdayCelebration.people[0]!.age : null}
+                      age={birthdayFocusPerson?.age ?? null}
                       className="block aspect-[200/128] h-auto w-[min(240px,78vw)] min-h-[120px] min-w-[200px] max-h-[min(22vh,12rem)] max-w-full shrink-0 [overflow:visible]"
                     />
                   </div>
@@ -779,7 +832,9 @@ export default function Ekran1IcerikPage() {
                     className="shrink-0 text-center font-black uppercase leading-tight tracking-tight text-slate-900 min-[1920px]:tracking-wide"
                     style={{ fontSize: "clamp(1.05rem, 4.2vmin, 2rem)" }}
                   >
-                    {birthdayCelebration.title}
+                    {birthdayCelebration.people.length === 1
+                      ? birthdayCelebration.title
+                      : "DOĞUM GÜNÜN KUTLU OLSUN!"}
                   </p>
                   <p
                     className="shrink-0 text-center font-bold capitalize leading-tight text-slate-600 min-[1920px]:text-base"
@@ -788,25 +843,36 @@ export default function Ekran1IcerikPage() {
                     {birthdayCelebration.dateLine}
                   </p>
 
-                  {birthdayCelebration.people.length === 1 ? (
-                    <p
-                      className="min-h-0 shrink text-center font-black leading-[1.06] text-slate-950 [text-shadow:0_1px_0_rgba(255,255,255,0.6)]"
-                      style={{ fontSize: "clamp(1.5rem, 6vmin, 3.25rem)" }}
-                    >
-                      {birthdayCelebration.people[0]!.fullName}
-                    </p>
-                  ) : (
-                    <ul className="grid min-h-0 w-full shrink grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5">
-                      {birthdayCelebration.people.map(({ id, fullName }) => (
-                        <li
-                          key={id}
-                          className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-center text-sm font-extrabold leading-tight text-slate-900 shadow-sm sm:text-base sm:leading-snug min-[1920px]:px-4 min-[1920px]:py-3 min-[1920px]:text-lg"
-                        >
-                          {fullName}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {birthdayFocusPerson ? (
+                    <>
+                      <p
+                        className="min-h-0 shrink text-center font-black leading-[1.06] text-slate-950 [text-shadow:0_1px_0_rgba(255,255,255,0.6)]"
+                        style={{ fontSize: "clamp(1.5rem, 6vmin, 3.25rem)" }}
+                      >
+                        {birthdayFocusPerson.fullName}
+                      </p>
+                      {birthdayCelebration.people.length > 1 ? (
+                        <div className="flex shrink-0 flex-col items-center gap-2" aria-hidden>
+                          <div className="flex items-center gap-2.5">
+                            {birthdayCelebration.people.map((p, i) => (
+                              <span
+                                key={p.id}
+                                className={`rounded-full shadow-sm transition-all duration-300 ${
+                                  i === birthdaySlideIndex % birthdayCelebration.people.length
+                                    ? "h-3 w-3 scale-110 bg-teal-500 ring-2 ring-teal-700/35"
+                                    : "h-2 w-2 bg-slate-300"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-slate-500 min-[1920px]:text-xs">
+                            {(birthdaySlideIndex % birthdayCelebration.people.length) + 1} /{" "}
+                            {birthdayCelebration.people.length}
+                          </p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
 
                 <footer className="flex w-full min-h-0 min-w-0 shrink-0 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-slate-300 bg-gradient-to-br from-emerald-500 via-teal-600 to-emerald-700 px-4 py-6 text-white shadow-lg sm:gap-3.5 sm:px-5 sm:py-7 md:flex-[3] md:basis-0 md:rounded-none md:border-0 md:shadow-none min-[1920px]:gap-4 min-[1920px]:px-6 min-[1920px]:py-8">
@@ -831,6 +897,22 @@ export default function Ekran1IcerikPage() {
 
       {/* Ana içerik: üst sabit, alt aşamalar kalan yükseklikte kayar (TV’de kesilme olmasın) */}
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {hedefAlertServer && hedefAlertServer.alerts?.length > 0 ? (
+          <div
+            className="relative z-[12] shrink-0 border-b-[6px] border-amber-600 bg-gradient-to-r from-amber-400 via-amber-300 to-orange-400 px-4 py-3 text-center shadow-lg"
+            role="alert"
+            aria-live="polite"
+          >
+            {hedefAlertServer.alerts.map((a, i) => (
+              <p
+                key={`${a.scope}-${i}`}
+                className="text-[clamp(1rem,2.2vw,1.45rem)] font-extrabold leading-tight tracking-tight text-amber-950 drop-shadow-sm"
+              >
+                {a.title} — {a.detail}
+              </p>
+            ))}
+          </div>
+        ) : null}
         <div className="mx-auto flex min-h-0 w-full max-w-[min(100%,120rem)] flex-1 flex-col gap-3 px-3 py-2 sm:gap-4 sm:px-5 sm:py-3 md:gap-5 md:px-8 md:py-4 min-[1920px]:gap-5 min-[1920px]:px-10 min-[1920px]:py-5">
 
           {/* Header — opak zemin, TV’de saydam/ soluk okuma yok */}

@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import {
   getTeams,
   getWorkerProductionDailyDetail,
-  getWorkersForAnalytics,
+  getWorkers,
   setAuthToken,
 } from "@/lib/api";
 import { todayWeekdayIso, todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
@@ -71,6 +71,32 @@ function formatDateLong(iso: string): string {
   }
 }
 
+/** Trend ekseni için kısa etiket (gg.aa) */
+function formatDateAxis(iso: string): string {
+  try {
+    const d = new Date(`${iso}T12:00:00`);
+    return d.toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+  } catch {
+    return iso.slice(5);
+  }
+}
+
+const SLOT_COLORS = ["#0d9488", "#0891b2", "#7c3aed", "#ea580c"] as const;
+
+function EfficiencyBadge({ pct }: { pct: number }) {
+  const tone =
+    pct >= 85
+      ? "bg-emerald-100 text-emerald-900 ring-emerald-700/15 dark:bg-emerald-950/70 dark:text-emerald-100 dark:ring-emerald-500/35"
+      : pct >= 70
+        ? "bg-amber-100 text-amber-950 ring-amber-700/15 dark:bg-amber-950/45 dark:text-amber-50 dark:ring-amber-500/30"
+        : "bg-rose-50 text-rose-900 ring-rose-700/15 dark:bg-rose-950/40 dark:text-rose-50 dark:ring-rose-500/30";
+  return (
+    <span className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums ring-1 ${tone}`}>
+      %{Math.round(pct)}
+    </span>
+  );
+}
+
 export default function PersonAnalysisPage() {
   const pdfCaptureRef = useRef<HTMLDivElement>(null);
   const chartGradientId = `ptrend-${useId().replace(/:/g, "")}`;
@@ -106,10 +132,16 @@ export default function PersonAnalysisPage() {
       .catch(() => {});
     setWorkersLoading(true);
     setWorkersError(null);
-    void getWorkersForAnalytics()
-      .then((w) => {
-        setWorkers(w);
-        if (w.length && workerId === "") setWorkerId(w[0].id);
+    void getWorkers()
+      .then((list) => {
+        const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name, "tr", { sensitivity: "base" }));
+        setWorkers(sorted);
+        setWorkerId((prev) => {
+          if (sorted.length === 0) return "";
+          const current = typeof prev === "number" ? prev : null;
+          if (current != null && sorted.some((w) => w.id === current)) return current;
+          return sorted[0]!.id;
+        });
       })
       .catch((e) => {
         setWorkersError(e instanceof Error ? e.message : "Personel listesi yüklenemedi");
@@ -286,6 +318,61 @@ export default function PersonAnalysisPage() {
     return Math.min(Math.round(sumTW / sumW), 100);
   }, [rows.length, processBreakdown, prosesMap, stats.grandTotal, stats.activeDays]);
 
+  /** Okunabilir özet satırları (TV / masaüstü) */
+  const insightLines = useMemo(() => {
+    if (!meta || rows.length === 0) return [] as string[];
+    const lines: string[] = [];
+    const nDays = stats.activeDays;
+    const total = stats.grandTotal;
+    lines.push(
+      `${nDays} üretim gününde toplam ${total.toLocaleString("tr-TR")} adet toplandı. Seçilen tarih aralığında girilmiş günlük kayıtların birleşik tutarıdır.`
+    );
+    if (nDays > 0) {
+      lines.push(
+        `Gün başına ortalama ${stats.avgPerDay.toLocaleString(
+          "tr-TR"
+        )} adet. Yaklaşık tam bir ${SHIFT_NOMINAL_HOURS} saatlik vardiya için ~${stats.avgPerNominalShift.toLocaleString(
+          "tr-TR"
+        )} adet (günlük ortalamanın saate yayılması) olarak okunabilir.`
+      );
+    }
+    const domPct =
+      stats.grandTotal > 0 ? Math.round((100 * stats.dominantSlotTotal) / stats.grandTotal) : 0;
+    lines.push(
+      `Üretim; sabah / öğle / öğleden sonra / akşam olmak üzere dört dilimde gösterilir. Bu dönemde en fazla çıktı «${stats.dominantSlot}» diliminde (toplamın ~%${domPct}).`
+    );
+    if (periodEfficiencyPercent !== null) {
+      lines.push(
+        `Dönem verimliliği yaklaşık %${Math.round(
+          periodEfficiencyPercent
+        )}: ayarlardaki dk hedefine göre hesaplanır. Bugün satırında tam gün kapanmadan önce vardiya içi oran kullanılabilir.`
+      );
+    } else if (processBreakdown.length > 1) {
+      lines.push(
+        "Verim yüzdesi burada bileşik döneme gösterilir; ayrıntı için aşağıdaki bölüm/proses özetindeki kolonları inceleyin."
+      );
+    }
+    if (stats.maxDay && stats.minDay && stats.activeDays > 1) {
+      lines.push(
+        `Tek günlük en yüksek ${stats.maxDay.total.toLocaleString("tr-TR")} (${stats.maxDay.date}), en düşük ${stats.minDay.total.toLocaleString("tr-TR")} (${stats.minDay.date}).`
+      );
+    }
+    return lines;
+  }, [
+    meta,
+    rows.length,
+    stats.activeDays,
+    stats.avgPerDay,
+    stats.avgPerNominalShift,
+    stats.grandTotal,
+    stats.dominantSlot,
+    stats.dominantSlotTotal,
+    stats.maxDay,
+    stats.minDay,
+    periodEfficiencyPercent,
+    processBreakdown.length,
+  ]);
+
   function dayRowEfficiencyPercent(r: WorkerProductionDayDetail): number | null {
     const isToday = r.productionDate === todayWorkdayIsoTurkey();
     if (isToday) {
@@ -312,6 +399,23 @@ export default function PersonAnalysisPage() {
       })
       .join(" ");
   }, [sortedDates, dateTotals]);
+
+  /** Trend altı: çok güne kırıldığında sık etiketleri seyreltir */
+  const trendAxisLabelIndexes = useMemo(() => {
+    const n = sortedDates.length;
+    if (n === 0) return new Set<number>();
+    const idx = new Set<number>([0, n - 1]);
+    if (n <= 8) {
+      for (let i = 1; i < n - 1; i++) idx.add(i);
+      return idx;
+    }
+    const inner = 5;
+    for (let k = 1; k < inner; k++) {
+      const i = Math.round((k / inner) * (n - 1));
+      if (i > 0 && i < n - 1) idx.add(i);
+    }
+    return idx;
+  }, [sortedDates]);
 
   const exportExcel = () => {
     if (!meta || rows.length === 0) return;
@@ -388,12 +492,17 @@ export default function PersonAnalysisPage() {
   const exportPdf = async () => {
     if (!meta || rows.length === 0 || !pdfCaptureRef.current) return;
     setPdfExporting(true);
+    const el = pdfCaptureRef.current;
+    const omitEls = Array.from(el.querySelectorAll<HTMLElement>(".omit-from-person-pdf"));
+    const omitDisplayPrev = omitEls.map((node) => node.style.display);
+    omitEls.forEach((node) => {
+      node.style.display = "none";
+    });
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
     try {
       const html2pdf = (await import("html2pdf.js")).default;
-      const el = pdfCaptureRef.current;
       await html2pdf()
         .set({
           margin: [10, 10, 10, 10],
@@ -416,6 +525,9 @@ export default function PersonAnalysisPage() {
     } catch {
       setError("PDF oluşturulamadı. Sayfayı yenileyip tekrar deneyin.");
     } finally {
+      omitEls.forEach((node, i) => {
+        node.style.display = omitDisplayPrev[i] ?? "";
+      });
       setPdfExporting(false);
     }
   };
@@ -446,8 +558,8 @@ export default function PersonAnalysisPage() {
                 Kişi bazlı üretim analizi
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                Günlük ve saat dilimi kırılımı, trend ve dönem özetleri. İsterseniz raporu Excel veya PDF olarak dışa
-                aktarın.
+                Üretim listesinde yer alan aktif personeli seçin; günlük toplamlar, dört saat diliminde dağılım, verim ve
+                trend tek ekranda özetlenir. Raporu Excel veya PDF olarak dışa aktarabilirsiniz.
               </p>
               {loadedAt ? (
                 <p className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-100/90 px-3 py-1.5 text-xs text-slate-600 dark:bg-slate-800/80 dark:text-slate-400">
@@ -474,12 +586,14 @@ export default function PersonAnalysisPage() {
         </header>
 
         <section className="mb-8 rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-[0_4px_24px_rgb(0,0,0,0.04)] backdrop-blur-sm dark:border-slate-700/80 dark:bg-slate-800/60 dark:shadow-none">
-          <div className="mb-5 border-b border-slate-100 pb-4 dark:border-slate-700/80">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Sorgu</h2>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Personel ve hafta içi tarih aralığını seçin, ardından veriyi yükleyin.
-            </p>
-          </div>
+            <div className="mb-5 border-b border-slate-100 pb-4 dark:border-slate-700/80">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">Sorgu</h2>
+              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                <strong className="font-semibold text-slate-800 dark:text-slate-200">Aktif personel</strong> listesinden
+                kişiyi seçin. Hafta içi tarihlerde günlük ve saat dilimi kırılımını yüklersiniz; raporu Excel veya PDF
+                olarak alabilirsiniz.
+              </p>
+            </div>
           {workersError ? (
             <div
               className="mb-4 rounded-xl border border-red-200/90 bg-red-50/95 px-4 py-3 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-950/35 dark:text-red-100"
@@ -491,7 +605,9 @@ export default function PersonAnalysisPage() {
           ) : null}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 lg:items-end">
             <div className="lg:col-span-2">
-              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Personel</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Aktif personel
+              </label>
               <select
                 value={workerId === "" ? "" : String(workerId)}
                 onChange={(e) => setWorkerId(e.target.value === "" ? "" : Number(e.target.value))}
@@ -499,21 +615,17 @@ export default function PersonAnalysisPage() {
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium shadow-inner shadow-slate-900/[0.03] outline-none ring-teal-500/25 transition focus:border-teal-500 focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:shadow-none"
               >
                 <option value="">
-                  {workersLoading ? "Personel listesi yükleniyor…" : "Seçin…"}
+                  {workersLoading ? "Liste yükleniyor…" : "Kişi seçin…"}
                 </option>
-                {[...workers]
-                  .sort((a, b) => a.name.localeCompare(b.name, "tr", { sensitivity: "base" }))
-                  .map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name} — {teamLabel(w.team)} / {w.process}
-                      {w.deleted_at ? " (pasif)" : ""}
-                    </option>
-                  ))}
+                {workers.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} — {teamLabel(w.team)} / {w.process}
+                  </option>
+                ))}
               </select>
               {!workersLoading && !workersError && workers.length === 0 ? (
                 <p className="mt-2 text-xs text-amber-800 dark:text-amber-200/90">
-                  Kayıtlı aktif personel yok ve üretim geçmişi de bulunamadı. Ana ekrandan personel ekleyin veya tarih
-                  aralığını kontrol edin.
+                  Aktif kayıtlı personel yok. Ana üretim ekranından personel ekleyin veya oturumu kontrol edin.
                 </p>
               ) : null}
             </div>
@@ -638,36 +750,109 @@ export default function PersonAnalysisPage() {
               </div>
             </header>
 
+            {insightLines.length > 0 ? (
+              <section
+                className="omit-from-person-pdf rounded-2xl border border-teal-200/80 bg-gradient-to-br from-teal-50/90 via-white to-emerald-50/40 px-5 py-4 shadow-sm ring-1 ring-teal-900/[0.06]"
+                aria-label="Dönem özeti"
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-xs font-black text-white shadow-sm"
+                    aria-hidden
+                  >
+                    i
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900">Bu tablo ne söylüyor?</h3>
+                    <ul className="mt-2 space-y-2 text-sm leading-relaxed text-slate-700">
+                      {insightLines.map((line, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" aria-hidden />
+                          <span>{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
             <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
               <div className="rounded-2xl border border-slate-100 border-l-4 border-l-teal-500 bg-gradient-to-br from-white to-teal-50/40 p-4 shadow-sm ring-1 ring-slate-900/[0.04]">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Toplam üretim</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-teal-700">{stats.grandTotal}</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-teal-700">{stats.grandTotal.toLocaleString("tr-TR")}</p>
+                <p className="mt-2 text-[10px] leading-snug text-slate-500">Dönem içindeki tüm günler ve satırların toplam adedi.</p>
               </div>
               <div className="rounded-2xl border border-slate-100 border-l-4 border-l-slate-400 bg-gradient-to-br from-white to-slate-50/90 p-4 shadow-sm ring-1 ring-slate-900/[0.04]">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Üretim günü</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{stats.activeDays}</p>
+                <p className="mt-2 text-[10px] leading-snug text-slate-500">En az bir kayıt olan farklı iş günü sayısı.</p>
               </div>
               <div className="rounded-2xl border border-slate-100 border-l-4 border-l-blue-500 bg-gradient-to-br from-white to-blue-50/40 p-4 shadow-sm ring-1 ring-slate-900/[0.04]">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Günlük ortalama</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-blue-700">{stats.avgPerDay}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">Aktif günlere göre</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-blue-700">{stats.avgPerDay.toLocaleString("tr-TR")}</p>
+                <p className="mt-2 text-[10px] leading-snug text-slate-500">Toplam üretim ÷ üretim günü (boş günler dahil değil).</p>
               </div>
               <div className="rounded-2xl border border-slate-100 border-l-4 border-l-violet-500 bg-gradient-to-br from-white to-violet-50/40 p-4 shadow-sm ring-1 ring-slate-900/[0.04]">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                  ~ / {SHIFT_NOMINAL_HOURS} saat (gün ort.)
+                  ~ / {SHIFT_NOMINAL_HOURS} saat (yaklaşık)
                 </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-violet-700">{stats.avgPerNominalShift}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">Günlük ort. ÷ {SHIFT_NOMINAL_HOURS}</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-violet-700">{stats.avgPerNominalShift.toLocaleString("tr-TR")}</p>
+                <p className="mt-2 text-[10px] leading-snug text-slate-500">Günlük ortalamanın nominal tam vardiya süresine bölünmesi.</p>
               </div>
               <div
                 className="col-span-2 rounded-2xl border border-slate-100 border-l-4 border-l-amber-500 bg-gradient-to-br from-white to-amber-50/50 p-4 shadow-sm ring-1 ring-slate-900/[0.04] md:col-span-1 xl:col-span-1"
-                title="Proses Veri Sayfası dk hedefine göre; çoklu bölümde üretim ağırlıklı ortalama. Bugünün satırında vardiya içi oran kullanılır."
+                title="Proses dk hedefine göre; çoklu bölümde üretim ağırlıklı ortalama."
               >
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Dönem verimliliği</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-amber-800 dark:text-amber-200">
-                  {periodEfficiencyPercent !== null ? `${periodEfficiencyPercent}%` : "—"}
+                  {periodEfficiencyPercent !== null ? `%${Math.round(periodEfficiencyPercent)}` : "—"}
                 </p>
-                <p className="mt-0.5 text-[10px] text-slate-500">Hedef: dk × 60 × 9</p>
+                <p className="mt-2 text-[10px] leading-snug text-slate-500">
+                  Hedefle karşılaştırmalı yüzde (bugün: vardiya içi hesap mümkün).
+                </p>
+              </div>
+            </section>
+
+            <section className="pdf-avoid-break rounded-2xl border border-slate-200/90 bg-slate-50/50 p-5 ring-1 ring-slate-900/[0.04]">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-slate-800">Dilim payı (dönem toplamı)</h3>
+                <span className="text-[11px] font-medium text-slate-500">
+                  Dört dilimde üretimin dağılımı — hangi dilime ne kadar düşmüş?
+                </span>
+              </div>
+              <div className="flex h-7 w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-inner ring-1 ring-slate-200/90">
+                {SLOTS.map((slot, idx) => {
+                  const raw = stats.grandTotal > 0 ? (100 * stats.slotTotals[slot.key]) / stats.grandTotal : 0;
+                  const wPct = stats.grandTotal > 0 ? Math.max(raw, stats.slotTotals[slot.key] > 0 ? 1.25 : 0) : 0;
+                  const label = `${slot.label}: ${stats.slotTotals[slot.key]} (${Math.round(raw)}%)`;
+                  if (stats.slotTotals[slot.key] <= 0 || wPct <= 0) return null;
+                  return (
+                    <div
+                      key={slot.key}
+                      title={label}
+                      className="h-full min-w-[6px] border-r border-white/30 transition-[flex-grow] last:border-r-0"
+                      style={{
+                        flexGrow: wPct,
+                        flexBasis: 0,
+                        backgroundColor: SLOT_COLORS[idx],
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-700">
+                {SLOTS.map((slot, idx) => {
+                  const v = stats.slotTotals[slot.key];
+                  const pct = stats.grandTotal > 0 ? Math.round((100 * v) / stats.grandTotal) : 0;
+                  return (
+                    <span key={slot.key} className="inline-flex items-center gap-2">
+                      <span className="h-2 w-6 rounded-sm shrink-0" style={{ backgroundColor: SLOT_COLORS[idx] }} />
+                      <span className="font-medium text-slate-800">{slot.label}</span>
+                      <span className="tabular-nums text-slate-500">{v.toLocaleString("tr-TR")} (%{pct})</span>
+                    </span>
+                  );
+                })}
               </div>
             </section>
 
@@ -717,10 +902,16 @@ export default function PersonAnalysisPage() {
                             </td>
                             <td className="px-3 py-2.5 text-right tabular-nums">{row.dayCount}</td>
                             <td className="px-4 py-2.5 text-right font-bold tabular-nums text-violet-800 dark:text-violet-200">
-                              {row.total}
+                              {row.total.toLocaleString("tr-TR")}
                             </td>
-                            <td className="px-3 py-2.5 text-right tabular-nums text-amber-900 dark:text-amber-100">
-                              {eff !== null ? `${eff}%` : "—"}
+                            <td className="px-3 py-2.5 text-right align-middle">
+                              {eff !== null ? (
+                                <div className="flex justify-end">
+                                  <EfficiencyBadge pct={eff} />
+                                </div>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -737,7 +928,13 @@ export default function PersonAnalysisPage() {
                   <span className="h-2 w-2 rounded-full bg-teal-500" aria-hidden />
                   <h3 className="text-sm font-semibold text-slate-800">Günlük toplam trendi</h3>
                 </div>
-                <svg viewBox="0 0 640 180" className="h-44 w-full rounded-xl bg-gradient-to-b from-slate-50 to-slate-100/80 ring-1 ring-slate-200/80">
+                <div className="mb-3 space-y-1">
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    Grafik her iş gününün günlük toplamını birleştirir; tarihler aşağıda hizalıdır (çok güne sığdırmak
+                    için ara etiketler atlanabilir).
+                  </p>
+                </div>
+                <svg viewBox="0 0 640 160" className="h-40 w-full rounded-xl bg-gradient-to-b from-slate-50 to-slate-100/80 ring-1 ring-slate-200/80">
                   <defs>
                     <linearGradient id={chartGradientId} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="rgb(13 148 136)" stopOpacity="0.28" />
@@ -745,7 +942,7 @@ export default function PersonAnalysisPage() {
                     </linearGradient>
                   </defs>
                   {sortedDates.length > 1 && trendPoints ? (
-                    <polygon fill={`url(#${chartGradientId})`} points={`0,180 ${trendPoints} 640,180`} />
+                    <polygon fill={`url(#${chartGradientId})`} points={`0,160 ${trendPoints} 640,160`} />
                   ) : null}
                   <polyline
                     fill="none"
@@ -756,11 +953,27 @@ export default function PersonAnalysisPage() {
                   {sortedDates.map((d, i) => {
                     const totals = sortedDates.map((x) => dateTotals.get(x) ?? 0);
                     const maxT = Math.max(...totals, 1);
+                    const h = 160;
                     const x = sortedDates.length === 1 ? 320 : Math.round((i / (sortedDates.length - 1)) * 640);
-                    const y = 180 - Math.round((totals[i] / maxT) * 170) - 5;
+                    const y = h - Math.round((totals[i] / maxT) * h);
                     return <circle key={d} cx={x} cy={y} r="4" fill="rgb(15 118 110)" />;
                   })}
                 </svg>
+                <div className="relative mt-1.5 h-5 w-full text-[10px] text-slate-500">
+                  {sortedDates.map((d, i) => {
+                    if (!trendAxisLabelIndexes.has(i)) return null;
+                    const leftPct = sortedDates.length === 1 ? 50 : (i / (sortedDates.length - 1)) * 100;
+                    return (
+                      <span
+                        key={`trend-axis-${d}`}
+                        className="absolute whitespace-nowrap -translate-x-1/2 tabular-nums"
+                        style={{ left: `${leftPct}%` }}
+                      >
+                        {formatDateAxis(d)}
+                      </span>
+                    );
+                  })}
+                </div>
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500">
                   {stats.maxDay ? (
                     <span>
@@ -889,14 +1102,16 @@ export default function PersonAnalysisPage() {
                           <td className="px-3 py-2.5 text-right tabular-nums">{d.t1830}</td>
                           <td className="px-4 py-2.5 text-right font-bold tabular-nums text-teal-800">{t}</td>
                           <td
-                            className="px-3 py-2.5 text-right tabular-nums text-amber-900 dark:text-amber-100"
+                            className="px-3 py-2.5 text-right align-middle"
                             title={
                               r.productionDate === todayWorkdayIsoTurkey()
                                 ? "Bugün: vardiya içi (intraday) verimlilik"
                                 : "Tam günlük hedefe göre"
                             }
                           >
-                            {eff !== null ? `${eff}%` : "—"}
+                            <div className="flex justify-end">
+                              {eff !== null ? <EfficiencyBadge pct={eff} /> : <span className="text-slate-400">—</span>}
+                            </div>
                           </td>
                         </tr>
                       );

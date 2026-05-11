@@ -78,8 +78,15 @@ import {
   updatePersonnelBirthday,
   deletePersonnelBirthday,
   bulkInsertPersonnelBirthdays,
+  getDecisionSupportMerged,
+  saveDecisionSupportMerged,
+  evaluateHedefAlertStatus,
+  getTeamComparisonData,
+  getDualRangeFactoryTotals,
+  gatherWeeklyBriefingPayload,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
+import { scheduleWeeklyBriefingCron, sendWeeklyReportForCurrentTurkeyBusinessWeek } from "./weeklyReportJob.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -1390,7 +1397,95 @@ app.put("/api/proses-veri/:modelCode", requirePermission("veriSayfasi"), async (
   }
 });
 
+app.get("/api/decision-support/settings", requirePermission("ayarlar"), async (_req, res) => {
+  try {
+    const s = await getDecisionSupportMerged();
+    return res.json(s);
+  } catch (e) {
+    return res.status(500).json({ message: String(e?.message ?? e) });
+  }
+});
+
+app.put("/api/decision-support/settings", requirePermission("ayarlar"), async (req, res) => {
+  try {
+    const next = await saveDecisionSupportMerged(req.body || {});
+    logActivity(req, "decision_support_kayit", "app_kv", {});
+    return res.json(next);
+  } catch (e) {
+    return res.status(500).json({ message: String(e?.message ?? e) });
+  }
+});
+
+app.get("/api/decision-support/hedef-alert-eval", requireAnyPermission(["ekran1", "hedefTakip"]), async (req, res) => {
+  const ref = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : "";
+  try {
+    const data = await evaluateHedefAlertStatus(ref || undefined);
+    return res.json(data);
+  } catch (e) {
+    return res.status(500).json({ message: String(e?.message ?? e) });
+  }
+});
+
+app.get("/api/decision-support/weekly-briefing-preview", requirePermission("ayarlar"), async (req, res) => {
+  const startDate = String(req.query.startDate ?? "").trim();
+  const endDate = String(req.query.endDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    return res.status(400).json({ message: "startDate ve endDate YYYY-MM-DD" });
+  }
+  try {
+    const data = await gatherWeeklyBriefingPayload(startDate, endDate);
+    return res.json(data);
+  } catch (e) {
+    return res.status(500).json({ message: String(e?.message ?? e) });
+  }
+});
+
+app.post("/api/decision-support/weekly-report/send-now", requirePermission("ayarlar"), async (_req, res) => {
+  try {
+    const out = await sendWeeklyReportForCurrentTurkeyBusinessWeek();
+    logActivity(req, "haftalik_rapor_gonderildi", "email", {});
+    return res.json(out);
+  } catch (e) {
+    return res.status(500).json({ message: String(e?.message ?? e) });
+  }
+});
+
+app.get("/api/analytics/team-comparison", requirePermission("karsilastirma"), async (req, res) => {
+  const team1 = String(req.query.team1 ?? "").trim();
+  const team2 = String(req.query.team2 ?? "").trim();
+  const startDate = String(req.query.startDate ?? "").trim();
+  const endDate = String(req.query.endDate ?? "").trim();
+  if (!team1 || !team2 || !startDate || !endDate) {
+    return res.status(400).json({ message: "team1, team2, startDate, endDate zorunlu" });
+  }
+  try {
+    const data = await getTeamComparisonData({ team1, team2, startDate, endDate });
+    return res.json(data);
+  } catch (e) {
+    return res.status(500).json({ message: String(e?.message ?? e) });
+  }
+});
+
+app.get("/api/analytics/period-comparison", requirePermission("karsilastirma"), async (req, res) => {
+  const r1s = String(req.query.range1Start ?? "").trim();
+  const r1e = String(req.query.range1End ?? "").trim();
+  const r2s = String(req.query.range2Start ?? "").trim();
+  const r2e = String(req.query.range2End ?? "").trim();
+  if (
+    ![r1s, r1e, r2s, r2e].every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x))
+  ) {
+    return res.status(400).json({ message: "range1Start/End ve range2Start/End YYYY-MM-DD" });
+  }
+  try {
+    const data = await getDualRangeFactoryTotals(r1s, r1e, r2s, r2e);
+    return res.json(data);
+  } catch (e) {
+    return res.status(500).json({ message: String(e?.message ?? e) });
+  }
+});
+
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Backend running on http://localhost:${PORT}`);
+  scheduleWeeklyBriefingCron();
 });

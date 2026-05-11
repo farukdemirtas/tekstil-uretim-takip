@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   applyHedefSession,
+  getDecisionSupportSettings,
   getHedefTakipStageTotals,
   getProductModel,
   listProductModels,
@@ -77,6 +78,39 @@ export default function HedefTakip() {
     void listProductModels()
       .then((list) => {
         setModels(list);
+        let savedRangeMode = false;
+        try {
+          const raw = window.localStorage.getItem(STORAGE_KEY);
+          const parsed = raw
+            ? (JSON.parse(raw) as { rangeMode?: boolean })
+            : {};
+          savedRangeMode = Boolean(parsed.rangeMode);
+        } catch {
+          savedRangeMode = false;
+        }
+        void getDecisionSupportSettings()
+          .then((ds) => {
+            const ha = ds.hedefAlert;
+            if (
+              ha?.enabled &&
+              ha.modelId != null &&
+              list.some((x) => x.id === Number(ha.modelId))
+            ) {
+              const t = Number(ha.targetQty);
+              const mid = Number(ha.modelId);
+              setTarget(Number.isFinite(t) && t > 0 ? t : 5000);
+              setSelectedModelId(mid);
+              const today = clampToWeekdayIso(todayWeekdayIso());
+              persistSettings(
+                Number.isFinite(t) && t > 0 ? t : 5000,
+                today,
+                today,
+                savedRangeMode,
+                mid
+              );
+            }
+          })
+          .catch(() => {});
         try {
           const raw = window.localStorage.getItem(STORAGE_KEY);
           const saved = raw

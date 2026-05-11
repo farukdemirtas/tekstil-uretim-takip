@@ -2702,3 +2702,554 @@ export function bulkInsertPersonnelBirthdays(rows) {
     });
   });
 }
+
+/** Genel Verimlilik sayfasındaki dk hedefleriyle aynı model kod (sunucu tarafında rapor uyumu) */
+export const GENEL_VERIMLILIK_MODEL_CODE_SERVER = "__genel_verimlilik__";
+
+const DECISION_SUPPORT_KEY = "decision_support";
+
+export const DEFAULT_DECISION_SUPPORT_JSON = {
+  hedefAlert: {
+    enabled: false,
+    modelId: null,
+    targetQty: 5000,
+    thresholdDailyPct: 80,
+    thresholdWeeklyPct: 70,
+    weeklyTargetAdet: null,
+  },
+  weeklyReport: {
+    enabled: false,
+    recipientsCsv: "",
+    sendHourTurkey: 18,
+    sendMinuteTurkey: 0,
+    sendWeekday: 5,
+    lastSentPeriodLabel: null,
+    lastError: null,
+    lastSentAt: null,
+  },
+};
+
+/** ISO YYYY-MM-DD + gün delta (UTC takvim bileşeni, tarih etiketi tutarlı) */
+function isoAddDaysUtc(iso, deltaDays) {
+  const [y, m, d] = String(iso)
+    .split("-")
+    .map((n) => Number(n));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return iso;
+  const x = new Date(Date.UTC(y, m - 1, d));
+  x.setUTCDate(x.getUTCDate() + Number(deltaDays) || 0);
+  const yy = x.getUTCFullYear();
+  const mo = String(x.getUTCMonth() + 1).padStart(2, "0");
+  const da = String(x.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mo}-${da}`;
+}
+
+function utcWeekdaySun0(iso) {
+  const [y, m, d] = String(iso)
+    .split("-")
+    .map((n) => Number(n));
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/** Pazartesi–Cuma aralığı: `iso` gününü içeren hafta (Pzt=iş günü 1.) */
+export function mondayFridayRangeUtcIsoContaining(iso) {
+  let wd = utcWeekdaySun0(iso);
+  const daysBackMon = wd === 0 ? -6 : 1 - wd;
+  const mon = isoAddDaysUtc(iso, daysBackMon);
+  const fri = isoAddDaysUtc(mon, 4);
+  return { mon, fri };
+}
+
+export function istanbulTodayIsoForBusiness() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Istanbul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+async function aggregateGenelForRangeCombined(startDate, endDate, modelIdRaw) {
+  const mid =
+    modelIdRaw != null && Number.isFinite(Number(modelIdRaw)) && Number(modelIdRaw) > 0
+      ? Number(modelIdRaw)
+      : null;
+  const hedefRes = await getHedefTakipStageTotals(String(startDate), String(endDate), mid);
+  const stages = hedefRes?.stages ?? [];
+  const genelTamamlanan =
+    stages.length === 0 ? 0 : Math.min(...stages.map((s) => Number(s.total) || 0));
+  const weekdays = eachWeekdayIsoInRange(String(startDate), String(endDate));
+  return { genelTamamlanan, weekdaysUsed: weekdays.length };
+}
+
+export function getAppKv(key) {
+  const k = String(key || "").trim() || "?";
+  return new Promise((resolve, reject) => {
+    db.get("SELECT v FROM app_kv WHERE k = ?", [k], (err, row) => {
+      if (err) return reject(err);
+      resolve(row?.v ?? null);
+    });
+  });
+}
+
+export function setAppKv(key, jsonStr) {
+  const k = String(key || "").trim() || "?";
+  const v = typeof jsonStr === "string" ? jsonStr : JSON.stringify(jsonStr ?? {});
+  return new Promise((resolve, reject) => {
+    db.run("INSERT INTO app_kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", [k, v], function (err) {
+      if (err) return reject(err);
+      resolve({ ok: true });
+    });
+  });
+}
+
+export async function getDecisionSupportMerged() {
+  const raw = await getAppKv(DECISION_SUPPORT_KEY);
+  let parsed = {};
+  try {
+    parsed = JSON.parse(raw || "{}");
+    if (!parsed || typeof parsed !== "object") parsed = {};
+  } catch {
+    parsed = {};
+  }
+
+  const out = JSON.parse(JSON.stringify(DEFAULT_DECISION_SUPPORT_JSON));
+  if (parsed.hedefAlert && typeof parsed.hedefAlert === "object") {
+    Object.assign(out.hedefAlert, parsed.hedefAlert);
+  }
+  if (parsed.weeklyReport && typeof parsed.weeklyReport === "object") {
+    Object.assign(out.weeklyReport, parsed.weeklyReport);
+  }
+  return out;
+}
+
+export async function saveDecisionSupportMerged(patch) {
+  const cur = await getDecisionSupportMerged();
+  const next = JSON.parse(JSON.stringify(cur));
+  if (patch?.hedefAlert && typeof patch.hedefAlert === "object") {
+    Object.assign(next.hedefAlert, patch.hedefAlert);
+  }
+  if (patch?.weeklyReport && typeof patch.weeklyReport === "object") {
+    Object.assign(next.weeklyReport, patch.weeklyReport);
+  }
+  await setAppKv(DECISION_SUPPORT_KEY, JSON.stringify(next));
+  return next;
+}
+
+/**
+ * Günlük: tek güne birleşik aşama toplamlarından yüzde.
+ * Haftalık: içinde bulunulan Pazartesi–Cuma için birleşik hedef yüzdesi (tek `getHedefTakipStageTotals`).
+ */
+export async function evaluateHedefAlertStatus(referenceIsoTurkey /* YYYY-MM-DD */) {
+  const settings = await getDecisionSupportMerged();
+  const ha = settings.hedefAlert;
+  const today = String(referenceIsoTurkey || "").trim() || istanbulTodayIsoForBusiness();
+  const weekdayList = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+  const refWd = utcWeekdaySun0(today);
+  const isWeekday = refWd !== 0 && refWd !== 6;
+
+  const noopPayload = ({ enabledFlag }) => ({
+    hedefAlertEnabled: Boolean(enabledFlag),
+    alerts: [],
+    daily: undefined,
+    weekly: undefined,
+    today,
+    isWeekday,
+    modelId: null,
+  });
+
+  if (!ha.enabled) return noopPayload({ enabledFlag: false });
+
+  const modelId =
+    ha.modelId != null && Number.isFinite(Number(ha.modelId)) && Number(ha.modelId) > 0
+      ? Number(ha.modelId)
+      : null;
+  const targetQty = Number(ha.targetQty);
+  const tDaily = Number(ha.thresholdDailyPct);
+  const tWeekly = Number(ha.thresholdWeeklyPct);
+
+  if (!Number.isFinite(targetQty) || targetQty <= 0 || modelId === null) {
+    return noopPayload({ enabledFlag: Boolean(ha.enabled) });
+  }
+
+  const threshD = Number.isFinite(tDaily) ? Math.min(100, Math.max(0, tDaily)) : 80;
+  const threshW = Number.isFinite(tWeekly) ? Math.min(100, Math.max(0, tWeekly)) : 70;
+
+  let weeklyTargetFullWeek = Number(ha.weeklyTargetAdet);
+  if (!Number.isFinite(weeklyTargetFullWeek) || weeklyTargetFullWeek <= 0) {
+    weeklyTargetFullWeek = targetQty * 5;
+  }
+
+  const { mon, fri } = mondayFridayRangeUtcIsoContaining(today);
+  const aggToday = await aggregateGenelForRangeCombined(today, today, modelId);
+  const pctToday =
+    aggToday.genelTamamlanan <= 0 || targetQty <= 0
+      ? 0
+      : Math.min(100, (aggToday.genelTamamlanan / targetQty) * 100);
+
+  /** Haftanın bugüne kadar (veya tamamlanan Cuma sonuna) kümülatif rakamı — orantılı hedefle karşılaştırılır */
+  const rangeEnd = today <= fri ? (today < mon ? mon : today) : fri;
+  const aggWeekPartial = await aggregateGenelForRangeCombined(mon, rangeEnd, modelId);
+  const weekdaysElapsedMonToToday = Math.max(1, eachWeekdayIsoInRange(mon, rangeEnd).length);
+  const expectedWeekProgress =
+    weekdaysElapsedMonToToday > 5
+      ? weeklyTargetFullWeek
+      : (weeklyTargetFullWeek / 5) * weekdaysElapsedMonToToday;
+  const pctWeek =
+    expectedWeekProgress <= 0
+      ? 0
+      : Math.min(
+          200,
+          (aggWeekPartial.genelTamamlanan / expectedWeekProgress) * 100,
+        );
+
+  const dailyBreached = isWeekday && pctToday < threshD;
+  const weeklyBreached =
+    weekdaysElapsedMonToToday > 0 && isWeekday && pctWeek < threshW && today >= mon && today <= fri;
+
+  const alerts = [];
+  if (dailyBreached) {
+    alerts.push({
+      scope: "daily",
+      severity: "warning",
+      title: `Günlük hedef uyarısı (<%${threshD})`,
+      detail: `Genel tamamlanan bugün ${Math.round(pctToday * 10) / 10}%, hedef ${targetQty} üzerinden.`,
+      pctRounded: Math.round(pctToday * 10) / 10,
+    });
+  }
+  if (weeklyBreached) {
+    alerts.push({
+      scope: "weekly",
+      severity: "warning",
+      title: `Haftalık hedef uyarısı (<%${threshW})`,
+      detail: `${mon} – ${rangeEnd} kümülatif yüzdesi beklenene göre %${Math.round(pctWeek * 10) / 10}; haftalık tam hedef çizgisi ${weeklyTargetFullWeek}.`,
+      pctRounded: Math.round(pctWeek * 10) / 10,
+    });
+  }
+
+  return {
+    hedefAlertEnabled: true,
+    alerts,
+    daily: {
+      genelTamamlanan: aggToday.genelTamamlanan,
+      targetQty,
+      percent: pctToday,
+      thresholdPercent: threshD,
+      breached: dailyBreached,
+    },
+    weekly: {
+      periodStart: mon,
+      periodEnd: rangeEnd,
+      fullWeekFriday: fri,
+      genelTamamlanan: aggWeekPartial.genelTamamlanan,
+      expectedProgressQty: Math.round(expectedWeekProgress * 100) / 100,
+      weeklyTargetFullWeek,
+      weekdaysElapsedMonToToday,
+      percentVsExpectedProgress: pctWeek,
+      thresholdPercent: threshW,
+      breached: weeklyBreached,
+    },
+    weekdayLabelShort: weekdayList[refWd],
+    today,
+    isWeekday,
+    modelId,
+  };
+}
+
+/** Takım özeti karşılaştırması (birleştirilmiş saat dilimi sütunları) */
+export function getTeamComparisonData({ team1, team2, startDate, endDate }) {
+  const t1 = String(team1 || "").trim();
+  const t2 = String(team2 || "").trim();
+  if (!t1 || !t2 || t1 === t2) {
+    return Promise.reject(new Error("İki farklı bölüm seçin"));
+  }
+
+  const sumLine = `${PRODUCTION_SUM_SQL} + COALESCE(p.ek_sayim, 0)`;
+  const slotChunks = [
+    `COALESCE(SUM(p.t1000), 0) + COALESCE(SUM(p.h0900), 0) + COALESCE(SUM(p.h1000), 0)`,
+    `COALESCE(SUM(p.t1300), 0) + COALESCE(SUM(p.h1115), 0) + COALESCE(SUM(p.h1215), 0) + COALESCE(SUM(p.h1300), 0)`,
+    `COALESCE(SUM(p.t1600), 0) + COALESCE(SUM(p.h1445), 0) + COALESCE(SUM(p.h1545), 0)`,
+    `COALESCE(SUM(p.t1830), 0) + COALESCE(SUM(p.h1700), 0) + COALESCE(SUM(p.h1830), 0)`,
+  ];
+
+  return new Promise((resolve, reject) => {
+    db.all(
+      `
+      SELECT
+        w.team AS teamCode,
+        ${slotChunks[0]} AS t1000,
+        ${slotChunks[1]} AS t1300,
+        ${slotChunks[2]} AS t1600,
+        ${slotChunks[3]} AS t1830,
+        COALESCE(SUM(${sumLine}), 0) AS total,
+        COUNT(DISTINCT p.production_date) AS activeDays
+      FROM workers w
+      LEFT JOIN production_entries p ON p.worker_id = w.id
+        AND p.production_date BETWEEN ? AND ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      WHERE w.team IN (?, ?)
+      GROUP BY w.team
+      `,
+      [startDate, endDate, t1, t2],
+      (err, teamRows) => {
+        if (err) return reject(err);
+
+        db.all(
+          `
+          SELECT
+            p.production_date AS date,
+            w.team AS teamCode,
+            SUM(${sumLine}) AS production
+          FROM production_entries p
+          JOIN workers w ON w.id = p.worker_id
+          WHERE p.production_date BETWEEN ? AND ?
+            AND w.team IN (?, ?)
+            AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+            AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+          GROUP BY p.production_date, w.team
+          ORDER BY p.production_date ASC
+          `,
+          [startDate, endDate, t1, t2],
+          (err2, dailyRows) => {
+            if (err2) return reject(err2);
+
+            const toNum = (v) => Number(v) || 0;
+            const findRow = (code) =>
+              teamRows.find((r) => String(r.teamCode) === String(code)) ?? null;
+
+            const fmtTeam = (code, row) =>
+              row
+                ? {
+                    teamCode: String(code),
+                    name: "", // frontend doldurur
+                    team: String(code),
+                    process: "",
+                    t1000: toNum(row.t1000),
+                    t1300: toNum(row.t1300),
+                    t1600: toNum(row.t1600),
+                    t1830: toNum(row.t1830),
+                    total: toNum(row.total),
+                    activeDays: toNum(row.activeDays),
+                  }
+                : {
+                    teamCode: String(code),
+                    name: "",
+                    team: String(code),
+                    process: "",
+                    t1000: 0,
+                    t1300: 0,
+                    t1600: 0,
+                    t1830: 0,
+                    total: 0,
+                    activeDays: 0,
+                  };
+
+            const dateMap = new Map();
+            for (const row of dailyRows || []) {
+              const ds = row.date;
+              if (!dateMap.has(ds)) dateMap.set(ds, { date: ds, w1: 0, w2: 0 });
+              const entry = dateMap.get(ds);
+              if (String(row.teamCode) === t1) entry.w1 = toNum(row.production);
+              if (String(row.teamCode) === t2) entry.w2 = toNum(row.production);
+            }
+
+            resolve({
+              teamCodes: [t1, t2],
+              worker1: fmtTeam(t1, findRow(t1)),
+              worker2: fmtTeam(t2, findRow(t2)),
+              daily: [...dateMap.values()],
+            });
+          }
+        );
+      }
+    );
+  });
+}
+
+/** İki tarih aralığının tamamında bölüm + fabrika üretimi */
+export function getDualRangeFactoryTotals(range1Start, range1End, range2Start, range2End) {
+  const sumLine = `${PRODUCTION_SUM_SQL} + COALESCE(p.ek_sayim, 0)`;
+  const ranges = [
+    { key: "r1", s: range1Start, e: range1End },
+    { key: "r2", s: range2Start, e: range2End },
+  ];
+
+  const runTeamBreakdown = (s, e) =>
+    new Promise((resolve, reject) => {
+      db.all(
+        `
+        SELECT
+          w.team AS teamCode,
+          COALESCE(SUM(${sumLine}), 0) AS total,
+          COUNT(DISTINCT p.production_date) AS activeDays
+        FROM production_entries p
+        JOIN workers w ON w.id = p.worker_id
+        WHERE p.production_date BETWEEN ? AND ?
+          AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+          AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+        GROUP BY w.team
+        ORDER BY total DESC
+        `,
+        [s, e],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows || []);
+        }
+      );
+    });
+
+  const runGrand = (s, e) =>
+    new Promise((resolve, reject) => {
+      db.get(
+        `
+        SELECT
+          COALESCE(SUM(${sumLine}), 0) AS grandTotal,
+          COUNT(DISTINCT p.production_date) AS distinctDays
+        FROM production_entries p
+        JOIN workers w ON w.id = p.worker_id
+        WHERE p.production_date BETWEEN ? AND ?
+          AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+          AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+        `,
+        [s, e],
+        (err, row) => {
+          if (err) return reject(err);
+          resolve({
+            grandTotal: Number(row?.grandTotal) || 0,
+            distinctDays: Number(row?.distinctDays) || 0,
+          });
+        }
+      );
+    });
+
+  return Promise.all(
+    ranges.map(async ({ key, s, e }) => {
+      const [teams, grand] = await Promise.all([runTeamBreakdown(s, e), runGrand(s, e)]);
+      return {
+        key,
+        startDate: s,
+        endDate: e,
+        grandTotal: grand.grandTotal,
+        distinctDays: grand.distinctDays,
+        teams,
+      };
+    }),
+  ).then(([a, b]) => ({ period1: a, period2: b }));
+}
+
+/** Haftalık özet için: bölüm toplamları, model kullanımı, düşük verimlilik (genel dk hedefleri) */
+export async function gatherWeeklyBriefingPayload(startIso, endIso) {
+  const sumLine = `${PRODUCTION_SUM_SQL} + COALESCE(p.ek_sayim, 0)`;
+
+  const teamTotals = await new Promise((resolve, reject) => {
+    db.all(
+      `
+      SELECT
+        w.team AS teamCode,
+        COALESCE(SUM(${sumLine}), 0) AS totalProduction
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.production_date BETWEEN ? AND ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      GROUP BY w.team
+      ORDER BY totalProduction DESC
+      `,
+      [startIso, endIso],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      },
+    );
+  });
+
+  const modelUsage = await new Promise((resolve, reject) => {
+    db.all(
+      `
+      SELECT
+        TRIM(COALESCE(product_model, '')) AS modelCode,
+        COUNT(*) AS daysCount
+      FROM daily_product_meta
+      WHERE production_date BETWEEN ? AND ?
+      GROUP BY TRIM(COALESCE(product_model, ''))
+      HAVING LENGTH(TRIM(COALESCE(product_model, ''))) > 0
+      ORDER BY daysCount DESC
+      LIMIT 25
+      `,
+      [startIso, endIso],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      },
+    );
+  });
+
+  const dkRows = await getProsesVeriRows(GENEL_VERIMLILIK_MODEL_CODE_SERVER).catch(() => []);
+  const dkMap = {};
+  for (const r of dkRows || []) {
+    dkMap[`${String(r.teamCode)}|${String(r.processName).trim()}`] = Number(r.dkAdet) || 0;
+  }
+
+  const workerAgg = await new Promise((resolve, reject) => {
+    db.all(
+      `
+      SELECT
+        w.id AS workerId,
+        w.name AS name,
+        w.team AS team,
+        w.process AS process,
+        COALESCE(SUM(${sumLine}), 0) AS total,
+        COUNT(DISTINCT p.production_date) AS activeDays
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.production_date BETWEEN ? AND ?
+        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+      GROUP BY w.id
+      HAVING SUM(${sumLine}) > 0
+      `,
+      [startIso, endIso],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      },
+    );
+  });
+
+  const efficiencies = [];
+  for (const r of workerAgg) {
+    const key = `${String(r.team)}|${String(r.process).trim()}`;
+    const dk = dkMap[key] || 0;
+    const gunluk = dk * 60 * 9;
+    if (gunluk <= 0) continue;
+    const ad = Number(r.activeDays) || 1;
+    const dailyAvg = Number(r.total) / ad;
+    const pct = Math.min(100, Math.round((dailyAvg / gunluk) * 100));
+    efficiencies.push({
+      workerId: r.workerId,
+      name: r.name,
+      team: r.team,
+      process: r.process,
+      total: Number(r.total) || 0,
+      activeDays: ad,
+      efficiencyPct: pct,
+    });
+  }
+  efficiencies.sort((a, b) => a.efficiencyPct - b.efficiencyPct);
+
+  const teamLabels = await new Promise((resolve, reject) => {
+    db.all("SELECT code, label FROM teams", [], (e, rows) => {
+      if (e) return reject(e);
+      resolve(Object.fromEntries((rows || []).map((x) => [x.code, x.label])));
+    });
+  });
+
+  return {
+    periodLabel: `${startIso} … ${endIso}`,
+    teamTotals,
+    teamLabels,
+    modelUsage,
+    lowestEfficiency: efficiencies.slice(0, 20),
+    generatedAt: new Date().toISOString(),
+  };
+}

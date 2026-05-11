@@ -589,6 +589,13 @@ export function initDb() {
     `);
     db.run(`CREATE INDEX IF NOT EXISTS idx_proses_veri_rows_model ON proses_veri_rows (model_code)`);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS app_kv (
+        k TEXT PRIMARY KEY,
+        v TEXT NOT NULL DEFAULT '{}'
+      )
+    `);
+
     seedTeamsAndProcessesIfEmpty();
     migrateWorkersRemoveTeamCheckIfNeeded();
   });

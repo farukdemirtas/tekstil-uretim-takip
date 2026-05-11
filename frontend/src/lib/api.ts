@@ -963,7 +963,7 @@ export async function updateUserPermissions(userId: number, permissions: AppPerm
 }
 
 export type WorkerCompStat = {
-  workerId: number;
+  workerId?: number;
   name: string;
   team: string;
   process: string;
@@ -1001,6 +1001,151 @@ export async function getWorkerComparison(params: {
   return res.json();
 }
 
+export type TeamComparisonData = WorkerComparisonData & { teamCodes: [string, string] };
+
+export async function getTeamComparison(params: {
+  team1: string;
+  team2: string;
+  startDate: string;
+  endDate: string;
+}): Promise<TeamComparisonData> {
+  const query = new URLSearchParams({
+    team1: params.team1,
+    team2: params.team2,
+    startDate: params.startDate,
+    endDate: params.endDate,
+  }).toString();
+  const res = await apiFetch(`${apiBase()}/analytics/team-comparison?${query}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Takim karsilastirma verisi alinamadi");
+  return res.json();
+}
+
+export type PeriodTotalsBlock = {
+  key: string;
+  startDate: string;
+  endDate: string;
+  grandTotal: number;
+  distinctDays: number;
+  teams: { teamCode: string; total: number; activeDays: number }[];
+};
+
+export type PeriodComparisonData = { period1: PeriodTotalsBlock; period2: PeriodTotalsBlock };
+
+export async function getPeriodComparison(params: {
+  range1Start: string;
+  range1End: string;
+  range2Start: string;
+  range2End: string;
+}): Promise<PeriodComparisonData> {
+  const query = new URLSearchParams(params).toString();
+  const res = await apiFetch(`${apiBase()}/analytics/period-comparison?${query}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Donem karsilastirma verisi alinamadi");
+  return res.json();
+}
+
+export type DecisionSupportHedefAlertSettings = {
+  enabled: boolean;
+  modelId: number | null;
+  targetQty: number;
+  thresholdDailyPct: number;
+  thresholdWeeklyPct: number;
+  weeklyTargetAdet: number | null;
+};
+
+export type DecisionSupportWeeklyReportSettings = {
+  enabled: boolean;
+  recipientsCsv: string;
+  sendHourTurkey: number;
+  sendMinuteTurkey?: number;
+  sendWeekday: number;
+  lastSentPeriodLabel?: string | null;
+  lastError?: string | null;
+  lastSentAt?: string | null;
+};
+
+export type DecisionSupportSettings = {
+  hedefAlert: DecisionSupportHedefAlertSettings;
+  weeklyReport: DecisionSupportWeeklyReportSettings;
+};
+
+export async function getDecisionSupportSettings(): Promise<DecisionSupportSettings> {
+  const res = await apiFetch(`${apiBase()}/decision-support/settings`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Karar destegi ayarlari alinamadi");
+  return res.json();
+}
+
+export async function saveDecisionSupportSettings(
+  patch: Partial<DecisionSupportSettings>
+): Promise<DecisionSupportSettings> {
+  const res = await apiFetch(`${apiBase()}/decision-support/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(patch || {}),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Kaydedilemedi");
+  }
+  return res.json();
+}
+
+export type HedefAlertEvalPayload = {
+  hedefAlertEnabled: boolean;
+  alerts: { scope: string; severity: string; title: string; detail: string; pctRounded?: number }[];
+  daily?: {
+    genelTamamlanan: number;
+    targetQty: number;
+    percent: number;
+    thresholdPercent: number;
+    breached: boolean;
+  };
+  weekly?: {
+    periodStart: string;
+    periodEnd: string;
+    fullWeekFriday: string;
+    genelTamamlanan: number;
+    expectedProgressQty: number;
+    weeklyTargetFullWeek: number;
+    weekdaysElapsedMonToToday: number;
+    percentVsExpectedProgress: number;
+    thresholdPercent: number;
+    breached: boolean;
+  };
+  today: string;
+  isWeekday: boolean;
+  modelId: number | null;
+};
+
+export async function evaluateHedefAlertEval(dateIso?: string): Promise<HedefAlertEvalPayload> {
+  const qs = dateIso && /^\d{4}-\d{2}-\d{2}$/.test(dateIso) ? `?date=${encodeURIComponent(dateIso)}` : "";
+  const res = await apiFetch(`${apiBase()}/decision-support/hedef-alert-eval${qs}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Hedef uyari durumu alinamadi");
+  return res.json();
+}
+
+export async function sendWeeklyDecisionReportNow(): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`${apiBase()}/decision-support/weekly-report/send-now`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "E-posta gonderilemedi");
+  }
+  return res.json();
+}
 export type ActivityLogRow = {
   id: number;
   created_at: string;

@@ -12,6 +12,9 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.1",
     "express": "^4.21.2",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.10.0",
+    "pdfkit": "^0.16.0",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
