@@ -78,3 +78,68 @@ export function addDaysToIso(iso: string, deltaDays: number): string {
 export function todayWorkdayIsoTurkey(): string {
   return clampToWeekdayIso(todayIsoTurkey());
 }
+
+/** ISO haftasının Pazartesi günü (yerel tarih; hafta Pazartesi başlar) */
+export function mondayOfWeekFromIso(iso: string): string {
+  const dt = parseIsoLocal(iso);
+  if (!dt) return iso;
+  const day = dt.getDay();
+  const deltaToMonday = day === 0 ? -6 : 1 - day;
+  return addDaysToIso(iso, deltaToMonday);
+}
+
+/** Bu ISO tarihinden önceki tam iş haftası (Pazartesi–Cuma) */
+export function previousMondayFridayWeekFromIso(referenceIso: string): { start: string; end: string } {
+  const mon = mondayOfWeekFromIso(referenceIso);
+  const prevMon = addDaysToIso(mon, -7);
+  const prevFri = addDaysToIso(prevMon, 4);
+  return { start: prevMon, end: prevFri };
+}
+
+/** Ayın ilk hafta içi günü (takvim ayı, month1 = 1…12) */
+export function firstWeekdayOnOrAfterMonthDay(year: number, month1: number, dayOfMonth: number): string {
+  const dt = new Date(year, month1 - 1, dayOfMonth);
+  let cur = dt;
+  for (let i = 0; i < 8; i++) {
+    const d = cur.getDay();
+    if (d !== 0 && d !== 6) return formatIsoLocal(cur);
+    cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
+  }
+  return formatIsoLocal(dt);
+}
+
+/** Ayın son hafta içi günü (takvim ayı, month1 = 1…12) */
+export function lastWeekdayOnOrBeforeMonthDay(year: number, month1: number, dayOfMonth: number): string {
+  const dt = new Date(year, month1 - 1, dayOfMonth);
+  let cur = dt;
+  for (let i = 0; i < 8; i++) {
+    const d = cur.getDay();
+    if (d !== 0 && d !== 6) return formatIsoLocal(cur);
+    cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() - 1);
+  }
+  return formatIsoLocal(dt);
+}
+
+/** Takvim ayı içinde üretim analizi için başlangıç/bitiş (hafta içi) */
+export function calendarMonthWeekdayBounds(year: number, month1: number): { start: string; end: string } {
+  const lastDay = new Date(year, month1, 0).getDate();
+  const start = firstWeekdayOnOrAfterMonthDay(year, month1, 1);
+  const end = lastWeekdayOnOrBeforeMonthDay(year, month1, lastDay);
+  return { start, end };
+}
+
+/**
+ * Bitiş gününe göre son N takvim gününü kapsayan aralık (her iki uç dahil).
+ * Uçlar hafta sonuysa üretim takvimine uygun şekilde hafta içine çekilir.
+ */
+export function rollingCalendarDaysWeekdayRange(endIso: string, calendarDaysInclusive: number): {
+  start: string;
+  end: string;
+} {
+  const n = Math.max(1, calendarDaysInclusive);
+  const rawStart = addDaysToIso(endIso, -(n - 1));
+  return {
+    start: clampToWeekdayIso(rawStart),
+    end: clampToWeekdayIso(endIso),
+  };
+}

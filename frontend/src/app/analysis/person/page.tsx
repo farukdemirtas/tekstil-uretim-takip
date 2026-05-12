@@ -1,16 +1,31 @@
 "use client";
 
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
+  formatTurkishPeriodDescription,
+  PersonOnePageSummaryReport,
+} from "@/components/person-analysis/PersonOnePageSummaryReport";
+import {
   getTeams,
+  getTopWorkersAnalytics,
   getWorkerProductionDailyDetail,
   getWorkers,
   setAuthToken,
 } from "@/lib/api";
-import { todayWeekdayIso, todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
+import {
+  addDaysToIso,
+  calendarMonthWeekdayBounds,
+  mondayOfWeekFromIso,
+  previousMondayFridayWeekFromIso,
+  rollingCalendarDaysWeekdayRange,
+  todayWeekdayIso,
+  todayWorkdayIsoTurkey,
+} from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
+import { injectPdfCloneLightTextFix } from "@/lib/pdfHtml2CloneFix";
 import { aggregateDisplaySlots, DISPLAY_SLOT_CHART_LABELS } from "@/lib/displaySlotAggregation";
 import { sumProductionRow } from "@/lib/productionSlots";
 import { SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
@@ -21,7 +36,7 @@ import {
   efficiencyPercentFromTotals,
   workerEfficiencyPercent,
 } from "@/lib/workerEfficiency";
-import type { ProductionRow, Worker, WorkerProductionDayDetail } from "@/lib/types";
+import type { HourFilter, ProductionRow, Worker, WorkerProductionDayDetail } from "@/lib/types";
 
 const SLOTS = [
   { key: "t1000" as const, label: DISPLAY_SLOT_CHART_LABELS[0] },
@@ -83,6 +98,25 @@ function formatDateAxis(iso: string): string {
 
 const SLOT_COLORS = ["#0d9488", "#0891b2", "#7c3aed", "#ea580c"] as const;
 
+const TR_MONTHS = [
+  "Ocak",
+  "Şubat",
+  "Mart",
+  "Nisan",
+  "Mayıs",
+  "Haziran",
+  "Temmuz",
+  "Ağustos",
+  "Eylül",
+  "Ekim",
+  "Kasım",
+  "Aralık",
+] as const;
+
+function ensureIsoRangeOrder(start: string, end: string): { start: string; end: string } {
+  return start <= end ? { start, end } : { start: end, end: start };
+}
+
 function EfficiencyBadge({ pct }: { pct: number }) {
   const tone =
     pct >= 85
@@ -99,6 +133,7 @@ function EfficiencyBadge({ pct }: { pct: number }) {
 
 export default function PersonAnalysisPage() {
   const pdfCaptureRef = useRef<HTMLDivElement>(null);
+  const bulkPdfHostRef = useRef<HTMLDivElement>(null);
   const chartGradientId = `ptrend-${useId().replace(/:/g, "")}`;
   const [startDate, setStartDate] = useState(todayWeekdayIso());
   const [endDate, setEndDate] = useState(todayWeekdayIso());
@@ -113,6 +148,22 @@ export default function PersonAnalysisPage() {
   const [includeSameNameWorkers, setIncludeSameNameWorkers] = useState(true);
   const [workersLoading, setWorkersLoading] = useState(true);
   const [workersError, setWorkersError] = useState<string | null>(null);
+  const [bulkExporting, setBulkExporting] = useState(false);
+  const [bulkPdfJob, setBulkPdfJob] = useState<null | {
+    pages: WorkerProductionDayDetail[][];
+    periodDescription: string;
+    startDate: string;
+    endDate: string;
+    reportTimeLabel: string;
+  }>(null);
+  const [presetYear, setPresetYear] = useState(() => {
+    const [y] = todayWorkdayIsoTurkey().split("-").map(Number);
+    return y;
+  });
+  const [presetMonth, setPresetMonth] = useState(() => {
+    const [, m] = todayWorkdayIsoTurkey().split("-").map(Number);
+    return m;
+  });
 
   const teamLabel = useCallback(
     (code: string) => teamLabels[code] ?? code,
@@ -174,6 +225,47 @@ export default function PersonAnalysisPage() {
       setLoading(false);
     }
   }, [workerId, startDate, endDate, includeSameNameWorkers]);
+
+  const applyQuickRange = useCallback((rangeStart: string, rangeEnd: string) => {
+    const o = ensureIsoRangeOrder(rangeStart, rangeEnd);
+    setStartDate(o.start);
+    setEndDate(o.end);
+  }, []);
+
+  const presetPreviousWeek = useCallback(() => {
+    const { start, end } = previousMondayFridayWeekFromIso(todayWorkdayIsoTurkey());
+    applyQuickRange(start, end);
+  }, [applyQuickRange]);
+
+  const presetLast15Days = useCallback(() => {
+    const end = todayWorkdayIsoTurkey();
+    const { start, end: e } = rollingCalendarDaysWeekdayRange(end, 15);
+    applyQuickRange(start, e);
+  }, [applyQuickRange]);
+
+  const presetThisMonth = useCallback(() => {
+    const [y, m] = todayWorkdayIsoTurkey().split("-").map(Number);
+    const { start, end } = calendarMonthWeekdayBounds(y, m);
+    applyQuickRange(start, end);
+  }, [applyQuickRange]);
+
+  const presetThisWeekToToday = useCallback(() => {
+    const ref = todayWorkdayIsoTurkey();
+    const mon = mondayOfWeekFromIso(ref);
+    const fri = addDaysToIso(mon, 4);
+    const end = ref < fri ? ref : fri;
+    applyQuickRange(mon, end);
+  }, [applyQuickRange]);
+
+  const applySelectedCalendarMonth = useCallback(() => {
+    const { start, end } = calendarMonthWeekdayBounds(presetYear, presetMonth);
+    applyQuickRange(start, end);
+  }, [applyQuickRange, presetYear, presetMonth]);
+
+  const yearPresetChoices = useMemo(() => {
+    const y = Number(todayWorkdayIsoTurkey().split("-")[0]);
+    return [y - 2, y - 1, y, y + 1];
+  }, []);
 
   const meta = rows[0];
 
@@ -498,11 +590,15 @@ export default function PersonAnalysisPage() {
     omitEls.forEach((node) => {
       node.style.display = "none";
     });
+    el.classList.add("person-pdf-compact-export");
+    el.scrollIntoView({ block: "nearest", behavior: "instant" });
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
     try {
       const html2pdf = (await import("html2pdf.js")).default;
+      const canvasW = Math.max(320, el.scrollWidth, el.offsetWidth, document.documentElement.clientWidth);
+      const canvasH = Math.min(Math.max(400, el.scrollHeight), 16000);
       await html2pdf()
         .set({
           margin: [10, 10, 10, 10],
@@ -514,8 +610,13 @@ export default function PersonAnalysisPage() {
             letterRendering: true,
             logging: false,
             backgroundColor: "#ffffff",
-            scrollY: -window.scrollY,
-            windowWidth: el.scrollWidth,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: canvasW,
+            windowHeight: canvasH,
+            allowTaint: true,
+            foreignObjectRendering: false,
+            onclone: (clonedDoc: Document) => injectPdfCloneLightTextFix(clonedDoc),
           },
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait", compress: true },
           pagebreak: { mode: ["css", "legacy"], avoid: [".pdf-avoid-break", "tr"] },
@@ -525,12 +626,169 @@ export default function PersonAnalysisPage() {
     } catch {
       setError("PDF oluşturulamadı. Sayfayı yenileyip tekrar deneyin.");
     } finally {
+      el.classList.remove("person-pdf-compact-export");
       omitEls.forEach((node, i) => {
         node.style.display = omitDisplayPrev[i] ?? "";
       });
       setPdfExporting(false);
     }
   };
+
+  const fetchBulkSummaryData = useCallback(async () => {
+    const pm = getProsesMapForEfficiency();
+    const top = await getTopWorkersAnalytics({
+      startDate,
+      endDate,
+      team: "",
+      process: "",
+      hour: "" as HourFilter,
+      limit: 9999,
+    });
+    return { pm, top };
+  }, [startDate, endDate]);
+
+  const exportAllPersonnelSummaryExcel = useCallback(async () => {
+    setBulkExporting(true);
+    setError(null);
+    try {
+      const { pm, top } = await fetchBulkSummaryData();
+      const sheetRows = top.map((row) => {
+        const eff = efficiencyPercentFromTotals(
+          pm,
+          row.team,
+          row.process,
+          row.totalProduction,
+          Math.max(row.activeDays, 1)
+        );
+        return {
+          "Kayıt no": row.workerId,
+          Personel: row.name,
+          Bölüm: teamLabel(row.team),
+          Proses: row.process,
+          "Üretim günü": row.activeDays,
+          "Toplam adet": row.totalProduction,
+          "Verimlilik %": eff !== null ? eff : "",
+        };
+      });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), "Kişi özeti");
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.json_to_sheet([
+          { Alan: "Tarih aralığı", Değer: `${startDate} — ${endDate}` },
+          { Alan: "Personel satırı", Değer: top.length },
+          {
+            Alan: "Not",
+            Değer: "Dönemde üretim kaydı olan tüm personel (Genel analiz / sıralama ile uyumlu özet).",
+          },
+        ]),
+        "Rapor"
+      );
+      XLSX.writeFile(wb, `kisi-bazli-toplu-ozet-${startDate}-${endDate}.xlsx`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Toplu özet indirilemedi");
+    } finally {
+      setBulkExporting(false);
+    }
+  }, [fetchBulkSummaryData, teamLabel, startDate, endDate]);
+
+  const exportAllPersonnelSummaryPdf = useCallback(async () => {
+    setBulkExporting(true);
+    setError(null);
+    try {
+      const { top } = await fetchBulkSummaryData();
+      if (top.length === 0) {
+        setError("Bu tarih aralığında üretim kaydı olan personel yok.");
+        setBulkExporting(false);
+        return;
+      }
+      const pages: WorkerProductionDayDetail[][] = [];
+      const seenMergedName = new Set<string>();
+      for (const row of top) {
+        if (includeSameNameWorkers) {
+          const key = row.name.trim().toLowerCase();
+          if (seenMergedName.has(key)) continue;
+          seenMergedName.add(key);
+        }
+        const detail = await getWorkerProductionDailyDetail({
+          workerId: row.workerId,
+          startDate,
+          endDate,
+          includeSameNameWorkers,
+        });
+        if (detail.length > 0) pages.push(detail);
+      }
+      if (pages.length === 0) {
+        setError("Rapor için yeterli veri alınamadı.");
+        setBulkExporting(false);
+        return;
+      }
+      setBulkPdfJob({
+        pages,
+        periodDescription: formatTurkishPeriodDescription(startDate, endDate),
+        startDate,
+        endDate,
+        reportTimeLabel: new Date().toLocaleString("tr-TR"),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Toplu PDF hazırlanamadı");
+      setBulkExporting(false);
+    }
+  }, [fetchBulkSummaryData, startDate, endDate, includeSameNameWorkers]);
+
+  useEffect(() => {
+    if (!bulkPdfJob) return;
+    const host = bulkPdfHostRef.current;
+    if (!host) {
+      setBulkPdfJob(null);
+      setBulkExporting(false);
+      return;
+    }
+    void (async () => {
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      await new Promise<void>((r) => setTimeout(r, 80));
+      const captureEl = bulkPdfHostRef.current;
+      if (!captureEl) {
+        setBulkPdfJob(null);
+        setBulkExporting(false);
+        return;
+      }
+      try {
+        const html2pdf = (await import("html2pdf.js")).default;
+        const canvasW = Math.max(794, captureEl.scrollWidth, captureEl.offsetWidth);
+        const canvasH = Math.min(Math.max(600, captureEl.scrollHeight), 24000);
+        await html2pdf()
+          .set({
+            margin: [6, 6, 6, 6],
+            filename: `kisi-bazli-toplu-ozet-${bulkPdfJob.startDate}-${bulkPdfJob.endDate}.pdf`,
+            image: { type: "jpeg", quality: 0.92 },
+            html2canvas: {
+              scale: 2,
+              useCORS: true,
+              letterRendering: true,
+              logging: false,
+              backgroundColor: "#ffffff",
+              scrollX: 0,
+              scrollY: 0,
+              windowWidth: canvasW,
+              windowHeight: canvasH,
+              allowTaint: true,
+              foreignObjectRendering: false,
+              onclone: (clonedDoc: Document) => injectPdfCloneLightTextFix(clonedDoc),
+            },
+            jsPDF: { unit: "mm", format: "a4", orientation: "portrait", compress: true },
+            pagebreak: { mode: ["css", "legacy"], avoid: [".pdf-avoid-break"] },
+          })
+          .from(captureEl)
+          .save();
+      } catch {
+        setError("Toplu PDF oluşturulamadı. Sayfayı yenileyip tekrar deneyin.");
+      } finally {
+        setBulkPdfJob(null);
+        setBulkExporting(false);
+      }
+    })();
+  }, [bulkPdfJob]);
 
   const slotMax = Math.max(stats.slotTotals.t1000, stats.slotTotals.t1300, stats.slotTotals.t1600, stats.slotTotals.t1830, 1);
 
@@ -559,7 +817,9 @@ export default function PersonAnalysisPage() {
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
                 Üretim listesinde yer alan aktif personeli seçin; günlük toplamlar, dört saat diliminde dağılım, verim ve
-                trend tek ekranda özetlenir. Raporu Excel veya PDF olarak dışa aktarabilirsiniz.
+                trend tek ekranda özetlenir. İsteğe bağlı olarak aylık veya son 15 gün gibi dönem kısayolu ve tüm
+                personel özeti (Excel veya her çalışan için bir sayfa PDF) kullanılabilir; tekil raporu Excel veya PDF olarak
+                dışa aktarabilirsiniz.
               </p>
               {loadedAt ? (
                 <p className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-100/90 px-3 py-1.5 text-xs text-slate-600 dark:bg-slate-800/80 dark:text-slate-400">
@@ -590,8 +850,9 @@ export default function PersonAnalysisPage() {
               <h2 className="text-base font-semibold text-slate-900 dark:text-white">Sorgu</h2>
               <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
                 <strong className="font-semibold text-slate-800 dark:text-slate-200">Aktif personel</strong> listesinden
-                kişiyi seçin. Hafta içi tarihlerde günlük ve saat dilimi kırılımını yüklersiniz; raporu Excel veya PDF
-                olarak alabilirsiniz.
+                kişiyi seçin. Hafta içi tarihlerde günlük ve saat dilimi kırılımını yüklersiniz; aşağıdan hafta / ay /
+                son 15 gün gibi dönem kısayolları veya tüm personel için toplu özet (Excel veya çok sayfalı tek PDF:
+                kişi başına bir sayfa, günlük saatlik tablo olmadan) kullanılabilir.
               </p>
             </div>
           {workersError ? (
@@ -632,6 +893,82 @@ export default function PersonAnalysisPage() {
             <WeekdayDatePicker label="Başlangıç" value={startDate} onChange={setStartDate} />
             <WeekdayDatePicker label="Bitiş" value={endDate} onChange={setEndDate} />
           </div>
+          <div className="mt-4 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-600/80 dark:bg-slate-900/35">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Hızlı dönem
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={presetThisWeekToToday}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50/80 dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:bg-teal-950/40"
+              >
+                Bu hafta (Pts–bugün)
+              </button>
+              <button
+                type="button"
+                onClick={presetPreviousWeek}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50/80 dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:bg-teal-950/40"
+              >
+                Önceki hafta (Pts–Cum)
+              </button>
+              <button
+                type="button"
+                onClick={presetLast15Days}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50/80 dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:bg-teal-950/40"
+              >
+                Son 15 gün
+              </button>
+              <button
+                type="button"
+                onClick={presetThisMonth}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50/80 dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:bg-teal-950/40"
+              >
+                Bu ay
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Yıl</label>
+                <select
+                  value={presetYear}
+                  onChange={(e) => setPresetYear(Number(e.target.value))}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-inner outline-none ring-teal-500/25 focus:border-teal-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  {yearPresetChoices.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Ay</label>
+                <select
+                  value={presetMonth}
+                  onChange={(e) => setPresetMonth(Number(e.target.value))}
+                  className="min-w-[9.5rem] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-inner outline-none ring-teal-500/25 focus:border-teal-500 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  {TR_MONTHS.map((label, idx) => (
+                    <option key={label} value={idx + 1}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={applySelectedCalendarMonth}
+                className="rounded-xl border border-teal-200/90 bg-teal-50/90 px-3 py-2 text-xs font-semibold text-teal-900 shadow-sm transition hover:bg-teal-100 dark:border-teal-800/60 dark:bg-teal-950/50 dark:text-teal-100 dark:hover:bg-teal-900/50"
+              >
+                Seçilen ay
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-500">
+              Son 15 gün: bugünü (İstanbul takvimine göre son iş günü) bitiş alır, geriye 15 takvim gününe uzanır; hafta
+              sonu uçları hafta içine çekilir. Seçilen ay: takvim ayının ilk ve son iş günleri arasıdır (ör. Nisan).
+            </p>
+          </div>
           <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200/90 bg-slate-50/80 px-4 py-3 text-left text-xs leading-relaxed text-slate-700 dark:border-slate-600 dark:bg-slate-800/40 dark:text-slate-300">
             <input
               type="checkbox"
@@ -670,6 +1007,25 @@ export default function PersonAnalysisPage() {
               className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:bg-slate-700/80"
             >
               {pdfExporting ? "PDF hazırlanıyor…" : "PDF"}
+            </button>
+            <span className="hidden h-6 w-px bg-slate-200 sm:block dark:bg-slate-600" aria-hidden />
+            <button
+              type="button"
+              title="Seçili tarih aralığındaki tüm personel özet satırları (genel analiz ile aynı mantık)"
+              disabled={bulkExporting}
+              onClick={() => void exportAllPersonnelSummaryExcel()}
+              className="rounded-xl border border-violet-200/90 bg-violet-50/90 px-4 py-2.5 text-sm font-semibold text-violet-900 shadow-sm transition hover:bg-violet-100 disabled:opacity-50 dark:border-violet-800/50 dark:bg-violet-950/40 dark:text-violet-100 dark:hover:bg-violet-900/50"
+            >
+              {bulkExporting ? "Toplu özet…" : "Toplu kişi özeti (Excel)"}
+            </button>
+            <button
+              type="button"
+              title="Tarih aralığında üretim yapan herkes için tek sayfa özet (ekrandaki kişi raporu gibi, günlük saatlik tablo yok)"
+              disabled={bulkExporting}
+              onClick={() => void exportAllPersonnelSummaryPdf()}
+              className="rounded-xl border border-violet-200/90 bg-white px-4 py-2.5 text-sm font-semibold text-violet-900 shadow-sm transition hover:bg-violet-50 disabled:opacity-50 dark:border-violet-800/50 dark:bg-slate-800/90 dark:text-violet-100 dark:hover:bg-violet-950/30"
+            >
+              {bulkExporting ? "Toplu özet…" : "Toplu kişi özeti (PDF)"}
             </button>
           </div>
         </section>
@@ -714,7 +1070,8 @@ export default function PersonAnalysisPage() {
         {rows.length > 0 && meta ? (
           <div
             ref={pdfCaptureRef}
-            className="person-pdf-capture mb-10 space-y-8 rounded-3xl border border-slate-200/90 bg-white p-6 text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.06),0_20px_50px_-20px_rgba(15,23,42,0.15)] [color-scheme:light] dark:border-slate-600 dark:shadow-none dark:ring-1 dark:ring-slate-700/40"
+            className="person-pdf-capture person-pdf-print-host mb-10 space-y-8 rounded-3xl border border-slate-200/90 bg-white p-6 text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.06),0_20px_50px_-20px_rgba(15,23,42,0.15)] [color-scheme:light] dark:border-slate-600 dark:shadow-none dark:ring-1 dark:ring-slate-700/40"
+            data-pdf-render-root
           >
             <header className="pdf-avoid-break border-b border-slate-200/90 pb-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1049,8 +1406,8 @@ export default function PersonAnalysisPage() {
                     : " — günlük satırlar bölüm ve proses kırılımıyla listelenir."}
                 </p>
               </div>
-              <div className="overflow-x-auto rounded-b-2xl">
-                <table className="w-full min-w-[760px] border-collapse text-sm text-slate-800">
+              <div className="person-daily-wrap overflow-x-auto rounded-b-2xl">
+                <table className="person-daily-table w-full min-w-[760px] border-collapse text-sm text-slate-800">
                   <thead className="sticky top-0 z-[1] shadow-sm">
                     <tr className="border-b border-slate-200 bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
                       <th className="px-4 py-3">Tarih</th>
@@ -1153,6 +1510,63 @@ export default function PersonAnalysisPage() {
           </div>
         ) : null}
       </div>
+
+      {bulkPdfJob && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={bulkPdfHostRef}
+              className="bulk-pdf-print-host pointer-events-none box-border w-[794px] max-w-[794px] overflow-visible bg-white"
+              aria-hidden
+              data-pdf-render-root
+              style={{
+                position: "fixed",
+                left: "-900px",
+                top: 0,
+                zIndex: 99990,
+              }}
+            >
+              {bulkPdfJob.pages.map((pageRows, i) => (
+                <div
+                  key={`bulk-pdf-${bulkPdfJob.startDate}-${bulkPdfJob.endDate}-${i}`}
+                  style={i > 0 ? { pageBreakBefore: "always", breakBefore: "page" } : undefined}
+                >
+                  <PersonOnePageSummaryReport
+                    rows={pageRows}
+                    teamLabel={teamLabel}
+                    chartGradientId={`bulk-grad-${i}-${bulkPdfJob.startDate.replace(/-/g, "")}`}
+                    startDate={bulkPdfJob.startDate}
+                    endDate={bulkPdfJob.endDate}
+                    periodDescription={bulkPdfJob.periodDescription}
+                    reportTimeLabel={bulkPdfJob.reportTimeLabel}
+                    compact
+                  />
+                </div>
+              ))}
+            </div>,
+            document.body
+          )
+        : null}
+
+      {typeof document !== "undefined" && (pdfExporting || bulkPdfJob) ? (
+        createPortal(
+          <div
+            className="fixed inset-0 flex items-center justify-center p-4"
+            style={{
+              /* Chrome: backdrop-blure beyaz/glitch ekranına yol açabilir; katmanda düz RGBA kullan */
+              backgroundColor: "rgba(15, 23, 42, 0.78)",
+              zIndex: 999999,
+            }}
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <p className="rounded-2xl border border-white/35 bg-white px-8 py-4 text-base font-semibold text-slate-900 shadow-xl">
+              PDF oluşturuluyor…
+            </p>
+          </div>,
+          document.body
+        )
+      ) : null}
     </main>
   );
 }

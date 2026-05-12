@@ -56,6 +56,87 @@
   color: #94a3b8 !important;
 }
 
+/*
+ * PDF / html2canvas yakalama alanları: dark temada slate metinleri açık renge çevriliyor;
+ * rapor kutusu beyaz zeminde olduğu için metin görünmez / PDF boş görünmesin diye burada sıfırlanır.
+ */
+html.dark .bulk-pdf-print-host,
+html.dark .person-pdf-print-host {
+  color-scheme: light !important;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html.dark .bulk-pdf-print-host .text-slate-900,
+html.dark .person-pdf-print-host .text-slate-900 {
+  color: #0f172a !important;
+}
+
+html.dark .bulk-pdf-print-host .text-slate-800,
+html.dark .person-pdf-print-host .text-slate-800 {
+  color: #1e293b !important;
+}
+
+html.dark .bulk-pdf-print-host .text-slate-700,
+html.dark .person-pdf-print-host .text-slate-700 {
+  color: #334155 !important;
+}
+
+html.dark .bulk-pdf-print-host .text-slate-600,
+html.dark .person-pdf-print-host .text-slate-600 {
+  color: #475569 !important;
+}
+
+html.dark .bulk-pdf-print-host .text-slate-500,
+html.dark .person-pdf-print-host .text-slate-500 {
+  color: #64748b !important;
+}
+
+html.dark .bulk-pdf-print-host .text-slate-400,
+html.dark .person-pdf-print-host .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark .bulk-pdf-print-host .text-teal-600,
+html.dark .person-pdf-print-host .text-teal-600 {
+  color: #0d9488 !important;
+}
+
+html.dark .bulk-pdf-print-host .text-teal-700,
+html.dark .person-pdf-print-host .text-teal-700 {
+  color: #0f766e !important;
+}
+
+html.dark .bulk-pdf-print-host .text-teal-800,
+html.dark .person-pdf-print-host .text-teal-800 {
+  color: #115e59 !important;
+}
+
+html.dark .bulk-pdf-print-host .text-blue-700,
+html.dark .person-pdf-print-host .text-blue-700 {
+  color: #1d4ed8 !important;
+}
+
+html.dark .bulk-pdf-print-host .text-violet-700,
+html.dark .person-pdf-print-host .text-violet-700 {
+  color: #6d28d9 !important;
+}
+
+html.dark .bulk-pdf-print-host .text-violet-800,
+html.dark .person-pdf-print-host .text-violet-800 {
+  color: #5b21b6 !important;
+}
+
+html.dark .bulk-pdf-print-host .text-amber-800,
+html.dark .person-pdf-print-host .text-amber-800 {
+  color: #92400e !important;
+}
+
+html.dark .bulk-pdf-print-host .text-emerald-700,
+html.dark .person-pdf-print-host .text-emerald-700 {
+  color: #047857 !important;
+}
+
 @layer components {
   /* Form kontrolleri — marka rengi odak */
   .input-modern {
@@ -327,3 +408,65 @@ html.ekran4-icerik body {
     transform: translate3d(calc(var(--ebb-tx, -40px) * 0.35), calc(var(--ebb-ty, -20px) * 0.35), 0);
   }
 }
+
+/* Kişi bazlı analiz — html2pdf anlığı: günlük saatlik tablo A4 portreye sığsın (Verim sütunu dahil) */
+.person-pdf-compact-export .person-daily-wrap {
+  overflow: visible !important;
+}
+
+.person-pdf-compact-export .person-daily-table {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100%;
+  table-layout: fixed;
+  font-size: 8px;
+  line-height: 1.15;
+}
+
+.person-pdf-compact-export .person-daily-table th,
+.person-pdf-compact-export .person-daily-table td {
+  padding: 2px 4px !important;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.person-pdf-compact-export .person-daily-table thead th {
+  white-space: normal;
+  font-size: 6.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.person-pdf-compact-export .person-daily-table tbody td {
+  font-size: 8px;
+}
+
+/* Son sütun: verimlilik rozeti / içerik */
+.person-pdf-compact-export .person-daily-table thead th:last-child,
+.person-pdf-compact-export .person-daily-table tbody td:last-child {
+  width: 11%;
+  min-width: 3rem;
+}
+
+.person-pdf-compact-export .person-daily-table tbody td:last-child > div {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.person-pdf-compact-export .person-daily-table tbody td:last-child span.inline-flex {
+  font-size: 7px !important;
+  padding: 1px 4px !important;
+  line-height: 1.1 !important;
+  max-width: 100%;
+}
+
+.person-pdf-compact-export .person-daily-table tfoot td {
+  font-size: 8px;
+}
+
+.person-pdf-compact-export .person-daily-table tfoot td:last-child {
+  text-align: right;
+}
+
