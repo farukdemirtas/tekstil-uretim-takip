@@ -1,8 +1,10 @@
 /**
- * html2canvas, belgeyi klonlarken .dark tema kuralları (açık metin renkleri) uygulanmaya devam eder;
- * beyaz arka planlı PDF hedefleri için görünmez metni önlemek üzere klon dökümanına yazdır.
+ * html2canvas klonunda html.dark kaldırılır; ayrıca beyaz PDF zemininde koyu tema metinlerinin görünürlüğü için yedek kurallar enjekte edilir.
  */
 export function injectPdfCloneLightTextFix(clonedDoc: Document): void {
+  clonedDoc.documentElement.classList.remove("dark");
+  clonedDoc.body?.classList.remove("dark");
+
   const id = "pdf-html2canvas-force-light-text";
   if (clonedDoc.getElementById(id)) return;
   const style = clonedDoc.createElement("style");

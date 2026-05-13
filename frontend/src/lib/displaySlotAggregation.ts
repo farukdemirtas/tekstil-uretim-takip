@@ -58,6 +58,31 @@ export const DISPLAY_SLOT_CHART_LABELS: readonly string[] = [
   "17:00 + 18:30",
 ];
 
+/** Dört dilim sırası (api anahtarları) */
+export const DISPLAY_SLOT_ORDER = ["t1000", "t1300", "t1600", "t1830"] as const;
+export type DisplaySlotKey = (typeof DISPLAY_SLOT_ORDER)[number];
+
+/**
+ * PDF çıktılarında kullanılan aralık etiketleri (ekran başlıkları DISPLAY_SLOT_CHART_LABELS kalır).
+ * Tire: okumayı kolaylaştırmak için en tire + ince boşluk.
+ */
+export const DISPLAY_SLOT_PDF_LABELS: readonly string[] = [
+  "08.00 – 10.00",
+  "10.00 – 13.00",
+  "13.00 – 16.00",
+  "16.00 – 18.30",
+];
+
+export function displaySlotChartLabel(key: DisplaySlotKey): string {
+  const i = DISPLAY_SLOT_ORDER.indexOf(key);
+  return DISPLAY_SLOT_CHART_LABELS[i] ?? DISPLAY_SLOT_CHART_LABELS[0];
+}
+
+export function displaySlotPdfLabel(key: DisplaySlotKey): string {
+  const i = DISPLAY_SLOT_ORDER.indexOf(key);
+  return DISPLAY_SLOT_PDF_LABELS[i] ?? DISPLAY_SLOT_PDF_LABELS[0];
+}
+
 /** Saat filtresi (HourFilter) için açıklama — PDF / özet */
 export function displaySlotLabelForHourFilter(
   hour: "" | "t1000" | "t1300" | "t1600" | "t1830"

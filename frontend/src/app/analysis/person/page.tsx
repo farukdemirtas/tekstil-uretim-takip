@@ -25,8 +25,17 @@ import {
   todayWorkdayIsoTurkey,
 } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
+import { downloadEachElementAsOwnPdfPage, downloadElementAsMultiPagePdf } from "@/lib/exportHtmlElementToPdf";
 import { injectPdfCloneLightTextFix } from "@/lib/pdfHtml2CloneFix";
-import { aggregateDisplaySlots, DISPLAY_SLOT_CHART_LABELS } from "@/lib/displaySlotAggregation";
+import {
+  aggregateDisplaySlots,
+  DISPLAY_SLOT_CHART_LABELS,
+  DISPLAY_SLOT_ORDER,
+  DISPLAY_SLOT_PDF_LABELS,
+  displaySlotChartLabel,
+  displaySlotPdfLabel,
+  type DisplaySlotKey,
+} from "@/lib/displaySlotAggregation";
 import { sumProductionRow } from "@/lib/productionSlots";
 import { SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
@@ -37,13 +46,6 @@ import {
   workerEfficiencyPercent,
 } from "@/lib/workerEfficiency";
 import type { HourFilter, ProductionRow, Worker, WorkerProductionDayDetail } from "@/lib/types";
-
-const SLOTS = [
-  { key: "t1000" as const, label: DISPLAY_SLOT_CHART_LABELS[0] },
-  { key: "t1300" as const, label: DISPLAY_SLOT_CHART_LABELS[1] },
-  { key: "t1600" as const, label: DISPLAY_SLOT_CHART_LABELS[2] },
-  { key: "t1830" as const, label: DISPLAY_SLOT_CHART_LABELS[3] },
-];
 
 function dayTotal(r: WorkerProductionDayDetail): number {
   return sumProductionRow(r as unknown as ProductionRow);
@@ -117,7 +119,7 @@ function ensureIsoRangeOrder(start: string, end: string): { start: string; end: 
   return start <= end ? { start, end } : { start: end, end: start };
 }
 
-function EfficiencyBadge({ pct }: { pct: number }) {
+function EfficiencyBadge({ pct, tight }: { pct: number; tight?: boolean }) {
   const tone =
     pct >= 85
       ? "bg-emerald-100 text-emerald-900 ring-emerald-700/15 dark:bg-emerald-950/70 dark:text-emerald-100 dark:ring-emerald-500/35"
@@ -125,7 +127,11 @@ function EfficiencyBadge({ pct }: { pct: number }) {
         ? "bg-amber-100 text-amber-950 ring-amber-700/15 dark:bg-amber-950/45 dark:text-amber-50 dark:ring-amber-500/30"
         : "bg-rose-50 text-rose-900 ring-rose-700/15 dark:bg-rose-950/40 dark:text-rose-50 dark:ring-rose-500/30";
   return (
-    <span className={`inline-flex justify-end rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums ring-1 ${tone}`}>
+    <span
+      className={`inline-flex items-center rounded-full font-bold tabular-nums ring-1 ${tone} ${
+        tight ? "px-1.5 py-px text-[10px]" : "justify-end px-2 py-0.5 text-[11px]"
+      }`}
+    >
       %{Math.round(pct)}
     </span>
   );
@@ -323,7 +329,7 @@ export default function PersonAnalysisPage() {
         minDay: null as null | { date: string; total: number },
         slotTotals: { t1000: 0, t1300: 0, t1600: 0, t1830: 0 },
         slotAvgPerDay: { t1000: 0, t1300: 0, t1600: 0, t1830: 0 },
-        dominantSlot: SLOTS[0].label,
+        dominantSlotKey: "t1000" as DisplaySlotKey,
         dominantSlotTotal: 0,
       };
     }
@@ -355,13 +361,13 @@ export default function PersonAnalysisPage() {
       t1600: Math.round(slotTotals.t1600 / denom),
       t1830: Math.round(slotTotals.t1830 / denom),
     };
-    let dominantSlot = SLOTS[0].label;
-    let dominantSlotTotal = slotTotals.t1000;
-    for (const s of SLOTS) {
-      const v = slotTotals[s.key];
+    let dominantSlotKey: DisplaySlotKey = "t1000";
+    let dominantSlotTotal = -1;
+    for (const key of DISPLAY_SLOT_ORDER) {
+      const v = slotTotals[key];
       if (v > dominantSlotTotal) {
         dominantSlotTotal = v;
-        dominantSlot = s.label;
+        dominantSlotKey = key;
       }
     }
     return {
@@ -373,10 +379,13 @@ export default function PersonAnalysisPage() {
       minDay,
       slotTotals,
       slotAvgPerDay,
-      dominantSlot,
+      dominantSlotKey,
       dominantSlotTotal,
     };
   }, [rows, sortedDates, dateTotals]);
+
+  const slotLabelForCapture = pdfExporting ? displaySlotPdfLabel : displaySlotChartLabel;
+  const slotColumnLabels = pdfExporting ? DISPLAY_SLOT_PDF_LABELS : DISPLAY_SLOT_CHART_LABELS;
 
   const prosesMap = useMemo(() => getProsesMapForEfficiency(), [loadedAt]);
 
@@ -410,6 +419,35 @@ export default function PersonAnalysisPage() {
     return Math.min(Math.round(sumTW / sumW), 100);
   }, [rows.length, processBreakdown, prosesMap, stats.grandTotal, stats.activeDays]);
 
+  const pdfHeaderDepartmentLabels = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const p of processBreakdown) {
+      const label = teamLabel(p.team);
+      if (!seen.has(label)) {
+        seen.add(label);
+        out.push(label);
+      }
+    }
+    return out;
+  }, [processBreakdown, teamLabel]);
+
+  const pdfHeaderProcessEffRows = useMemo(
+    () =>
+      processBreakdown.map((pb) => ({
+        process: pb.process,
+        bolum: teamLabel(pb.team),
+        eff: efficiencyPercentFromTotals(
+          prosesMap,
+          pb.team,
+          pb.process,
+          pb.total,
+          Math.max(pb.dayCount, 1)
+        ),
+      })),
+    [processBreakdown, prosesMap, teamLabel]
+  );
+
   /** Okunabilir özet satırları (TV / masaüstü) */
   const insightLines = useMemo(() => {
     if (!meta || rows.length === 0) return [] as string[];
@@ -431,7 +469,9 @@ export default function PersonAnalysisPage() {
     const domPct =
       stats.grandTotal > 0 ? Math.round((100 * stats.dominantSlotTotal) / stats.grandTotal) : 0;
     lines.push(
-      `Üretim; sabah / öğle / öğleden sonra / akşam olmak üzere dört dilimde gösterilir. Bu dönemde en fazla çıktı «${stats.dominantSlot}» diliminde (toplamın ~%${domPct}).`
+      `Üretim; sabah / öğle / öğleden sonra / akşam olmak üzere dört dilimde gösterilir. Bu dönemde en fazla çıktı «${displaySlotChartLabel(
+        stats.dominantSlotKey
+      )}» diliminde (toplamın ~%${domPct}).`
     );
     if (periodEfficiencyPercent !== null) {
       lines.push(
@@ -457,7 +497,7 @@ export default function PersonAnalysisPage() {
     stats.avgPerDay,
     stats.avgPerNominalShift,
     stats.grandTotal,
-    stats.dominantSlot,
+    stats.dominantSlotKey,
     stats.dominantSlotTotal,
     stats.maxDay,
     stats.minDay,
@@ -520,10 +560,10 @@ export default function PersonAnalysisPage() {
       { Alan: "Takvim günü (birleşik)", Değer: stats.activeDays },
       { Alan: "Toplam üretim", Değer: stats.grandTotal },
       { Alan: "Günlük ortalama (toplam)", Değer: stats.avgPerDay },
-      { Alan: `Günlük ort. ÷ ${SHIFT_NOMINAL_HOURS} saat (yaklaşık)`, Değer: stats.avgPerNominalShift },
+      { Alan: "Saatlik ortalama", Değer: stats.avgPerNominalShift },
       { Alan: "En yüksek gün", Değer: stats.maxDay ? `${stats.maxDay.date} (${stats.maxDay.total})` : "—" },
       { Alan: "En düşük gün", Değer: stats.minDay ? `${stats.minDay.date} (${stats.minDay.total})` : "—" },
-      { Alan: "Baskın saat dilimi", Değer: `${stats.dominantSlot} (${stats.dominantSlotTotal})` },
+      { Alan: "Baskın saat dilimi", Değer: `${displaySlotChartLabel(stats.dominantSlotKey)} (${stats.dominantSlotTotal})` },
       {
         Alan: "Dönem verimliliği",
         Değer: periodEfficiencyPercent !== null ? `${periodEfficiencyPercent}%` : "—",
@@ -562,13 +602,13 @@ export default function PersonAnalysisPage() {
         "Verimlilik %": eff !== null ? eff : "",
       };
     });
-    const saatlik = SLOTS.map((s) => ({
-      "Saat dilimi": s.label,
-      "Aralık toplamı": stats.slotTotals[s.key],
-      "Günlük ortalama": stats.slotAvgPerDay[s.key],
+    const saatlik = DISPLAY_SLOT_ORDER.map((key) => ({
+      "Saat dilimi": displaySlotChartLabel(key),
+      "Aralık toplamı": stats.slotTotals[key],
+      "Günlük ortalama": stats.slotAvgPerDay[key],
       Oran:
         stats.grandTotal > 0
-          ? `${Math.round((100 * stats.slotTotals[s.key]) / stats.grandTotal)}%`
+          ? `${Math.round((100 * stats.slotTotals[key]) / stats.grandTotal)}%`
           : "0%",
     }));
     const wb = XLSX.utils.book_new();
@@ -596,33 +636,14 @@ export default function PersonAnalysisPage() {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
     try {
-      const html2pdf = (await import("html2pdf.js")).default;
-      const canvasW = Math.max(320, el.scrollWidth, el.offsetWidth, document.documentElement.clientWidth);
-      const canvasH = Math.min(Math.max(400, el.scrollHeight), 16000);
-      await html2pdf()
-        .set({
-          margin: [10, 10, 10, 10],
-          filename: `kisi-analiz-${startDate}-${endDate}.pdf`,
-          image: { type: "jpeg", quality: 0.95 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            letterRendering: true,
-            logging: false,
-            backgroundColor: "#ffffff",
-            scrollX: 0,
-            scrollY: 0,
-            windowWidth: canvasW,
-            windowHeight: canvasH,
-            allowTaint: true,
-            foreignObjectRendering: false,
-            onclone: (clonedDoc: Document) => injectPdfCloneLightTextFix(clonedDoc),
-          },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait", compress: true },
-          pagebreak: { mode: ["css", "legacy"], avoid: [".pdf-avoid-break", "tr"] },
-        })
-        .from(el)
-        .save();
+      await downloadElementAsMultiPagePdf({
+        element: el,
+        fileName: `kisi-analiz-${startDate}-${endDate}.pdf`,
+        marginMm: 10,
+        scale: 2,
+        imageQuality: 0.95,
+        onclone: (clonedDoc) => injectPdfCloneLightTextFix(clonedDoc),
+      });
     } catch {
       setError("PDF oluşturulamadı. Sayfayı yenileyip tekrar deneyin.");
     } finally {
@@ -754,33 +775,26 @@ export default function PersonAnalysisPage() {
         return;
       }
       try {
-        const html2pdf = (await import("html2pdf.js")).default;
-        const canvasW = Math.max(794, captureEl.scrollWidth, captureEl.offsetWidth);
-        const canvasH = Math.min(Math.max(600, captureEl.scrollHeight), 24000);
-        await html2pdf()
-          .set({
-            margin: [6, 6, 6, 6],
-            filename: `kisi-bazli-toplu-ozet-${bulkPdfJob.startDate}-${bulkPdfJob.endDate}.pdf`,
-            image: { type: "jpeg", quality: 0.92 },
-            html2canvas: {
-              scale: 2,
-              useCORS: true,
-              letterRendering: true,
-              logging: false,
-              backgroundColor: "#ffffff",
-              scrollX: 0,
-              scrollY: 0,
-              windowWidth: canvasW,
-              windowHeight: canvasH,
-              allowTaint: true,
-              foreignObjectRendering: false,
-              onclone: (clonedDoc: Document) => injectPdfCloneLightTextFix(clonedDoc),
-            },
-            jsPDF: { unit: "mm", format: "a4", orientation: "portrait", compress: true },
-            pagebreak: { mode: ["css", "legacy"], avoid: [".pdf-avoid-break"] },
-          })
-          .from(captureEl)
-          .save();
+        const prevLeft = captureEl.style.left;
+        const prevTop = captureEl.style.top;
+        captureEl.style.left = "0px";
+        captureEl.style.top = "0px";
+        try {
+          const sheets = Array.from(
+            captureEl.querySelectorAll<HTMLElement>("[data-bulk-pdf-person-page]")
+          );
+          await downloadEachElementAsOwnPdfPage({
+            elements: sheets,
+            fileName: `kisi-bazli-toplu-ozet-${bulkPdfJob.startDate}-${bulkPdfJob.endDate}.pdf`,
+            marginMm: 8,
+            scale: 2,
+            imageQuality: 0.92,
+            onclone: (clonedDoc) => injectPdfCloneLightTextFix(clonedDoc),
+          });
+        } finally {
+          captureEl.style.left = prevLeft;
+          captureEl.style.top = prevTop;
+        }
       } catch {
         setError("Toplu PDF oluşturulamadı. Sayfayı yenileyip tekrar deneyin.");
       } finally {
@@ -1075,34 +1089,70 @@ export default function PersonAnalysisPage() {
           >
             <header className="pdf-avoid-break border-b border-slate-200/90 pb-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-teal-600">
-                    <span className="h-px w-6 bg-teal-500/60" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-teal-600">
+                    <span className="h-px w-8 bg-teal-500/60" aria-hidden />
                     Üretim raporu
                   </p>
-                  <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-900">Kişi bazlı analiz</h2>
-                  <p className="mt-2 text-sm text-slate-600">
-                    <span className="font-semibold text-slate-800">{meta.name}</span>
-                    {processBreakdown.length <= 1 ? (
-                      <>
-                        {" · "}
-                        {teamLabel(meta.team)} · {meta.process}
-                      </>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Kişi bazlı analiz</p>
+                  <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                    {meta.name}
+                  </h2>
+
+                  <div className="mt-3 rounded-xl border border-slate-200/90 bg-slate-50/90 px-3 py-2 dark:border-slate-600 dark:bg-slate-800/50">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Dönemde çalışılan bölümler
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                      {pdfHeaderDepartmentLabels.length > 0 ? pdfHeaderDepartmentLabels.join(" · ") : "—"}
+                    </p>
+                  </div>
+
+                  <div className="mt-2 rounded-xl border border-slate-200/90 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-900/40">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Çalıştığı proses ve verim (dönem)
+                    </p>
+                    {processBreakdown.length === 1 ? (
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                          {processBreakdown[0].process}
+                        </span>
+                        {pdfHeaderProcessEffRows[0]?.eff !== null ? (
+                          <EfficiencyBadge pct={pdfHeaderProcessEffRows[0].eff!} />
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </div>
                     ) : (
-                      <span className="mt-1 block text-xs font-normal text-slate-500">
-                        Aynı isimle {processBreakdown.length} çalışma alanı (bölüm/proses kaydı) birleştirildi — özet ve
-                        tabloda tümü listelenir.
-                      </span>
+                      <ul className="mt-1 space-y-1 text-sm">
+                        {pdfHeaderProcessEffRows.map((row, idx) => (
+                          <li
+                            key={`${row.process}-${row.bolum}-${idx}`}
+                            className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                          >
+                            <span className="font-semibold text-slate-800 dark:text-slate-100">{row.process}</span>
+                            <span className="text-slate-500 dark:text-slate-400">({row.bolum})</span>
+                            {row.eff !== null ? <EfficiencyBadge pct={row.eff} /> : <span className="text-slate-400">—</span>}
+                          </li>
+                        ))}
+                      </ul>
                     )}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
+                  </div>
+
+                  {processBreakdown.length > 1 ? (
+                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      {processBreakdown.length} çalışma kaydı birleştirildi; her satır ilgili bölümdeki proses ve verimdir.
+                    </p>
+                  ) : null}
+
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                     Dönem: {startDate} — {endDate} · Üretim günü: {stats.activeDays}
                     {loadedAt ? ` · Rapor: ${loadedAt}` : null}
                   </p>
                 </div>
-                <div className="text-left text-xs text-slate-500 sm:text-right">
-                  <p className="font-semibold text-slate-700">Yeşil İmaj Tekstil</p>
-                  <p>Kişi bazlı üretim takibi</p>
+                <div className="text-left text-sm text-slate-500 sm:text-right dark:text-slate-400">
+                  <p className="text-base font-semibold text-slate-700 dark:text-slate-200">Yeşil İmaj Tekstil</p>
+                  <p className="mt-0.5 leading-snug">Kişi bazlı üretim takibi</p>
                 </div>
               </div>
             </header>
@@ -1151,9 +1201,7 @@ export default function PersonAnalysisPage() {
                 <p className="mt-2 text-[10px] leading-snug text-slate-500">Toplam üretim ÷ üretim günü (boş günler dahil değil).</p>
               </div>
               <div className="rounded-2xl border border-slate-100 border-l-4 border-l-violet-500 bg-gradient-to-br from-white to-violet-50/40 p-4 shadow-sm ring-1 ring-slate-900/[0.04]">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                  ~ / {SHIFT_NOMINAL_HOURS} saat (yaklaşık)
-                </p>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Saatlik ortalama</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-violet-700">{stats.avgPerNominalShift.toLocaleString("tr-TR")}</p>
                 <p className="mt-2 text-[10px] leading-snug text-slate-500">Günlük ortalamanın nominal tam vardiya süresine bölünmesi.</p>
               </div>
@@ -1179,14 +1227,14 @@ export default function PersonAnalysisPage() {
                 </span>
               </div>
               <div className="flex h-7 w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-inner ring-1 ring-slate-200/90">
-                {SLOTS.map((slot, idx) => {
-                  const raw = stats.grandTotal > 0 ? (100 * stats.slotTotals[slot.key]) / stats.grandTotal : 0;
-                  const wPct = stats.grandTotal > 0 ? Math.max(raw, stats.slotTotals[slot.key] > 0 ? 1.25 : 0) : 0;
-                  const label = `${slot.label}: ${stats.slotTotals[slot.key]} (${Math.round(raw)}%)`;
-                  if (stats.slotTotals[slot.key] <= 0 || wPct <= 0) return null;
+                {DISPLAY_SLOT_ORDER.map((key, idx) => {
+                  const raw = stats.grandTotal > 0 ? (100 * stats.slotTotals[key]) / stats.grandTotal : 0;
+                  const wPct = stats.grandTotal > 0 ? Math.max(raw, stats.slotTotals[key] > 0 ? 1.25 : 0) : 0;
+                  const label = `${slotLabelForCapture(key)}: ${stats.slotTotals[key]} (${Math.round(raw)}%)`;
+                  if (stats.slotTotals[key] <= 0 || wPct <= 0) return null;
                   return (
                     <div
-                      key={slot.key}
+                      key={key}
                       title={label}
                       className="h-full min-w-[6px] border-r border-white/30 transition-[flex-grow] last:border-r-0"
                       style={{
@@ -1199,13 +1247,13 @@ export default function PersonAnalysisPage() {
                 })}
               </div>
               <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-700">
-                {SLOTS.map((slot, idx) => {
-                  const v = stats.slotTotals[slot.key];
+                {DISPLAY_SLOT_ORDER.map((key, idx) => {
+                  const v = stats.slotTotals[key];
                   const pct = stats.grandTotal > 0 ? Math.round((100 * v) / stats.grandTotal) : 0;
                   return (
-                    <span key={slot.key} className="inline-flex items-center gap-2">
+                    <span key={key} className="inline-flex items-center gap-2">
                       <span className="h-2 w-6 rounded-sm shrink-0" style={{ backgroundColor: SLOT_COLORS[idx] }} />
-                      <span className="font-medium text-slate-800">{slot.label}</span>
+                      <span className="font-medium text-slate-800">{slotLabelForCapture(key)}</span>
                       <span className="tabular-nums text-slate-500">{v.toLocaleString("tr-TR")} (%{pct})</span>
                     </span>
                   );
@@ -1353,18 +1401,18 @@ export default function PersonAnalysisPage() {
                   <h3 className="text-sm font-semibold text-slate-800">Saat dilimi dağılımı (dönem toplamı)</h3>
                 </div>
                 <p className="mb-4 text-xs text-slate-500">
-                  Baskın dilim: <span className="font-semibold text-slate-700">{stats.dominantSlot}</span>{" "}
+                  Baskın dilim: <span className="font-semibold text-slate-700">{slotLabelForCapture(stats.dominantSlotKey)}</span>{" "}
                   ({stats.grandTotal > 0 ? Math.round((100 * stats.dominantSlotTotal) / stats.grandTotal) : 0}%)
                 </p>
                 <ul className="space-y-3">
-                  {SLOTS.map((s) => {
-                    const v = stats.slotTotals[s.key];
+                  {DISPLAY_SLOT_ORDER.map((key) => {
+                    const v = stats.slotTotals[key];
                     const pct = Math.round((v / slotMax) * 100);
                     const share = stats.grandTotal > 0 ? Math.round((100 * v) / stats.grandTotal) : 0;
                     return (
-                      <li key={s.key} className="flex items-center gap-3 text-sm text-slate-800">
+                      <li key={key} className="flex items-center gap-3 text-sm text-slate-800">
                         <span className="w-32 shrink-0 text-[10px] font-semibold leading-tight text-slate-600 sm:w-40 sm:text-xs">
-                          {s.label}
+                          {slotLabelForCapture(key)}
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200/60">
@@ -1384,9 +1432,9 @@ export default function PersonAnalysisPage() {
                 </ul>
                 <div className="mt-4 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
                   Günlük ortalama / dilim:{" "}
-                  {SLOTS.map((s) => (
-                    <span key={s.key} className="mr-2 inline-block">
-                      {s.label}: <strong className="text-slate-700">{stats.slotAvgPerDay[s.key]}</strong>
+                  {DISPLAY_SLOT_ORDER.map((key) => (
+                    <span key={key} className="mr-2 inline-block">
+                      {slotLabelForCapture(key)}: <strong className="text-slate-700">{stats.slotAvgPerDay[key]}</strong>
                     </span>
                   ))}
                 </div>
@@ -1417,16 +1465,16 @@ export default function PersonAnalysisPage() {
                       <th className="px-3 py-3">Bölüm</th>
                       <th className="px-3 py-3">Proses</th>
                       <th className="max-w-[8rem] px-2 py-3 text-right text-[10px] leading-tight sm:max-w-none sm:px-3 sm:text-xs">
-                        {DISPLAY_SLOT_CHART_LABELS[0]}
+                        {slotColumnLabels[0]}
                       </th>
                       <th className="max-w-[8rem] px-2 py-3 text-right text-[10px] leading-tight sm:max-w-none sm:px-3 sm:text-xs">
-                        {DISPLAY_SLOT_CHART_LABELS[1]}
+                        {slotColumnLabels[1]}
                       </th>
                       <th className="max-w-[8rem] px-2 py-3 text-right text-[10px] leading-tight sm:max-w-none sm:px-3 sm:text-xs">
-                        {DISPLAY_SLOT_CHART_LABELS[2]}
+                        {slotColumnLabels[2]}
                       </th>
                       <th className="max-w-[8rem] px-2 py-3 text-right text-[10px] leading-tight sm:max-w-none sm:px-3 sm:text-xs">
-                        {DISPLAY_SLOT_CHART_LABELS[3]}
+                        {slotColumnLabels[3]}
                       </th>
                       <th className="px-4 py-3 text-right">Gün toplamı</th>
                       <th className="px-3 py-3 text-right whitespace-nowrap">Verim %</th>
@@ -1528,7 +1576,8 @@ export default function PersonAnalysisPage() {
               {bulkPdfJob.pages.map((pageRows, i) => (
                 <div
                   key={`bulk-pdf-${bulkPdfJob.startDate}-${bulkPdfJob.endDate}-${i}`}
-                  style={i > 0 ? { pageBreakBefore: "always", breakBefore: "page" } : undefined}
+                  data-bulk-pdf-person-page
+                  className="box-border w-full bg-white"
                 >
                   <PersonOnePageSummaryReport
                     rows={pageRows}
@@ -1539,6 +1588,7 @@ export default function PersonAnalysisPage() {
                     periodDescription={bulkPdfJob.periodDescription}
                     reportTimeLabel={bulkPdfJob.reportTimeLabel}
                     compact
+                    onePdfPage
                   />
                 </div>
               ))}
