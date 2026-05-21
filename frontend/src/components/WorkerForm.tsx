@@ -163,7 +163,7 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-stretch lg:gap-5">
         <WorkerFieldBox
           title="Ad Soyad"
-          hint="Tanımlı çalışan isimlerinden seçin."
+          hint="Listeyi açın; içeride arayın. Yön tuşları (↑↓) ve Enter ile seçin."
           icon={<IconPerson className="text-teal-700 dark:text-teal-300" />}
           iconWrapClass="bg-gradient-to-br from-teal-100 to-emerald-50 text-teal-800 dark:from-teal-950/80 dark:to-emerald-950/40 dark:text-teal-200"
         >
@@ -173,6 +173,8 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
             onChange={setName}
             options={nameOptions}
             emptyLabel="İsim yükleniyor…"
+            searchable
+            searchPlaceholder="Ad veya soyada göre ara…"
           />
         </WorkerFieldBox>
 

@@ -133,6 +133,7 @@ export default function ProductionTable({
   const [dkEditTeam, setDkEditTeam] = useState<string>("");
   const [dkEditProcess, setDkEditProcess] = useState<string | null>(null);
   const [dkEditValue, setDkEditValue] = useState("");
+  const [nameSearch, setNameSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -301,18 +302,24 @@ export default function ProductionTable({
     }
   }
 
+  const displayRows = useMemo(() => {
+    const q = nameSearch.trim().toLocaleLowerCase("tr");
+    if (!q) return rows;
+    return rows.filter((r) => r.name.toLocaleLowerCase("tr").includes(q));
+  }, [rows, nameSearch]);
+
   const sortedSectionTeams = useMemo(() => {
-    const inData = [...new Set(rows.map((r) => r.team))];
+    const inData = [...new Set(displayRows.map((r) => r.team))];
     const order = teamOrder.length ? teamOrder : FALLBACK_TEAM_ORDER;
     const head = order.filter((t) => inData.includes(t));
     const tail = inData.filter((t) => !order.includes(t));
     return [...head, ...tail];
-  }, [rows, teamOrder]);
+  }, [displayRows, teamOrder]);
 
   let rowNo = 1;
 
   const sections = sortedSectionTeams.map((team) => {
-    const teamRows = rows.filter((r) => r.team === team);
+    const teamRows = displayRows.filter((r) => r.team === team);
     if (teamRows.length === 0) return null;
     const startNo = rowNo;
     rowNo += teamRows.length;
@@ -325,7 +332,91 @@ export default function ProductionTable({
       : [...new Set(rows.map((r) => r.process))].sort((a, b) => a.localeCompare(b, "tr", { sensitivity: "base" }));
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100 dark:shadow-none">
+    <div className="flex flex-col gap-3">
+      {rows.length > 0 ? (
+        <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-teal-50/40 shadow-surface-sm ring-1 ring-slate-900/[0.03] dark:border-slate-700/80 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-teal-950/25 dark:ring-white/[0.04]">
+          <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-4">
+            <label
+              htmlFor="production-name-search"
+              className="flex min-w-0 cursor-text items-center gap-3 sm:w-[11.5rem] sm:shrink-0"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-sm shadow-teal-500/20 dark:from-teal-600 dark:to-emerald-700 dark:shadow-teal-900/40">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                  <path d="M16 16l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold tracking-tight text-slate-900 dark:text-white">
+                  Personel ara
+                </span>
+                <span className="block text-[11px] text-slate-500 dark:text-slate-400">Tabloda hızlı filtre</span>
+              </span>
+            </label>
+
+            <div className="relative min-w-0 flex-1">
+              <label htmlFor="production-name-search" className="block cursor-text">
+                <span className="pointer-events-none absolute inset-y-0 left-3 z-[1] flex items-center text-slate-400 dark:text-slate-500">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path
+                      d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z"
+                      stroke="currentColor"
+                      strokeWidth="1.75"
+                    />
+                    <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <input
+                  id="production-name-search"
+                  type="search"
+                  value={nameSearch}
+                  onChange={(e) => setNameSearch(e.target.value)}
+                  placeholder="Ad veya soyada göre yazın…"
+                  autoComplete="off"
+                  className="relative z-0 w-full rounded-xl border border-slate-200/90 bg-white/90 py-2.5 pl-10 pr-10 text-sm text-slate-900 shadow-inner shadow-slate-900/[0.02] outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600/90 dark:bg-slate-800/90 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-teal-500 dark:focus:bg-slate-800 dark:focus:ring-teal-400/25"
+                />
+              </label>
+              {nameSearch.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setNameSearch("")}
+                  className="absolute inset-y-0 right-1.5 z-[2] my-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                  aria-label="Aramayı temizle"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
+
+            <div
+              className={`flex shrink-0 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold tabular-nums transition ${
+                nameSearch.trim()
+                  ? "border border-teal-200/80 bg-teal-50 text-teal-900 dark:border-teal-800/60 dark:bg-teal-950/50 dark:text-teal-100"
+                  : "border border-slate-200/80 bg-slate-50 text-slate-600 dark:border-slate-600/80 dark:bg-slate-800/80 dark:text-slate-300"
+              }`}
+            >
+              {nameSearch.trim() ? (
+                <>
+                  <span className="text-teal-700 dark:text-teal-300">{displayRows.length}</span>
+                  <span className="mx-1 text-slate-400 dark:text-slate-500">/</span>
+                  <span>{rows.length}</span>
+                  <span className="ml-1.5 font-medium">personel</span>
+                </>
+              ) : (
+                <span>{rows.length} personel</span>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100 dark:shadow-none">
       {openMenuId !== null && (
         <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
       )}
@@ -934,6 +1025,28 @@ export default function ProductionTable({
           </div>
         ))}
       </div>
+
+      {nameSearch.trim() && displayRows.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 border-t border-slate-200/90 px-4 py-10 dark:border-slate-700">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z"
+                stroke="currentColor"
+                strokeWidth="1.75"
+              />
+              <path d="M16 16l5 5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+            </svg>
+          </div>
+          <p className="text-center text-sm font-medium text-slate-700 dark:text-slate-200">
+            Eşleşen personel yok
+          </p>
+          <p className="max-w-sm text-center text-xs text-slate-500 dark:text-slate-400">
+            &quot;{nameSearch.trim()}&quot; için sonuç bulunamadı. Yazımı kontrol edin veya aramayı temizleyin.
+          </p>
+        </div>
+      ) : null}
+    </div>
     </div>
   );
 }

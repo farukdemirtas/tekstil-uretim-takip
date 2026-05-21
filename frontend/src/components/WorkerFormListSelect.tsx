@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -50,6 +51,8 @@ export function WorkerFormListSelect({
   options,
   emptyLabel,
   disabled,
+  searchable,
+  searchPlaceholder = "İsme göre ara…",
 }: {
   id: string;
   value: string;
@@ -57,13 +60,18 @@ export function WorkerFormListSelect({
   options: ListSelectOption[];
   emptyLabel: string;
   disabled?: boolean;
+  /** Açılır listede üstte arama kutusu (Ad Soyad vb.) */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const [panel, setPanel] = useState({ top: 0, left: 0, width: 0, maxH: LIST_MAX_HEIGHT_PX });
 
   const btnRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const highlightRef = useRef(0);
@@ -80,8 +88,15 @@ export function WorkerFormListSelect({
     setMounted(true);
   }, []);
 
+  const filteredOptions = useMemo(() => {
+    const q = normTr(searchQuery.trim());
+    if (!searchable || !q) return options;
+    return options.filter((o) => normTr(o.label).includes(q));
+  }, [options, searchQuery, searchable]);
+
   useEffect(() => {
     if (open) return;
+    setSearchQuery("");
     typeBufferRef.current = "";
     lastTypeKeyRef.current = "";
     if (typeAheadTimerRef.current) {
@@ -89,6 +104,12 @@ export function WorkerFormListSelect({
       typeAheadTimerRef.current = null;
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !searchable) return;
+    const t = window.setTimeout(() => searchRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [open, searchable]);
 
   const reposition = useCallback(() => {
     const el = btnRef.current;
@@ -117,15 +138,88 @@ export function WorkerFormListSelect({
 
   useEffect(() => {
     if (!open) return;
-    const idx = options.findIndex((o) => o.value === value);
+    const idx = filteredOptions.findIndex((o) => o.value === value);
     setHighlight(idx >= 0 ? idx : 0);
-  }, [open, options, value]);
+  }, [open, filteredOptions, value]);
 
   useEffect(() => {
     if (!open) return;
     const el = itemRefs.current[highlight];
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [highlight, open]);
+
+  const selectHighlighted = useCallback(() => {
+    const opt = filteredOptions[highlightRef.current];
+    if (!opt) return;
+    onChange(opt.value);
+    setOpen(false);
+    btnRef.current?.focus();
+  }, [filteredOptions, onChange]);
+
+  const handleNavigationKey = useCallback(
+    (key: string, preventDefault: () => void, opts?: { fromSearch?: boolean }) => {
+      if (!open || options.length === 0) return false;
+
+      if (key === "Escape") {
+        preventDefault();
+        typeBufferRef.current = "";
+        lastTypeKeyRef.current = "";
+        if (typeAheadTimerRef.current) {
+          clearTimeout(typeAheadTimerRef.current);
+          typeAheadTimerRef.current = null;
+        }
+        setOpen(false);
+        btnRef.current?.focus();
+        return true;
+      }
+
+      if (key === "ArrowDown") {
+        if (filteredOptions.length === 0) return true;
+        preventDefault();
+        typeBufferRef.current = "";
+        lastTypeKeyRef.current = "";
+        setHighlight((h) => Math.min(filteredOptions.length - 1, h + 1));
+        return true;
+      }
+      if (key === "ArrowUp") {
+        if (filteredOptions.length === 0) return true;
+        preventDefault();
+        typeBufferRef.current = "";
+        lastTypeKeyRef.current = "";
+        setHighlight((h) => Math.max(0, h - 1));
+        return true;
+      }
+      if (key === "Enter") {
+        if (filteredOptions.length === 0) return true;
+        preventDefault();
+        selectHighlighted();
+        return true;
+      }
+      if (key === " " && !opts?.fromSearch) {
+        preventDefault();
+        selectHighlighted();
+        return true;
+      }
+      if (key === "Home") {
+        if (filteredOptions.length === 0) return true;
+        preventDefault();
+        typeBufferRef.current = "";
+        lastTypeKeyRef.current = "";
+        setHighlight(0);
+        return true;
+      }
+      if (key === "End") {
+        if (filteredOptions.length === 0) return true;
+        preventDefault();
+        typeBufferRef.current = "";
+        lastTypeKeyRef.current = "";
+        setHighlight(filteredOptions.length - 1);
+        return true;
+      }
+      return false;
+    },
+    [open, options.length, filteredOptions, selectHighlighted]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -138,30 +232,22 @@ export function WorkerFormListSelect({
     function findPrefixIndex(prefix: string, startFrom: number): number {
       const p = normTr(prefix);
       if (!p) return -1;
-      for (let step = 0; step < options.length; step++) {
-        const i = (startFrom + step) % options.length;
-        if (normTr(options[i].label).startsWith(p)) return i;
+      for (let step = 0; step < filteredOptions.length; step++) {
+        const i = (startFrom + step) % filteredOptions.length;
+        if (normTr(filteredOptions[i].label).startsWith(p)) return i;
       }
       return -1;
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        typeBufferRef.current = "";
-        lastTypeKeyRef.current = "";
-        if (typeAheadTimerRef.current) {
-          clearTimeout(typeAheadTimerRef.current);
-          typeAheadTimerRef.current = null;
-        }
-        setOpen(false);
-        btnRef.current?.focus();
-        return;
-      }
       if (!open || options.length === 0) return;
       const ae = document.activeElement;
       const inCombo = ae === btnRef.current || listRef.current?.contains(ae ?? null);
       if (!inCombo) return;
 
+      const inSearch = searchable && ae === searchRef.current;
+
       const isPrintableTypeAhead =
+        !searchable &&
         e.key.length === 1 &&
         !e.ctrlKey &&
         !e.metaKey &&
@@ -217,37 +303,7 @@ export function WorkerFormListSelect({
         return;
       }
 
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        typeBufferRef.current = "";
-        lastTypeKeyRef.current = "";
-        setHighlight((h) => Math.min(options.length - 1, h + 1));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        typeBufferRef.current = "";
-        lastTypeKeyRef.current = "";
-        setHighlight((h) => Math.max(0, h - 1));
-      } else if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        typeBufferRef.current = "";
-        lastTypeKeyRef.current = "";
-        const opt = options[highlightRef.current];
-        if (opt) {
-          onChange(opt.value);
-          setOpen(false);
-          btnRef.current?.focus();
-        }
-      } else if (e.key === "Home") {
-        e.preventDefault();
-        typeBufferRef.current = "";
-        lastTypeKeyRef.current = "";
-        setHighlight(0);
-      } else if (e.key === "End") {
-        e.preventDefault();
-        typeBufferRef.current = "";
-        lastTypeKeyRef.current = "";
-        setHighlight(options.length - 1);
-      }
+      if (handleNavigationKey(e.key, () => e.preventDefault(), { fromSearch: inSearch })) return;
     }
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
@@ -259,7 +315,7 @@ export function WorkerFormListSelect({
         typeAheadTimerRef.current = null;
       }
     };
-  }, [open, options, onChange]);
+  }, [open, options, filteredOptions, searchable, handleNavigationKey]);
 
   const selectedLabel = options.find((o) => o.value === value)?.label ?? "";
   const showPlaceholder = options.length === 0 || !selectedLabel;
@@ -278,7 +334,79 @@ export function WorkerFormListSelect({
       role="listbox"
       id={`${id}-listbox`}
       aria-labelledby={id}
-      className="fixed z-[300] overflow-y-auto overscroll-contain rounded-xl border border-slate-200/95 bg-white py-1 shadow-2xl ring-1 ring-slate-900/5 scroll-smooth
+      className="fixed z-[300] flex flex-col overflow-hidden rounded-xl border border-slate-200/95 bg-white shadow-2xl ring-1 ring-slate-900/5 dark:border-slate-600 dark:bg-slate-900 dark:ring-white/10"
+      style={{
+        top: panel.top,
+        left: panel.left,
+        width: panel.width,
+        maxHeight: panel.maxH,
+      }}
+    >
+      {searchable ? (
+        <div className="shrink-0 border-b border-slate-200/90 bg-slate-50/95 p-2 dark:border-slate-600 dark:bg-slate-800/95">
+          <div className="flex gap-1.5">
+            <label htmlFor={`${id}-search`} className="relative min-w-0 flex-1 cursor-text">
+              <span className="pointer-events-none absolute inset-y-0 left-2.5 z-[1] flex items-center text-slate-400 dark:text-slate-500">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                  />
+                  <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                </svg>
+              </span>
+              <input
+                id={`${id}-search`}
+                ref={searchRef}
+                type="search"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setHighlight(0);
+                }}
+                placeholder={searchPlaceholder}
+                autoComplete="off"
+                className="relative z-0 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-teal-400 dark:focus:ring-teal-400/20"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => searchRef.current?.focus()}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/25 dark:border-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600 dark:focus:ring-teal-400/30"
+              aria-label="Arama kutusuna git"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <path d="M16 16l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              Ara
+            </button>
+          </div>
+          {searchQuery.trim() ? (
+            <p className="mt-1.5 flex items-center justify-between gap-2 px-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+              <span>{filteredOptions.length} sonuç</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setHighlight(0);
+                  searchRef.current?.focus();
+                }}
+                className="font-medium text-teal-700 hover:underline dark:text-teal-400"
+              >
+                Temizle
+              </button>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      <div
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 scroll-smooth
         [scrollbar-width:thin]
         [scrollbar-color:rgb(148_163_184)_rgb(248_250_252)]
         dark:[scrollbar-color:rgb(71_85_105)_rgb(30_41_55)]
@@ -287,16 +415,12 @@ export function WorkerFormListSelect({
         dark:[&::-webkit-scrollbar-track]:bg-slate-800
         [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300
         dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-thumb]:hover:bg-slate-400
-        dark:[&::-webkit-scrollbar-thumb]:hover:bg-slate-500
-        dark:border-slate-600 dark:bg-slate-900 dark:ring-white/10"
-      style={{
-        top: panel.top,
-        left: panel.left,
-        width: panel.width,
-        maxHeight: panel.maxH,
-      }}
-    >
-        {options.map((opt, i) => {
+        dark:[&::-webkit-scrollbar-thumb]:hover:bg-slate-500"
+      >
+        {filteredOptions.length === 0 ? (
+          <p className="px-3 py-4 text-center text-sm text-slate-500 dark:text-slate-400">Sonuç bulunamadı</p>
+        ) : (
+        filteredOptions.map((opt, i) => {
           const selected = opt.value === value;
           const active = i === highlight;
           return (
@@ -336,7 +460,9 @@ export function WorkerFormListSelect({
               ) : null}
             </button>
           );
-        })}
+        })
+        )}
+      </div>
     </div>
   );
 
