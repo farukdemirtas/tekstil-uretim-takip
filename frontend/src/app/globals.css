@@ -177,6 +177,15 @@ html.dark .person-pdf-print-host .text-emerald-700 {
     @apply border-l border-slate-200/90 dark:border-slate-600;
   }
 
+  /* Ütü–Paket — menüde öne çıkan bağlantı */
+  .btn-nav-utu-paket {
+    @apply relative z-10 inline-flex shrink-0 items-center justify-center rounded-xl border-0 px-4 py-2.5 text-sm font-bold
+      text-white shadow-md
+      bg-gradient-to-r from-teal-600 to-emerald-600
+      transition hover:from-teal-500 hover:to-emerald-500 hover:shadow-lg
+      active:scale-[0.98];
+  }
+
   /* Native select — chevron alanı için sağ padding; sarmalayıcıda ikon kullanın */
   .select-modern {
     @apply input-modern w-full cursor-pointer appearance-none py-2.5 pr-10 text-left text-sm font-normal;

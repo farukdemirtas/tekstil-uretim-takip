@@ -1013,6 +1013,11 @@ export default function HomePage() {
 
         {/* Aksiyon butonları — tek satır; dar ekranda yatay kaydırma */}
         <div className="mt-2 flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {hasPermission("utuPaket") || isAdminRole() ? (
+            <Link href="/utu-paket" className="btn-nav-utu-paket">
+              Ütü–Paket
+            </Link>
+          ) : null}
           {hasPermission("veriSayfasi") ? (
             <Link href="/genel-verimlilik" className="btn-nav shrink-0">
               Genel Verimlilik
@@ -1084,11 +1089,6 @@ export default function HomePage() {
           {hasPermission("tamirOrani") || isAdminRole() ? (
             <Link href="/tamir-orani" className="btn-nav shrink-0">
               Tamir Oranı
-            </Link>
-          ) : null}
-          {hasPermission("utuPaket") || isAdminRole() ? (
-            <Link href="/utu-paket" className="btn-nav shrink-0">
-              Ütü–Paket
             </Link>
           ) : null}
           {hasPermission("ayarlar") || isAdminRole() ? (
