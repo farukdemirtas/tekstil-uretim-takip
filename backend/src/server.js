@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./loadEnv.js";
 import express from "express";
 import cors from "cors";
 import { createHmac } from "crypto";
@@ -1406,7 +1406,6 @@ app.post("/api/takipsan/sync", requirePermission("utuPaket"), async (req, res) =
   }
   try {
     const result = await syncTakipsanToUtuPaket({
-      consignmentId: req.body?.consignmentId,
       date: req.body?.date,
     });
     logActivity(req, "takipsan_senkron", "utu_paket_slots", {

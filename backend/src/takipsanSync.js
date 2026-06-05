@@ -61,7 +61,6 @@ function bedenFromTakipsan(fromPackages) {
   return out;
 }
 
-let sharedClient = null;
 let syncInFlight = null;
 
 export const takipsanSyncState = {
@@ -85,8 +84,7 @@ function updateState(patch) {
 }
 
 export function getTakipsanClient() {
-  if (!sharedClient) sharedClient = new TakipsanClient();
-  return sharedClient;
+  return new TakipsanClient();
 }
 
 export async function syncTakipsanToUtuPaket(options = {}) {
@@ -97,9 +95,7 @@ export async function syncTakipsanToUtuPaket(options = {}) {
   if (syncInFlight) return syncInFlight;
 
   syncInFlight = (async () => {
-    const consignmentId = String(
-      options.consignmentId || process.env.TAKIPSAN_CONSIGNMENT_ID || ""
-    ).trim();
+    const consignmentId = String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
     const date = options.date || todayTurkeyIso();
     const syncedAt = new Date().toISOString();
 
@@ -118,13 +114,18 @@ export async function syncTakipsanToUtuPaket(options = {}) {
       if (data.orderQuantity == null) {
         throw new Error("Takipsan Sipariş Sayısı okunamadı");
       }
+      if (data.packageCountFromHtml == null && data.packageCount <= 0) {
+        throw new Error("Takipsan Paket Sayısı okunamadı");
+      }
       const packagingTarget = data.orderQuantity;
+      const packageCount =
+        data.packageCountFromHtml != null ? data.packageCountFromHtml : data.packageCount;
 
       await saveUtuPaketDay(date, {
         stages,
         beden,
         packagingTarget,
-        takipsanPackageCount: data.packageCount,
+        takipsanPackageCount: packageCount,
         takipsanOrderCode: data.orderCode,
         takipsanSyncedAt: syncedAt,
       });
@@ -140,7 +141,8 @@ export async function syncTakipsanToUtuPaket(options = {}) {
         fromHtml: data.fromHtml,
         fromPackages: data.fromPackages,
         slotKey,
-        packageCount: data.packageCount,
+        packageCount,
+        packageCountFromHtml: data.packageCountFromHtml,
         packages: data.packages,
         beden: data.bedenFromPackages,
         syncedAt,
@@ -153,7 +155,7 @@ export async function syncTakipsanToUtuPaket(options = {}) {
         lastConsignmentId: consignmentId,
         lastDate: date,
         lastSlotKey: slotKey,
-        lastPackageCount: data.packageCount,
+        lastPackageCount: packageCount,
         lastOrderQuantity: packagingTarget,
         lastOrderCode: data.orderCode || "",
         lastPackages: data.packages || [],

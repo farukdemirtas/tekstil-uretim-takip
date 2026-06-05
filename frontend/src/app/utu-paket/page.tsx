@@ -171,7 +171,8 @@ export default function UtuPaketPage() {
       ? takipsanStatus.lastPackages
       : [];
   const paketReadCount = data.takipsan?.readCount ?? stageTotals.paketleme;
-  const paketPackageCount = data.takipsan?.packageCount ?? takipsanStatus?.lastPackageCount ?? 0;
+  const paketPackageCount =
+    data.takipsan?.packageCount ?? takipsanStatus?.lastPackageCount ?? 0;
   const paketOrderQty = data.takipsan?.orderQuantity ?? data.packagingTarget ?? 0;
 
   const pipelineMin = useMemo(() => {
@@ -477,7 +478,7 @@ export default function UtuPaketPage() {
               },
               {
                 label: "Paket sayısı",
-                sub: "Oluşturulan paket",
+                sub: "Takipsan — oluşturulan paket",
                 value: paketPackageCount,
                 accent: "border-sky-200 bg-sky-50/80 dark:border-sky-900/40 dark:bg-sky-950/30",
               },

@@ -131,11 +131,22 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
       (beden as Record<string, number>)[k] = Math.max(0, Math.floor(Number(v) || 0));
     }
   }
+  const takipsan = raw.takipsan
+    ? {
+        packageCount: Math.max(0, Math.floor(Number(raw.takipsan.packageCount) || 0)),
+        readCount: Math.max(0, Math.floor(Number(raw.takipsan.readCount) || 0)),
+        orderQuantity: Math.max(0, Math.floor(Number(raw.takipsan.orderQuantity) || 0)),
+        orderCode: String(raw.takipsan.orderCode || "").trim(),
+        syncedAt: raw.takipsan.syncedAt || null,
+      }
+    : undefined;
+
   return {
     date: raw.date,
     stages,
     beden,
     packagingTarget: Math.max(0, Math.floor(Number(raw.packagingTarget) || 0)),
+    takipsan,
   };
 }
 

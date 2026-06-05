@@ -4,6 +4,8 @@
  */
 
 const DEFAULT_BASE = "https://takipsan.takipsanplus.com";
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 function decodeLaravelXsrf(cookieValue) {
   if (!cookieValue) return "";
@@ -20,9 +22,18 @@ class CookieJar {
   }
 
   absorb(response) {
-    const list = typeof response.headers.getSetCookie === "function"
-      ? response.headers.getSetCookie()
-      : [];
+    let list = [];
+    if (typeof response.headers.getSetCookie === "function") {
+      list = response.headers.getSetCookie();
+    }
+    if (!list.length) {
+      const raw = response.headers.get("set-cookie");
+      if (raw) {
+        list = raw.includes(", ") && /,\s*[A-Za-z_][A-Za-z0-9_-]*=/.test(raw)
+          ? raw.split(/,(?=\s*[A-Za-z_][A-Za-z0-9_-]*=)/)
+          : [raw];
+      }
+    }
     for (const raw of list) {
       const pair = raw.split(";")[0];
       const eq = pair.indexOf("=");
@@ -43,8 +54,25 @@ class CookieJar {
 }
 
 function extractHiddenToken(html) {
-  const m = html.match(/name="_token"\s+value="([^"]+)"/i);
-  return m ? m[1] : "";
+  if (!html || typeof html !== "string") return "";
+  const patterns = [
+    /<input[^>]*name=["']_token["'][^>]*value=["']([^"']+)["']/i,
+    /<input[^>]*value=["']([^"']+)["'][^>]*name=["']_token["']/i,
+    /name="_token"\s+value="([^"]+)"/i,
+    /name='_token'\s+value='([^']+)'/i,
+    /<meta\s+name="csrf-token"\s+content="([^"]+)"/i,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m?.[1]) return m[1].trim();
+  }
+  return "";
+}
+
+function loginPageHint(html) {
+  const title = html.match(/<title[^>]*>([^<]+)/i)?.[1]?.trim() || "";
+  const snippet = stripHtml(html).slice(0, 120);
+  return title || snippet || `(boş sayfa, ${html?.length || 0} byte)`;
 }
 
 function stripHtml(text) {
@@ -165,7 +193,7 @@ export class TakipsanClient {
     const url = path.startsWith("http") ? path : `${this.baseUrl}${path}`;
     const h = {
       "accept-language": "tr-TR,tr;q=0.9",
-      "user-agent": "TekstilUretimTakip-TakipsanBridge/1.0",
+      "user-agent": BROWSER_UA,
       ...headers,
     };
     if (ajax) {
@@ -204,26 +232,56 @@ export class TakipsanClient {
     await this.login();
   }
 
+  async fetchLoginBootstrap() {
+    const paths = ["/login", "/"];
+    let lastHint = "";
+    for (const path of paths) {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "accept-language": "tr-TR,tr;q=0.9",
+          "user-agent": BROWSER_UA,
+          cookie: this.jar.header(),
+        },
+        redirect: "follow",
+      });
+      this.jar.absorb(res);
+      const html = await res.text();
+      lastHint = `${path} → HTTP ${res.status}, ${loginPageHint(html)}`;
+      if (!res.ok) continue;
+
+      const pageToken = extractHiddenToken(html);
+      if (pageToken) {
+        this._pageToken = pageToken;
+        return { html, path };
+      }
+      if (this.csrfToken) {
+        this._pageToken = this.csrfToken;
+        return { html, path };
+      }
+    }
+    throw new Error(`Takipsan CSRF token bulunamadı (${lastHint})`);
+  }
+
   async login() {
-    if (!this.username || !this.password) {
-      throw new Error("TAKIPSAN_USERNAME ve TAKIPSAN_PASSWORD tanımlı değil");
+    const username = String(this.username || "").trim();
+    const password = String(this.password || "");
+    if (!username || !password) {
+      throw new Error(
+        "TAKIPSAN_USERNAME ve TAKIPSAN_PASSWORD tanımlı değil — sunucuda backend/.env dosyasını kontrol edin"
+      );
     }
 
-    const loginPage = await this.request("/login", { ajax: false });
-    const loginHtml = await loginPage.text();
-    if (!loginPage.ok) {
-      throw new Error(`Takipsan login sayfası alınamadı (${loginPage.status})`);
-    }
-
-    this._pageToken = extractHiddenToken(loginHtml);
-    if (!this._pageToken) {
+    await this.fetchLoginBootstrap();
+    const token = this._pageToken || this.csrfToken;
+    if (!token) {
       throw new Error("Takipsan CSRF token bulunamadı");
     }
 
     const form = new URLSearchParams();
-    form.set("_token", this._pageToken);
-    form.set("username", this.username);
-    form.set("password", this.password);
+    form.set("_token", token);
+    form.set("username", username);
+    form.set("password", password);
     form.set("remember", "on");
 
     const post = await fetch(`${this.baseUrl}/login`, {
@@ -372,8 +430,12 @@ export class TakipsanClient {
       source = "html_and_packages_max";
     }
 
+    const packageCountFromHtml = summary.packageCount;
     const packageCount =
-      summary.packageCount ?? packages.recordsFiltered ?? packages.rows.length ?? 0;
+      packageCountFromHtml ??
+      packages.recordsFiltered ??
+      packages.rows.length ??
+      null;
     const orderQuantity = summary.orderQuantity;
 
     return {
@@ -381,7 +443,8 @@ export class TakipsanClient {
       readCount,
       orderQuantity,
       orderCode: summary.orderCode || "",
-      packageCount,
+      packageCount: packageCount ?? 0,
+      packageCountFromHtml,
       source,
       fromHtml,
       fromPackages,
@@ -395,8 +458,8 @@ export function isTakipsanConfigured() {
   const enabled = String(process.env.TAKIPSAN_ENABLED || "").toLowerCase();
   if (enabled === "false" || enabled === "0") return false;
   return Boolean(
-    process.env.TAKIPSAN_USERNAME &&
-      process.env.TAKIPSAN_PASSWORD &&
-      process.env.TAKIPSAN_CONSIGNMENT_ID
+    String(process.env.TAKIPSAN_USERNAME || "").trim() &&
+      String(process.env.TAKIPSAN_PASSWORD || "").length > 0 &&
+      String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim()
   );
 }
