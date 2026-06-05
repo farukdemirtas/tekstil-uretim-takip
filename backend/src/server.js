@@ -91,6 +91,9 @@ import {
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 import { scheduleWeeklyBriefingCron, sendWeeklyReportForCurrentTurkeyBusinessWeek } from "./weeklyReportJob.js";
+import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
+import { syncTakipsanToUtuPaket, takipsanSyncState } from "./takipsanSync.js";
+import { isTakipsanConfigured } from "./takipsanClient.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -1383,6 +1386,43 @@ app.delete("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => 
   }
 });
 
+// ─── Takipsan Plus → Ütü–Paket paketleme köprüsü ───────────────────────────
+
+app.get("/api/takipsan/status", requirePermission("utuPaket"), (_req, res) => {
+  return res.json({
+    configured: isTakipsanConfigured(),
+    consignmentId: process.env.TAKIPSAN_CONSIGNMENT_ID || null,
+    syncIntervalMs: Number(process.env.TAKIPSAN_SYNC_INTERVAL_MS) || 30_000,
+    ...takipsanSyncState,
+  });
+});
+
+app.post("/api/takipsan/sync", requirePermission("utuPaket"), async (req, res) => {
+  if (!isTakipsanConfigured()) {
+    return res.status(400).json({
+      message:
+        "Takipsan yapılandırılmamış. backend/.env içinde TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID tanımlayın.",
+    });
+  }
+  try {
+    const result = await syncTakipsanToUtuPaket({
+      consignmentId: req.body?.consignmentId,
+      date: req.body?.date,
+    });
+    logActivity(req, "takipsan_senkron", "utu_paket_slots", {
+      date: result.date,
+      readCount: result.readCount,
+      consignmentId: result.consignmentId,
+    });
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({
+      message: "Takipsan senkronu başarısız",
+      error: String(err?.message ?? err),
+    });
+  }
+});
+
 app.get("/api/job-calc/model-worker-stats", requireAuth, async (req, res) => {
   const modelId = Number(req.query.modelId);
   const modelCode = String(req.query.modelCode ?? "").trim();
@@ -1542,4 +1582,5 @@ app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Backend running on http://localhost:${PORT}`);
   scheduleWeeklyBriefingCron();
+  scheduleTakipsanSyncJob();
 });

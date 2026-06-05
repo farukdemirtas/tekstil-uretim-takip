@@ -38,12 +38,43 @@ export type UtuPaketSlots = Record<UtuPaketSlotKey, number>;
 export const UTU_PAKET_SIZE_CODES = ["XS", "S", "M", "L", "XL"] as const;
 export type UtuPaketSizeCode = (typeof UTU_PAKET_SIZE_CODES)[number];
 
+export type UtuPaketTakipsanSnapshot = {
+  packageCount: number;
+  readCount: number;
+  orderQuantity: number;
+  orderCode: string;
+  syncedAt: string | null;
+};
+
+export type TakipsanPackageRow = {
+  packageNo: string;
+  items: number;
+  size: string;
+  status: string;
+};
+
+export type TakipsanStatus = {
+  configured: boolean;
+  consignmentId: string | null;
+  syncIntervalMs: number;
+  enabled: boolean;
+  lastSyncAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  lastReadCount: number | null;
+  lastOrderQuantity: number | null;
+  lastOrderCode: string | null;
+  lastPackageCount: number | null;
+  lastPackages: TakipsanPackageRow[];
+};
+
 export type UtuPaketDayPayload = {
   date: string;
   stages: Record<UtuPaketStage, UtuPaketSlots>;
   beden: Record<string, number>;
-  /** TV bar hedefi — paketlenmesi gereken ürün adedi */
+  /** TV bar hedefi — Takipsan sipariş sayısından gelir */
   packagingTarget: number;
+  takipsan?: UtuPaketTakipsanSnapshot;
 };
 
 export function emptyUtuPaketSlots(): UtuPaketSlots {

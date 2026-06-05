@@ -4,7 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
-import { deleteUtuPaket, getDayProductMeta, getUtuPaket, saveUtuPaket, setAuthToken } from "@/lib/api";
+import {
+  deleteUtuPaket,
+  getDayProductMeta,
+  getTakipsanStatus,
+  getUtuPaket,
+  saveUtuPaket,
+  setAuthToken,
+} from "@/lib/api";
 import type { DayProductMeta } from "@/lib/api";
 import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
@@ -20,10 +27,12 @@ import {
   normalizeUtuPaketPayload,
   sumUtuPaketSlots,
   type UtuPaketDayPayload,
-  type UtuPaketSizeCode,
   type UtuPaketSlotKey,
   type UtuPaketStage,
+  type TakipsanStatus,
 } from "@/lib/utuPaket";
+
+const TAKIPSAN_REFRESH_MS = 30_000;
 
 const STAGE_TAB_CLASS: Record<string, string> = {
   sky: "from-sky-500/15 to-sky-600/5 border-sky-400/40 text-sky-900 dark:text-sky-100",
@@ -74,6 +83,7 @@ export default function UtuPaketPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [mainTab, setMainTab] = useState<"entry" | "analysis" | "ekran5">("entry");
+  const [takipsanStatus, setTakipsanStatus] = useState<TakipsanStatus | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -124,6 +134,25 @@ export default function UtuPaketPage() {
     void loadDay(selectedDate);
   }, [authorized, selectedDate, loadDay]);
 
+  const refreshTakipsan = useCallback(async () => {
+    try {
+      const status = await getTakipsanStatus();
+      setTakipsanStatus(status);
+    } catch {
+      setTakipsanStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authorized || mainTab !== "entry" || activeStage !== "paketleme") return;
+    void refreshTakipsan();
+    const id = window.setInterval(() => {
+      void loadDay(selectedDate);
+      void refreshTakipsan();
+    }, TAKIPSAN_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [authorized, mainTab, activeStage, selectedDate, loadDay, refreshTakipsan]);
+
   const stageTotals = useMemo(() => {
     const out = {} as Record<UtuPaketStage, number>;
     for (const st of UTU_PAKET_STAGES) {
@@ -137,8 +166,13 @@ export default function UtuPaketPage() {
     [data.beden]
   );
 
-  const paketHourly = stageTotals.paketleme;
-  const bedenMismatch = paketHourly > 0 && bedenTotal > 0 && paketHourly !== bedenTotal;
+  const paketPackages =
+    takipsanStatus?.lastPackages?.length
+      ? takipsanStatus.lastPackages
+      : [];
+  const paketReadCount = data.takipsan?.readCount ?? stageTotals.paketleme;
+  const paketPackageCount = data.takipsan?.packageCount ?? takipsanStatus?.lastPackageCount ?? 0;
+  const paketOrderQty = data.takipsan?.orderQuantity ?? data.packagingTarget ?? 0;
 
   const pipelineMin = useMemo(() => {
     const vals = UTU_PAKET_STAGES.map((s) => stageTotals[s]).filter((n) => n > 0);
@@ -149,7 +183,12 @@ export default function UtuPaketPage() {
     setSaving(true);
     try {
       const payload = normalizeUtuPaketPayload({ ...next, date: selectedDate });
-      await saveUtuPaket(payload);
+      // packagingTarget yalnızca Takipsan senkronundan güncellenir — elle gönderilmez
+      await saveUtuPaket({
+        date: payload.date,
+        stages: payload.stages,
+        beden: payload.beden,
+      });
       setData(payload);
       setDirty(false);
       setSaveMsg({ ok: true, text: "Kaydedildi" });
@@ -182,41 +221,6 @@ export default function UtuPaketPage() {
           [stage]: { ...prev.stages[stage], [key]: v },
         },
       };
-      scheduleSave(next);
-      return next;
-    });
-  }
-
-  function setPackagingTarget(raw: string) {
-    const v = Math.max(0, parseInt(raw, 10) || 0);
-    setData((prev) => {
-      const next = { ...prev, packagingTarget: v };
-      scheduleSave(next);
-      return next;
-    });
-  }
-
-  function setBeden(code: UtuPaketSizeCode, raw: string) {
-    const v = Math.max(0, parseInt(raw, 10) || 0);
-    setData((prev) => {
-      const next = { ...prev, beden: { ...prev.beden, [code]: v } };
-      scheduleSave(next);
-      return next;
-    });
-  }
-
-  function distributeBedenEvenly() {
-    const total = paketHourly;
-    if (total <= 0) return;
-    const per = Math.floor(total / UTU_PAKET_SIZE_CODES.length);
-    let rest = total - per * UTU_PAKET_SIZE_CODES.length;
-    const beden = emptyUtuPaketBeden();
-    for (const code of UTU_PAKET_SIZE_CODES) {
-      beden[code] = per + (rest > 0 ? 1 : 0);
-      if (rest > 0) rest -= 1;
-    }
-    setData((prev) => {
-      const next = { ...prev, beden };
       scheduleSave(next);
       return next;
     });
@@ -266,8 +270,8 @@ export default function UtuPaketPage() {
               </p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Ütü–Paket Takip</h1>
               <p className="mt-2 max-w-xl text-sm text-teal-50/90">
-                Temizleme → Optik → Ütü → Paketleme. Saatlik adetler ana üretim tablosundan ayrıdır; paketlemede
-                beden dağılımı girilir.
+                Temizleme → Optik → Ütü → Paketleme. İlk üç aşama saatlik girilir; paketleme Takipsan&apos;dan
+                otomatik çekilir.
               </p>
             </div>
             <Link
@@ -351,26 +355,6 @@ export default function UtuPaketPage() {
         <UtuPaketEkran5 dateIso={selectedDate} embedded />
       ) : (
         <>
-      <section className="surface-card mb-6 p-4 dark:text-slate-100 sm:p-5">
-        <label className="block text-sm font-semibold text-slate-800 dark:text-slate-100">
-          Paketlenmesi gereken ürün (EKRAN 5 bar hedefi)
-        </label>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Bu gün için paketleme hedef adedi. Ekran 5&apos;teki ilerleme çubuğu bu sayıya göre hesaplanır; değişince
-          otomatik kaydedilir.
-        </p>
-        <input
-          type="number"
-          min={0}
-          inputMode="numeric"
-          className="input-modern mt-3 max-w-xs text-center text-2xl font-bold tabular-nums"
-          value={data.packagingTarget || ""}
-          onChange={(e) => setPackagingTarget(e.target.value)}
-          disabled={loading}
-          aria-label="Paketlenmesi gereken ürün adedi"
-        />
-      </section>
-
       {/* KPI şeridi */}
       <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {UTU_PAKET_STAGES.map((st) => {
@@ -449,120 +433,180 @@ export default function UtuPaketPage() {
 
       {loading ? (
         <div className="surface-card flex justify-center py-16 text-sm text-slate-500">Yükleniyor…</div>
-      ) : (
-        <>
-          <section className="surface-card dark:text-slate-100">
-            <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">{meta.label}</h2>
-              <p className="text-sm text-slate-600 dark:text-slate-400">{meta.description}</p>
-              <p className="mt-2 text-2xl font-black tabular-nums text-teal-700 dark:text-teal-400">
-                Günlük toplam: {stageTotals[activeStage].toLocaleString("tr-TR")} adet
-              </p>
-            </div>
-
-            <div className="grid gap-3 p-5 sm:grid-cols-3">
-              {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => (
-                <label
-                  key={key}
-                  className="group flex flex-col rounded-2xl border border-slate-200/90 bg-slate-50/80 p-3 transition focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-500/30 dark:border-slate-600/80 dark:bg-slate-800/50"
-                >
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {label}
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    className="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 text-center text-2xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-teal-500 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
-                    value={data.stages[activeStage][key] || ""}
-                    onChange={(e) => setSlot(activeStage, key, e.target.value)}
-                    aria-label={`${meta.label} ${label}`}
-                  />
-                </label>
-              ))}
-            </div>
-
-            <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-              <p className="mb-2 text-xs font-semibold text-slate-500">Gün içi dağılım</p>
-              <MiniSpark values={slotValues} />
-            </div>
-          </section>
-
-          {activeStage === "paketleme" ? (
-            <section className="surface-card mt-6 dark:text-slate-100">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-                <div>
-                  <h2 className="text-lg font-bold">Beden dağılımı</h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Paketlenen parçaların beden kırılımı (günlük toplam).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={distributeBedenEvenly}
-                  disabled={paketHourly <= 0}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  Saatlik toplamı bedenlere böl
-                </button>
+      ) : activeStage === "paketleme" ? (
+        <section className="surface-card dark:text-slate-100">
+          <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Paketleme — Takipsan</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Veriler TS820 / Takipsan Plus sevkiyatından otomatik çekilir (~30 sn).
+                </p>
               </div>
-
-              {bedenMismatch ? (
-                <p className="mx-5 mt-4 rounded-xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/40 dark:text-amber-100">
-                  Saatlik paketleme toplamı ({paketHourly}) ile beden toplamı ({bedenTotal}) eşleşmiyor.
+              {data.takipsan?.syncedAt ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Son senkron:{" "}
+                  {new Date(data.takipsan.syncedAt).toLocaleString("tr-TR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
                 </p>
               ) : null}
+            </div>
+            {takipsanStatus?.lastError ? (
+              <p className="mt-3 rounded-xl border border-red-300/80 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+                Takipsan hatası: {takipsanStatus.lastError}
+              </p>
+            ) : null}
+          </div>
 
-              <div className="grid gap-3 p-5 sm:grid-cols-3 lg:grid-cols-3">
-                {UTU_PAKET_SIZE_CODES.map((code) => {
-                  const count = data.beden[code] || 0;
-                  const pct =
-                    bedenTotal > 0 ? Math.round((count / bedenTotal) * 100) : paketHourly > 0 && count > 0 ? 100 : 0;
-                  return (
-                    <label
-                      key={code}
-                      className="flex flex-col rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-emerald-50/80 to-white p-4 dark:border-emerald-900/40 dark:from-emerald-950/30 dark:to-slate-900/50"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-lg font-black text-emerald-800 dark:text-emerald-300">
-                          {code}
-                        </span>
-                        {bedenTotal > 0 ? (
-                          <span className="text-xs font-semibold text-slate-500">%{pct}</span>
-                        ) : null}
-                      </div>
-                      <input
-                        type="number"
-                        min={0}
-                        inputMode="numeric"
-                        className="mt-2 w-full rounded-xl border-0 bg-white px-3 py-2.5 text-center text-xl font-bold tabular-nums ring-1 ring-emerald-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-900 dark:ring-emerald-800"
-                        value={count || ""}
-                        onChange={(e) => setBeden(code, e.target.value)}
-                      />
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                        <div
-                          className="h-full rounded-full bg-emerald-500 transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-
-              <div className="flex flex-wrap gap-6 border-t border-slate-200/80 px-5 py-4 text-sm dark:border-slate-700/80">
-                <p>
-                  <span className="text-slate-500">Beden toplamı: </span>
-                  <strong className="tabular-nums">{bedenTotal.toLocaleString("tr-TR")}</strong>
-                </p>
-                <p>
-                  <span className="text-slate-500">Saatlik paketleme: </span>
-                  <strong className="tabular-nums">{paketHourly.toLocaleString("tr-TR")}</strong>
+          <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              {
+                label: "Sipariş sayısı",
+                sub: "Takipsan — paketlenmesi gereken",
+                value: paketOrderQty,
+                accent: "border-amber-200 bg-amber-50/80 dark:border-amber-900/40 dark:bg-amber-950/30",
+              },
+              {
+                label: "Okunan sayısı",
+                sub: "Paketlenen ürün",
+                value: paketReadCount,
+                accent: "border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/30",
+              },
+              {
+                label: "Paket sayısı",
+                sub: "Oluşturulan paket",
+                value: paketPackageCount,
+                accent: "border-sky-200 bg-sky-50/80 dark:border-sky-900/40 dark:bg-sky-950/30",
+              },
+              {
+                label: "Beden toplamı",
+                sub: "Paket içi adet",
+                value: bedenTotal,
+                accent: "border-violet-200 bg-violet-50/80 dark:border-violet-900/40 dark:bg-violet-950/30",
+              },
+            ].map((card) => (
+              <div
+                key={card.label}
+                className={`rounded-2xl border p-4 ${card.accent}`}
+              >
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{card.label}</p>
+                <p className="text-[11px] text-slate-500">{card.sub}</p>
+                <p className="mt-2 text-3xl font-black tabular-nums text-slate-900 dark:text-white">
+                  {card.value.toLocaleString("tr-TR")}
                 </p>
               </div>
-            </section>
+            ))}
+          </div>
+
+          {data.takipsan?.orderCode ? (
+            <p className="px-5 pb-2 text-sm text-slate-600 dark:text-slate-400">
+              Sipariş kodu: <strong>{data.takipsan.orderCode}</strong>
+            </p>
           ) : null}
-        </>
+
+          <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Beden dağılımı</h3>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {UTU_PAKET_SIZE_CODES.map((code) => {
+                const count = data.beden[code] || 0;
+                const pct = bedenTotal > 0 ? Math.round((count / bedenTotal) * 100) : 0;
+                return (
+                  <div
+                    key={code}
+                    className="rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-emerald-50/80 to-white p-4 dark:border-emerald-900/40 dark:from-emerald-950/30 dark:to-slate-900/50"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg font-black text-emerald-800 dark:text-emerald-300">{code}</span>
+                      {bedenTotal > 0 ? (
+                        <span className="text-xs font-semibold text-slate-500">%{pct}</span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
+                      {count.toLocaleString("tr-TR")}
+                    </p>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {paketPackages.length > 0 ? (
+            <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Paket listesi</h3>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[28rem] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
+                      <th className="px-3 py-2">Paket</th>
+                      <th className="px-3 py-2">Adet</th>
+                      <th className="px-3 py-2">Beden</th>
+                      <th className="px-3 py-2">Durum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paketPackages.map((row, i) => (
+                      <tr
+                        key={`${row.packageNo}-${i}`}
+                        className="border-b border-slate-100 dark:border-slate-800"
+                      >
+                        <td className="px-3 py-2 font-medium">{row.packageNo}</td>
+                        <td className="px-3 py-2 tabular-nums">{row.items.toLocaleString("tr-TR")}</td>
+                        <td className="px-3 py-2 font-semibold">{row.size}</td>
+                        <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{row.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : (
+        <section className="surface-card dark:text-slate-100">
+          <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">{meta.label}</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">{meta.description}</p>
+            <p className="mt-2 text-2xl font-black tabular-nums text-teal-700 dark:text-teal-400">
+              Günlük toplam: {stageTotals[activeStage].toLocaleString("tr-TR")} adet
+            </p>
+          </div>
+
+          <div className="grid gap-3 p-5 sm:grid-cols-3">
+            {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => (
+              <label
+                key={key}
+                className="group flex flex-col rounded-2xl border border-slate-200/90 bg-slate-50/80 p-3 transition focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-500/30 dark:border-slate-600/80 dark:bg-slate-800/50"
+              >
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  {label}
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  className="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 text-center text-2xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-teal-500 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
+                  value={data.stages[activeStage][key] || ""}
+                  onChange={(e) => setSlot(activeStage, key, e.target.value)}
+                  aria-label={`${meta.label} ${label}`}
+                />
+              </label>
+            ))}
+          </div>
+
+          <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+            <p className="mb-2 text-xs font-semibold text-slate-500">Gün içi dağılım</p>
+            <MiniSpark values={slotValues} />
+          </div>
+        </section>
       )}
 
         </>

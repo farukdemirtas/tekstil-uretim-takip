@@ -11,7 +11,7 @@ import {
   WorkerProductionDayDetail,
 } from "./types";
 import { clearStoredPermissions } from "./permissions";
-import type { UtuPaketAnalytics, UtuPaketDayPayload } from "./utuPaket";
+import type { TakipsanStatus, UtuPaketAnalytics, UtuPaketDayPayload } from "./utuPaket";
 
 /**
  * Geliştirme: tarayıcıda her zaman `/api` — `next.config` rewrite ile backend (varsayılan 127.0.0.1:4000).
@@ -1284,7 +1284,10 @@ export async function getUtuPaket(date: string): Promise<UtuPaketDayPayload> {
   return res.json() as Promise<UtuPaketDayPayload>;
 }
 
-export async function saveUtuPaket(payload: UtuPaketDayPayload): Promise<void> {
+export async function saveUtuPaket(
+  payload: Pick<UtuPaketDayPayload, "date" | "stages"> &
+    Partial<Pick<UtuPaketDayPayload, "beden" | "packagingTarget">>
+): Promise<void> {
   const res = await apiFetch(`${apiBase()}/utu-paket`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -1305,6 +1308,18 @@ export async function deleteUtuPaket(date: string): Promise<void> {
     const d = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(d.message ?? "Ütü–paket verisi silinemedi");
   }
+}
+
+export async function getTakipsanStatus(): Promise<TakipsanStatus> {
+  const res = await apiFetch(`${apiBase()}/takipsan/status`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Takipsan durumu alınamadı");
+  }
+  return res.json() as Promise<TakipsanStatus>;
 }
 
 // ─── Proses Veri Satırları (sunucu kalıcı depolama) ───────────────────────────

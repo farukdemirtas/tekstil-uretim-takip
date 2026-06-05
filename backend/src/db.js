@@ -611,6 +611,15 @@ export function initDb() {
         packaging_target INTEGER NOT NULL DEFAULT 0
       )
     `);
+    db.run(
+      "ALTER TABLE utu_paket_meta ADD COLUMN takipsan_package_count INTEGER NOT NULL DEFAULT 0",
+      () => {}
+    );
+    db.run("ALTER TABLE utu_paket_meta ADD COLUMN takipsan_synced_at TEXT", () => {});
+    db.run(
+      "ALTER TABLE utu_paket_meta ADD COLUMN takipsan_order_code TEXT NOT NULL DEFAULT ''",
+      () => {}
+    );
 
     db.run(`
       CREATE TABLE IF NOT EXISTS proses_veri_rows (

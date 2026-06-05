@@ -3296,7 +3296,8 @@ export function getUtuPaketDay(date) {
           (bedenErr, bedenRows) => {
             if (bedenErr) return reject(bedenErr);
             db.get(
-              `SELECT packaging_target FROM utu_paket_meta WHERE production_date = ?`,
+              `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code
+               FROM utu_paket_meta WHERE production_date = ?`,
               [date],
               (metaErr, metaRow) => {
                 if (metaErr) return reject(metaErr);
@@ -3310,11 +3311,29 @@ export function getUtuPaketDay(date) {
                   const code = String(r.size_code || "").trim();
                   if (code) beden[code] = Number(r.count) || 0;
                 }
+                const packagingTarget = Math.max(
+                  0,
+                  Math.floor(Number(metaRow?.packaging_target) || 0)
+                );
+                const readCount = UTU_PAKET_SLOT_KEYS.reduce(
+                  (s, k) => s + (Number(stages.paketleme?.[k]) || 0),
+                  0
+                );
                 resolve({
                   date,
                   stages,
                   beden,
-                  packagingTarget: Math.max(0, Math.floor(Number(metaRow?.packaging_target) || 0)),
+                  packagingTarget,
+                  takipsan: {
+                    packageCount: Math.max(
+                      0,
+                      Math.floor(Number(metaRow?.takipsan_package_count) || 0)
+                    ),
+                    readCount,
+                    orderQuantity: packagingTarget,
+                    orderCode: String(metaRow?.takipsan_order_code || "").trim(),
+                    syncedAt: metaRow?.takipsan_synced_at || null,
+                  },
                 });
               }
             );
@@ -3328,11 +3347,31 @@ export function getUtuPaketDay(date) {
 export function saveUtuPaketDay(date, payload) {
   const stagesIn = payload?.stages && typeof payload.stages === "object" ? payload.stages : {};
   const bedenIn = payload?.beden && typeof payload.beden === "object" ? payload.beden : {};
-  const packagingTarget = Math.max(0, Math.floor(Number(payload?.packagingTarget) || 0));
+  const takipsanSync = payload?.takipsanSyncedAt != null;
   const z = (n) => Math.max(0, Math.floor(Number(n) || 0));
 
   return new Promise((resolve, reject) => {
-    db.serialize(() => {
+    db.get(
+      `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code
+       FROM utu_paket_meta WHERE production_date = ?`,
+      [date],
+      (metaReadErr, metaRow) => {
+        if (metaReadErr) return reject(metaReadErr);
+
+        const packagingTarget = takipsanSync
+          ? z(payload?.packagingTarget)
+          : z(metaRow?.packaging_target);
+        const takipsanPackageCount = takipsanSync
+          ? z(payload?.takipsanPackageCount)
+          : z(metaRow?.takipsan_package_count);
+        const takipsanOrderCode = takipsanSync
+          ? String(payload?.takipsanOrderCode || "").trim()
+          : String(metaRow?.takipsan_order_code || "").trim();
+        const takipsanSyncedAt = takipsanSync
+          ? String(payload.takipsanSyncedAt)
+          : metaRow?.takipsan_synced_at || null;
+
+        db.serialize(() => {
       db.run("BEGIN", (beginErr) => {
         if (beginErr) return reject(beginErr);
 
@@ -3373,9 +3412,15 @@ export function saveUtuPaketDay(date, payload) {
             const bedenEntries = Object.entries(bedenIn).filter(([, v]) => z(v) > 0);
             const commitMeta = () => {
               db.run(
-                `INSERT INTO utu_paket_meta (production_date, packaging_target) VALUES (?, ?)
-                 ON CONFLICT(production_date) DO UPDATE SET packaging_target = excluded.packaging_target`,
-                [date, packagingTarget],
+                `INSERT INTO utu_paket_meta (
+                  production_date, packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code
+                ) VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(production_date) DO UPDATE SET
+                  packaging_target = excluded.packaging_target,
+                  takipsan_package_count = excluded.takipsan_package_count,
+                  takipsan_synced_at = excluded.takipsan_synced_at,
+                  takipsan_order_code = excluded.takipsan_order_code`,
+                [date, packagingTarget, takipsanPackageCount, takipsanSyncedAt, takipsanOrderCode],
                 (metaErr) => {
                   if (metaErr) {
                     db.run("ROLLBACK");
@@ -3411,7 +3456,9 @@ export function saveUtuPaketDay(date, payload) {
           });
         });
       });
-    });
+        });
+      }
+    );
   });
 }
 
