@@ -1,3 +1,4 @@
+import "./loadEnv.js";
 import {
   UTU_PAKET_SLOT_KEYS,
   UTU_PAKET_SIZE_CODES,

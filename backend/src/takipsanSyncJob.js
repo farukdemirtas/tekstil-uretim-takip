@@ -1,3 +1,4 @@
+import "./loadEnv.js";
 import { isTakipsanConfigured } from "./takipsanClient.js";
 import { refreshTakipsanEnabledFlag, syncTakipsanToUtuPaket } from "./takipsanSync.js";
 
@@ -12,9 +13,15 @@ export function scheduleTakipsanSyncJob() {
   const enabled = refreshTakipsanEnabledFlag();
   if (!enabled) {
     // eslint-disable-next-line no-console
-    console.log("[takipsan] Senkron kapalı — TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID gerekli");
+    console.log(
+      "[takipsan] Senkron kapalı — backend/.env içinde TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID doldurun"
+    );
     return;
   }
+  // eslint-disable-next-line no-console
+  console.log(
+    `[takipsan] Yapılandırıldı — kullanıcı: ${process.env.TAKIPSAN_USERNAME}, sevkiyat: ${process.env.TAKIPSAN_CONSIGNMENT_ID}`
+  );
 
   const intervalMs = Math.max(
     10_000,

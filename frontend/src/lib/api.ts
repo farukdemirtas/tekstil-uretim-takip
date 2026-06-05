@@ -1322,6 +1322,32 @@ export async function getTakipsanStatus(): Promise<TakipsanStatus> {
   return res.json() as Promise<TakipsanStatus>;
 }
 
+export async function syncTakipsan(date?: string): Promise<{
+  ok: boolean;
+  packageCount?: number;
+  readCount?: number;
+  orderQuantity?: number;
+  error?: string;
+}> {
+  const res = await apiFetch(`${apiBase()}/takipsan/sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(date ? { date } : {}),
+  });
+  const d = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    packageCount?: number;
+    readCount?: number;
+    orderQuantity?: number;
+    message?: string;
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(d.error ?? d.message ?? "Takipsan senkronu başarısız");
+  }
+  return d as { ok: boolean; packageCount?: number; readCount?: number; orderQuantity?: number };
+}
+
 // ─── Proses Veri Satırları (sunucu kalıcı depolama) ───────────────────────────
 
 export type ProsesVeriRow = {

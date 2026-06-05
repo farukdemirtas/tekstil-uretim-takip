@@ -233,32 +233,43 @@ export class TakipsanClient {
   }
 
   async fetchLoginBootstrap() {
-    const paths = ["/login", "/"];
+    let url = `${this.baseUrl}/login`;
     let lastHint = "";
-    for (const path of paths) {
-      const res = await fetch(`${this.baseUrl}${path}`, {
+    for (let hop = 0; hop < 6; hop++) {
+      const res = await fetch(url, {
         headers: {
-          accept: "text/html,application/xhtml+xml",
+          accept: "text/html,application/xhtml+xml,*/*;q=0.8",
           "accept-language": "tr-TR,tr;q=0.9",
           "user-agent": BROWSER_UA,
           cookie: this.jar.header(),
         },
-        redirect: "follow",
+        redirect: "manual",
       });
       this.jar.absorb(res);
+
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location") || "";
+        if (!loc) break;
+        url = loc.startsWith("http") ? loc : `${this.baseUrl}${loc.startsWith("/") ? loc : `/${loc}`}`;
+        lastHint = `redirect ${res.status} → ${url}`;
+        continue;
+      }
+
       const html = await res.text();
-      lastHint = `${path} → HTTP ${res.status}, ${loginPageHint(html)}`;
-      if (!res.ok) continue;
+      lastHint = `${url} → HTTP ${res.status}, ${loginPageHint(html)}`;
+      if (!res.ok) break;
 
       const pageToken = extractHiddenToken(html);
       if (pageToken) {
         this._pageToken = pageToken;
-        return { html, path };
+        return { html, path: url };
       }
-      if (this.csrfToken) {
-        this._pageToken = this.csrfToken;
-        return { html, path };
+      const xsrf = this.jar.get("XSRF-TOKEN");
+      if (xsrf) {
+        this._pageToken = decodeLaravelXsrf(xsrf);
+        if (this._pageToken) return { html, path: url };
       }
+      break;
     }
     throw new Error(`Takipsan CSRF token bulunamadı (${lastHint})`);
   }
@@ -288,7 +299,9 @@ export class TakipsanClient {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
-        accept: "text/html,application/xhtml+xml",
+        accept: "text/html,application/xhtml+xml,*/*;q=0.8",
+        "accept-language": "tr-TR,tr;q=0.9",
+        "user-agent": BROWSER_UA,
         referer: `${this.baseUrl}/login`,
         origin: this.baseUrl,
         cookie: this.jar.header(),

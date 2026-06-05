@@ -11,9 +11,10 @@ import {
   getUtuPaket,
   saveUtuPaket,
   setAuthToken,
+  syncTakipsan,
 } from "@/lib/api";
 import type { DayProductMeta } from "@/lib/api";
-import { clampToWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
+import { clampToWeekdayIso, todayIsoTurkey, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import UtuPaketAnalysis from "@/components/utu-paket/UtuPaketAnalysis";
 import UtuPaketEkran5 from "@/components/utu-paket/UtuPaketEkran5";
@@ -84,6 +85,7 @@ export default function UtuPaketPage() {
   const [deleting, setDeleting] = useState(false);
   const [mainTab, setMainTab] = useState<"entry" | "analysis" | "ekran5">("entry");
   const [takipsanStatus, setTakipsanStatus] = useState<TakipsanStatus | null>(null);
+  const [takipsanSyncing, setTakipsanSyncing] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -138,20 +140,39 @@ export default function UtuPaketPage() {
     try {
       const status = await getTakipsanStatus();
       setTakipsanStatus(status);
+      return status;
     } catch {
       setTakipsanStatus(null);
+      return null;
     }
   }, []);
 
+  const runTakipsanSync = useCallback(async () => {
+    const syncDate = selectedDate || todayIsoTurkey();
+    setTakipsanSyncing(true);
+    try {
+      await syncTakipsan(syncDate);
+      await loadDay(syncDate);
+      await refreshTakipsan();
+    } catch (e) {
+      await refreshTakipsan();
+      setSaveMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : "Takipsan senkronu başarısız",
+      });
+    } finally {
+      setTakipsanSyncing(false);
+    }
+  }, [selectedDate, loadDay, refreshTakipsan]);
+
   useEffect(() => {
     if (!authorized || mainTab !== "entry" || activeStage !== "paketleme") return;
-    void refreshTakipsan();
+    void runTakipsanSync();
     const id = window.setInterval(() => {
-      void loadDay(selectedDate);
-      void refreshTakipsan();
+      void runTakipsanSync();
     }, TAKIPSAN_REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [authorized, mainTab, activeStage, selectedDate, loadDay, refreshTakipsan]);
+  }, [authorized, mainTab, activeStage, runTakipsanSync]);
 
   const stageTotals = useMemo(() => {
     const out = {} as Record<UtuPaketStage, number>;
@@ -171,8 +192,10 @@ export default function UtuPaketPage() {
       ? takipsanStatus.lastPackages
       : [];
   const paketReadCount = data.takipsan?.readCount ?? stageTotals.paketleme;
-  const paketPackageCount =
-    data.takipsan?.packageCount ?? takipsanStatus?.lastPackageCount ?? 0;
+  const paketPackageCount = Math.max(
+    data.takipsan?.packageCount ?? 0,
+    takipsanStatus?.lastPackageCount ?? 0
+  );
   const paketOrderQty = data.takipsan?.orderQuantity ?? data.packagingTarget ?? 0;
 
   const pipelineMin = useMemo(() => {
@@ -444,16 +467,22 @@ export default function UtuPaketPage() {
                   Veriler TS820 / Takipsan Plus sevkiyatından otomatik çekilir (~30 sn).
                 </p>
               </div>
-              {data.takipsan?.syncedAt ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Son senkron:{" "}
-                  {new Date(data.takipsan.syncedAt).toLocaleString("tr-TR", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })}
-                </p>
-              ) : null}
+              <div className="text-right text-xs text-slate-500 dark:text-slate-400">
+                {takipsanSyncing ? (
+                  <span className="font-medium text-teal-600 dark:text-teal-400">Takipsan senkron…</span>
+                ) : data.takipsan?.syncedAt ? (
+                  <span>
+                    Son senkron:{" "}
+                    {new Date(data.takipsan.syncedAt).toLocaleString("tr-TR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })}
+                  </span>
+                ) : (
+                  <span>Senkron bekleniyor</span>
+                )}
+              </div>
             </div>
             {takipsanStatus?.lastError ? (
               <p className="mt-3 rounded-xl border border-red-300/80 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
