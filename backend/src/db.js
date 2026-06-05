@@ -576,6 +576,43 @@ export function initDb() {
     db.run(`CREATE INDEX IF NOT EXISTS idx_repair_entries_date ON repair_entries (repair_date)`);
 
     db.run(`
+      CREATE TABLE IF NOT EXISTS utu_paket_slots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        production_date TEXT NOT NULL,
+        stage TEXT NOT NULL CHECK(stage IN ('temizleme', 'optik', 'utu', 'paketleme')),
+        h0900 INTEGER NOT NULL DEFAULT 0,
+        h1000 INTEGER NOT NULL DEFAULT 0,
+        h1115 INTEGER NOT NULL DEFAULT 0,
+        h1215 INTEGER NOT NULL DEFAULT 0,
+        h1300 INTEGER NOT NULL DEFAULT 0,
+        h1445 INTEGER NOT NULL DEFAULT 0,
+        h1545 INTEGER NOT NULL DEFAULT 0,
+        h1700 INTEGER NOT NULL DEFAULT 0,
+        h1830 INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(production_date, stage)
+      )
+    `);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_utu_paket_slots_date ON utu_paket_slots (production_date)`);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS utu_paket_beden (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        production_date TEXT NOT NULL,
+        size_code TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(production_date, size_code)
+      )
+    `);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_utu_paket_beden_date ON utu_paket_beden (production_date)`);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS utu_paket_meta (
+        production_date TEXT PRIMARY KEY,
+        packaging_target INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    db.run(`
       CREATE TABLE IF NOT EXISTS proses_veri_rows (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         model_code TEXT NOT NULL,

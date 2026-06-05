@@ -1086,6 +1086,11 @@ export default function HomePage() {
               Tamir Oranı
             </Link>
           ) : null}
+          {hasPermission("utuPaket") || isAdminRole() ? (
+            <Link href="/utu-paket" className="btn-nav shrink-0">
+              Ütü–Paket
+            </Link>
+          ) : null}
           {hasPermission("ayarlar") || isAdminRole() ? (
             <Link href="/ayarlar" className="btn-nav shrink-0">
               Ayarlar

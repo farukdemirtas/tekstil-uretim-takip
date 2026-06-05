@@ -24,6 +24,7 @@ function emptyDraft(): AppPermissions {
     hataRapor: false,
     isBitirmeHesaplama: false,
     modelAnalizi: false,
+    utuPaket: false,
     defaultDarkMode: false,
   };
 }

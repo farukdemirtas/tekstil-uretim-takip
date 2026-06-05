@@ -68,6 +68,10 @@ import {
   upsertRepairEntries,
   getRepairHistory,
   deleteRepairEntries,
+  getUtuPaketDay,
+  getUtuPaketAnalytics,
+  saveUtuPaketDay,
+  deleteUtuPaketDay,
   getProsesVeriRows,
   saveProsesVeriRows,
   getJobCalcModelWorkerStats,
@@ -1326,6 +1330,56 @@ app.get("/api/repairs/history", requireAuth, async (req, res) => {
     return res.json(history);
   } catch (err) {
     return res.status(500).json({ message: "Tamir geçmişi alınamadı", error: String(err) });
+  }
+});
+
+// ─── Ütü–Paket (ana üretimden bağımsız hat) ─────────────────────────────────
+
+app.get("/api/utu-paket/analytics", requirePermission("utuPaket"), async (req, res) => {
+  const { startDate, endDate } = req.query;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "startDate ve endDate zorunlu" });
+  }
+  try {
+    const data = await getUtuPaketAnalytics(String(startDate), String(endDate));
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ message: "Ütü–paket analizi alınamadı", error: String(err) });
+  }
+});
+
+app.get("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    const data = await getUtuPaketDay(String(date));
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ message: "Ütü–paket verisi alınamadı", error: String(err) });
+  }
+});
+
+app.put("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
+  const { date, stages, beden, packagingTarget } = req.body || {};
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    await saveUtuPaketDay(String(date), { stages, beden, packagingTarget });
+    logActivity(req, "utu_paket_kaydet", "utu_paket_slots", { date: String(date) });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: "Ütü–paket verisi kaydedilemedi", error: String(err) });
+  }
+});
+
+app.delete("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    const result = await deleteUtuPaketDay(String(date));
+    logActivity(req, "utu_paket_sil", "utu_paket_slots", { date: String(date) });
+    return res.json({ ok: true, deleted: result.deleted });
+  } catch (err) {
+    return res.status(500).json({ message: "Ütü–paket verisi silinemedi", error: String(err) });
   }
 });
 

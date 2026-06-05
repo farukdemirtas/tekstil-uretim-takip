@@ -11,6 +11,7 @@ import {
   WorkerProductionDayDetail,
 } from "./types";
 import { clearStoredPermissions } from "./permissions";
+import type { UtuPaketAnalytics, UtuPaketDayPayload } from "./utuPaket";
 
 /**
  * Geliştirme: tarayıcıda her zaman `/api` — `next.config` rewrite ile backend (varsayılan 127.0.0.1:4000).
@@ -1248,6 +1249,62 @@ export async function getRepairsHistory(params: {
   });
   if (!res.ok) throw new Error("Tamir geçmişi alınamadı");
   return res.json() as Promise<RepairHistoryPoint[]>;
+}
+
+// ─── Ütü–Paket (ana üretimden bağımsız) ───────────────────────────────────────
+
+export async function getUtuPaketAnalytics(params: {
+  startDate: string;
+  endDate: string;
+}): Promise<UtuPaketAnalytics> {
+  const q = new URLSearchParams({
+    startDate: params.startDate,
+    endDate: params.endDate,
+  }).toString();
+  const res = await apiFetch(`${apiBase()}/utu-paket/analytics?${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Ütü–paket analizi alınamadı");
+  }
+  return res.json() as Promise<UtuPaketAnalytics>;
+}
+
+export async function getUtuPaket(date: string): Promise<UtuPaketDayPayload> {
+  const res = await apiFetch(`${apiBase()}/utu-paket?date=${encodeURIComponent(date)}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Ütü–paket verisi alınamadı");
+  }
+  return res.json() as Promise<UtuPaketDayPayload>;
+}
+
+export async function saveUtuPaket(payload: UtuPaketDayPayload): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/utu-paket`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Ütü–paket verisi kaydedilemedi");
+  }
+}
+
+export async function deleteUtuPaket(date: string): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/utu-paket?date=${encodeURIComponent(date)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Ütü–paket verisi silinemedi");
+  }
 }
 
 // ─── Proses Veri Satırları (sunucu kalıcı depolama) ───────────────────────────

@@ -48,6 +48,12 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
     label: "Model Analizi",
     description: "Seçilen ürün modeli için iş günü, genel tamamlanan ve proses bazlı üretim raporu",
   },
+  {
+    key: "utuPaket",
+    label: "Ütü–Paket",
+    description:
+      "Temizleme, optik, ütü ve paketleme için saatlik adet girişi; paketlemede beden dağılımı (ana üretimden bağımsız)",
+  },
 ];
 
 export function isAdminRole(): boolean {
