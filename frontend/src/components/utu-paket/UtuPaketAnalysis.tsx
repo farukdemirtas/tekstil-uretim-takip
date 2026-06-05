@@ -13,8 +13,9 @@ import {
   type UtuPaketStage,
 } from "@/lib/utuPaket";
 
+const HOURLY_SLOT_STAGES = ["optik", "utu"] as const satisfies readonly UtuPaketStage[];
+
 const STAGE_CHART_COLOR: Record<UtuPaketStage, string> = {
-  temizleme: "#0ea5e9",
   optik: "#8b5cf6",
   utu: "#f59e0b",
   paketleme: "#10b981",
@@ -148,7 +149,7 @@ export default function UtuPaketAnalysis({ onOpenDay }: Props) {
   const [data, setData] = useState<UtuPaketAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [slotStage, setSlotStage] = useState<UtuPaketStage>("paketleme");
+  const [slotStage, setSlotStage] = useState<UtuPaketStage>("optik");
 
   const load = useCallback(async () => {
     let start = startDate;
@@ -294,7 +295,7 @@ export default function UtuPaketAnalysis({ onOpenDay }: Props) {
                   onChange={(e) => setSlotStage(e.target.value as UtuPaketStage)}
                   className="input-modern rounded-lg py-1.5 text-sm"
                 >
-                  {UTU_PAKET_STAGES.map((st) => (
+                  {HOURLY_SLOT_STAGES.map((st) => (
                     <option key={st} value={st}>
                       {UTU_PAKET_STAGE_META[st].label}
                     </option>

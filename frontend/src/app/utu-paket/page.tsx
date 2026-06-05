@@ -25,6 +25,7 @@ import {
   UTU_PAKET_STAGES,
   emptyUtuPaketBeden,
   emptyUtuPaketStages,
+  normalizeTakipsanPackages,
   normalizeUtuPaketPayload,
   sumUtuPaketSlots,
   type UtuPaketDayPayload,
@@ -35,8 +36,16 @@ import {
 
 const TAKIPSAN_REFRESH_MS = 30_000;
 
+function formatPackageCreatedAt(raw: string): string {
+  if (!raw) return "—";
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?/);
+  if (!m) return raw;
+  const [, y, mo, d, h, mi] = m;
+  const date = `${d}.${mo}.${y}`;
+  return h && mi ? `${date} ${h}:${mi}` : date;
+}
+
 const STAGE_TAB_CLASS: Record<string, string> = {
-  sky: "from-sky-500/15 to-sky-600/5 border-sky-400/40 text-sky-900 dark:text-sky-100",
   violet: "from-violet-500/15 to-violet-600/5 border-violet-400/40 text-violet-900 dark:text-violet-100",
   amber: "from-amber-500/15 to-amber-600/5 border-amber-400/40 text-amber-900 dark:text-amber-100",
   emerald:
@@ -44,7 +53,6 @@ const STAGE_TAB_CLASS: Record<string, string> = {
 };
 
 const STAGE_RING: Record<string, string> = {
-  sky: "ring-sky-500/50",
   violet: "ring-violet-500/50",
   amber: "ring-amber-500/50",
   emerald: "ring-emerald-500/50",
@@ -69,7 +77,7 @@ export default function UtuPaketPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
   const [selectedDate, setSelectedDate] = useState(todayWeekdayIso);
-  const [activeStage, setActiveStage] = useState<UtuPaketStage>("temizleme");
+  const [activeStage, setActiveStage] = useState<UtuPaketStage>("optik");
   const [data, setData] = useState<UtuPaketDayPayload>(() => ({
     date: todayWeekdayIso(),
     stages: emptyUtuPaketStages(),
@@ -139,7 +147,10 @@ export default function UtuPaketPage() {
   const refreshTakipsan = useCallback(async () => {
     try {
       const status = await getTakipsanStatus();
-      setTakipsanStatus(status);
+      setTakipsanStatus({
+        ...status,
+        lastPackages: normalizeTakipsanPackages(status.lastPackages),
+      });
       return status;
     } catch {
       setTakipsanStatus(null);
@@ -158,7 +169,7 @@ export default function UtuPaketPage() {
       await refreshTakipsan();
       setSaveMsg({
         ok: false,
-        text: e instanceof Error ? e.message : "Takipsan senkronu başarısız",
+        text: e instanceof Error ? e.message : "Paketleme verisi güncellenemedi",
       });
     } finally {
       setTakipsanSyncing(false);
@@ -187,10 +198,16 @@ export default function UtuPaketPage() {
     [data.beden]
   );
 
-  const paketPackages =
-    takipsanStatus?.lastPackages?.length
-      ? takipsanStatus.lastPackages
-      : [];
+  const paketPackages = useMemo(() => {
+    const fromDay = normalizeTakipsanPackages(data.takipsan?.packages);
+    const fromStatus = normalizeTakipsanPackages(takipsanStatus?.lastPackages);
+    const dayHasDates = fromDay.some((row) => row.createdAt);
+    const statusHasDates = fromStatus.some((row) => row.createdAt);
+    if (dayHasDates) return fromDay;
+    if (statusHasDates) return fromStatus;
+    if (fromDay.length > 0) return fromDay;
+    return fromStatus;
+  }, [data.takipsan?.packages, takipsanStatus?.lastPackages]);
   const paketReadCount = data.takipsan?.readCount ?? stageTotals.paketleme;
   const paketPackageCount = Math.max(
     data.takipsan?.packageCount ?? 0,
@@ -207,7 +224,7 @@ export default function UtuPaketPage() {
     setSaving(true);
     try {
       const payload = normalizeUtuPaketPayload({ ...next, date: selectedDate });
-      // packagingTarget yalnızca Takipsan senkronundan güncellenir — elle gönderilmez
+      // packagingTarget yalnızca otomatik senkronla güncellenir — elle gönderilmez
       await saveUtuPaket({
         date: payload.date,
         stages: payload.stages,
@@ -294,8 +311,7 @@ export default function UtuPaketPage() {
               </p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Ütü–Paket Takip</h1>
               <p className="mt-2 max-w-xl text-sm text-teal-50/90">
-                Temizleme → Optik → Ütü → Paketleme. İlk üç aşama saatlik girilir; paketleme Takipsan&apos;dan
-                otomatik çekilir.
+                Optik → Ütü → Paketleme. Optik ve ütü saatlik girilir; paketleme otomatik güncellenir.
               </p>
             </div>
             <Link
@@ -380,7 +396,7 @@ export default function UtuPaketPage() {
       ) : (
         <>
       {/* KPI şeridi */}
-      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {UTU_PAKET_STAGES.map((st) => {
           const m = UTU_PAKET_STAGE_META[st];
           const total = stageTotals[st];
@@ -403,7 +419,9 @@ export default function UtuPaketPage() {
                 <p className="text-2xl font-black tabular-nums text-slate-900 dark:text-white">
                   {loading ? "—" : total.toLocaleString("tr-TR")}
                 </p>
-                <MiniSpark values={UTU_PAKET_SLOT_DEFS.map(({ key }) => slots[key])} />
+                {st !== "paketleme" ? (
+                  <MiniSpark values={UTU_PAKET_SLOT_DEFS.map(({ key }) => slots[key])} />
+                ) : null}
               </div>
             </button>
           );
@@ -462,14 +480,14 @@ export default function UtuPaketPage() {
           <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Paketleme — Takipsan</h2>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Paketleme</h2>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Veriler TS820 / Takipsan Plus sevkiyatından otomatik çekilir (~30 sn).
+                  Veriler otomatik güncellenir (~30 sn).
                 </p>
               </div>
               <div className="text-right text-xs text-slate-500 dark:text-slate-400">
                 {takipsanSyncing ? (
-                  <span className="font-medium text-teal-600 dark:text-teal-400">Takipsan senkron…</span>
+                  <span className="font-medium text-teal-600 dark:text-teal-400">Güncelleniyor…</span>
                 ) : data.takipsan?.syncedAt ? (
                   <span>
                     Son senkron:{" "}
@@ -486,7 +504,7 @@ export default function UtuPaketPage() {
             </div>
             {takipsanStatus?.lastError ? (
               <p className="mt-3 rounded-xl border border-red-300/80 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
-                Takipsan hatası: {takipsanStatus.lastError}
+                Veri hatası: {takipsanStatus.lastError}
               </p>
             ) : null}
           </div>
@@ -495,7 +513,7 @@ export default function UtuPaketPage() {
             {[
               {
                 label: "Sipariş sayısı",
-                sub: "Takipsan — paketlenmesi gereken",
+                sub: "Paketlenmesi gereken",
                 value: paketOrderQty,
                 accent: "border-amber-200 bg-amber-50/80 dark:border-amber-900/40 dark:bg-amber-950/30",
               },
@@ -507,7 +525,7 @@ export default function UtuPaketPage() {
               },
               {
                 label: "Paket sayısı",
-                sub: "Takipsan — oluşturulan paket",
+                sub: "Oluşturulan paket",
                 value: paketPackageCount,
                 accent: "border-sky-200 bg-sky-50/80 dark:border-sky-900/40 dark:bg-sky-950/30",
               },
@@ -573,13 +591,14 @@ export default function UtuPaketPage() {
             <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Paket listesi</h3>
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[28rem] text-left text-sm">
+                <table className="w-full min-w-[36rem] text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
                       <th className="px-3 py-2">Paket</th>
                       <th className="px-3 py-2">Adet</th>
                       <th className="px-3 py-2">Beden</th>
                       <th className="px-3 py-2">Durum</th>
+                      <th className="px-3 py-2">Oluşturma tarihi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -592,6 +611,9 @@ export default function UtuPaketPage() {
                         <td className="px-3 py-2 tabular-nums">{row.items.toLocaleString("tr-TR")}</td>
                         <td className="px-3 py-2 font-semibold">{row.size}</td>
                         <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{row.status}</td>
+                        <td className="px-3 py-2 tabular-nums text-slate-600 dark:text-slate-400">
+                          {formatPackageCreatedAt(row.createdAt)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

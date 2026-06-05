@@ -129,6 +129,7 @@ export async function syncTakipsanToUtuPaket(options = {}) {
         takipsanPackageCount: packageCount,
         takipsanOrderCode: data.orderCode,
         takipsanSyncedAt: syncedAt,
+        takipsanPackages: data.packages,
       });
 
       const result = {

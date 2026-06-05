@@ -52,7 +52,7 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
     key: "utuPaket",
     label: "Ütü–Paket",
     description:
-      "Temizleme, optik, ütü ve paketleme için saatlik adet girişi; paketlemede beden dağılımı (ana üretimden bağımsız)",
+      "Optik, ütü ve paketleme takibi; optik/ütü saatlik giriş, paketleme otomatik (ana üretimden bağımsız)",
   },
 ];
 

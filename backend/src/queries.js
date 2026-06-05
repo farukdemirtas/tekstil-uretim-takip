@@ -3256,7 +3256,7 @@ export async function gatherWeeklyBriefingPayload(startIso, endIso) {
 
 // ─── Ütü–Paket (ayrı hat; ana üretim tablosundan bağımsız) ───────────────────
 
-export const UTU_PAKET_STAGES = ["temizleme", "optik", "utu", "paketleme"];
+export const UTU_PAKET_STAGES = ["optik", "utu", "paketleme"];
 export const UTU_PAKET_SLOT_KEYS = [
   "h0900",
   "h1000",
@@ -3282,6 +3282,47 @@ function rowToUtuPaketSlots(row) {
   return out;
 }
 
+function parseTakipsanPackagesJson(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((row) => {
+        if (!row || typeof row !== "object") return null;
+        return {
+          packageNo: String(row.packageNo ?? row.package_no ?? "").trim(),
+          items: Math.max(0, Math.floor(Number(row.items) || 0)),
+          status: String(row.status ?? "").trim(),
+          size: String(row.size ?? "").trim().toUpperCase(),
+          createdAt: String(row.createdAt ?? row.created_at ?? "").trim(),
+        };
+      })
+      .filter((row) => row && row.packageNo);
+  } catch {
+    return [];
+  }
+}
+
+function serializeTakipsanPackages(packages) {
+  if (!Array.isArray(packages) || packages.length === 0) return null;
+  const rows = packages
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const packageNo = String(row.packageNo ?? row.package_no ?? "").trim();
+      if (!packageNo) return null;
+      return {
+        packageNo,
+        items: Math.max(0, Math.floor(Number(row.items) || 0)),
+        status: String(row.status ?? "").trim(),
+        size: String(row.size ?? "").trim().toUpperCase(),
+        createdAt: String(row.createdAt ?? row.created_at ?? "").trim(),
+      };
+    })
+    .filter(Boolean);
+  return rows.length > 0 ? JSON.stringify(rows) : null;
+}
+
 export function getUtuPaketDay(date) {
   return new Promise((resolve, reject) => {
     db.all(
@@ -3296,7 +3337,7 @@ export function getUtuPaketDay(date) {
           (bedenErr, bedenRows) => {
             if (bedenErr) return reject(bedenErr);
             db.get(
-              `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code
+              `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json
                FROM utu_paket_meta WHERE production_date = ?`,
               [date],
               (metaErr, metaRow) => {
@@ -3319,6 +3360,7 @@ export function getUtuPaketDay(date) {
                   (s, k) => s + (Number(stages.paketleme?.[k]) || 0),
                   0
                 );
+                const packages = parseTakipsanPackagesJson(metaRow?.takipsan_packages_json);
                 resolve({
                   date,
                   stages,
@@ -3333,6 +3375,7 @@ export function getUtuPaketDay(date) {
                     orderQuantity: packagingTarget,
                     orderCode: String(metaRow?.takipsan_order_code || "").trim(),
                     syncedAt: metaRow?.takipsan_synced_at || null,
+                    packages,
                   },
                 });
               }
@@ -3352,7 +3395,7 @@ export function saveUtuPaketDay(date, payload) {
 
   return new Promise((resolve, reject) => {
     db.get(
-      `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code
+      `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json
        FROM utu_paket_meta WHERE production_date = ?`,
       [date],
       (metaReadErr, metaRow) => {
@@ -3370,6 +3413,9 @@ export function saveUtuPaketDay(date, payload) {
         const takipsanSyncedAt = takipsanSync
           ? String(payload.takipsanSyncedAt)
           : metaRow?.takipsan_synced_at || null;
+        const takipsanPackagesJson = takipsanSync
+          ? serializeTakipsanPackages(payload?.takipsanPackages)
+          : metaRow?.takipsan_packages_json || null;
 
         db.serialize(() => {
       db.run("BEGIN", (beginErr) => {
@@ -3413,14 +3459,15 @@ export function saveUtuPaketDay(date, payload) {
             const commitMeta = () => {
               db.run(
                 `INSERT INTO utu_paket_meta (
-                  production_date, packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code
-                ) VALUES (?, ?, ?, ?, ?)
+                  production_date, packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
                  ON CONFLICT(production_date) DO UPDATE SET
                   packaging_target = excluded.packaging_target,
                   takipsan_package_count = excluded.takipsan_package_count,
                   takipsan_synced_at = excluded.takipsan_synced_at,
-                  takipsan_order_code = excluded.takipsan_order_code`,
-                [date, packagingTarget, takipsanPackageCount, takipsanSyncedAt, takipsanOrderCode],
+                  takipsan_order_code = excluded.takipsan_order_code,
+                  takipsan_packages_json = COALESCE(excluded.takipsan_packages_json, utu_paket_meta.takipsan_packages_json)`,
+                [date, packagingTarget, takipsanPackageCount, takipsanSyncedAt, takipsanOrderCode, takipsanPackagesJson],
                 (metaErr) => {
                   if (metaErr) {
                     db.run("ROLLBACK");

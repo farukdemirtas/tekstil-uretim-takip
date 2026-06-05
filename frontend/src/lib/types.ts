@@ -114,7 +114,7 @@ export type AppPermissions = {
   isBitirmeHesaplama: boolean;
   /** Ürün modeli analizi — iş günü, genel tamamlanan ve proses üretim özeti */
   modelAnalizi: boolean;
-  /** Ütü–paket hattı: temizleme, optik, ütü, paketleme (ana üretimden ayrı) */
+  /** Ütü–paket hattı: optik, ütü, paketleme (ana üretimden ayrı) */
   utuPaket: boolean;
   /** Girişte koyu tema; açık mod için false (yöneticilerde API’de false döner) */
   defaultDarkMode: boolean;

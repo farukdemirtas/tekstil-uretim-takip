@@ -1,17 +1,12 @@
 import { NEW_SLOT_DEFS } from "./productionSlots";
 
-export const UTU_PAKET_STAGES = ["temizleme", "optik", "utu", "paketleme"] as const;
+export const UTU_PAKET_STAGES = ["optik", "utu", "paketleme"] as const;
 export type UtuPaketStage = (typeof UTU_PAKET_STAGES)[number];
 
 export const UTU_PAKET_STAGE_META: Record<
   UtuPaketStage,
   { label: string; description: string; accent: string }
 > = {
-  temizleme: {
-    label: "Temizleme",
-    description: "Ön işlem ve temizleme adedi",
-    accent: "sky",
-  },
   optik: {
     label: "Optik",
     description: "Optik kontrol geçen adet",
@@ -44,6 +39,7 @@ export type UtuPaketTakipsanSnapshot = {
   orderQuantity: number;
   orderCode: string;
   syncedAt: string | null;
+  packages?: TakipsanPackageRow[];
 };
 
 export type TakipsanPackageRow = {
@@ -51,6 +47,7 @@ export type TakipsanPackageRow = {
   items: number;
   size: string;
   status: string;
+  createdAt: string;
 };
 
 export type TakipsanStatus = {
@@ -68,11 +65,30 @@ export type TakipsanStatus = {
   lastPackages: TakipsanPackageRow[];
 };
 
+export function normalizeTakipsanPackageRow(
+  raw: Partial<TakipsanPackageRow> & { created_at?: string; package_no?: string }
+): TakipsanPackageRow {
+  return {
+    packageNo: String(raw.packageNo ?? raw.package_no ?? "").trim(),
+    items: Math.max(0, Math.floor(Number(raw.items) || 0)),
+    size: String(raw.size ?? "").trim().toUpperCase(),
+    status: String(raw.status ?? "").trim(),
+    createdAt: String(raw.createdAt ?? raw.created_at ?? "").trim(),
+  };
+}
+
+export function normalizeTakipsanPackages(
+  rows: Array<Partial<TakipsanPackageRow> & { created_at?: string; package_no?: string }> | undefined
+): TakipsanPackageRow[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map(normalizeTakipsanPackageRow).filter((row) => row.packageNo);
+}
+
 export type UtuPaketDayPayload = {
   date: string;
   stages: Record<UtuPaketStage, UtuPaketSlots>;
   beden: Record<string, number>;
-  /** TV bar hedefi — Takipsan sipariş sayısından gelir */
+  /** TV bar hedefi — sipariş sayısından gelir */
   packagingTarget: number;
   takipsan?: UtuPaketTakipsanSnapshot;
 };
@@ -138,6 +154,7 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
         orderQuantity: Math.max(0, Math.floor(Number(raw.takipsan.orderQuantity) || 0)),
         orderCode: String(raw.takipsan.orderCode || "").trim(),
         syncedAt: raw.takipsan.syncedAt || null,
+        packages: normalizeTakipsanPackages(raw.takipsan.packages),
       }
     : undefined;
 

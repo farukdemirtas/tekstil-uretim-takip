@@ -1317,7 +1317,7 @@ export async function getTakipsanStatus(): Promise<TakipsanStatus> {
   });
   if (!res.ok) {
     const d = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(d.message ?? "Takipsan durumu alınamadı");
+    throw new Error(d.message ?? "Paketleme durumu alınamadı");
   }
   return res.json() as Promise<TakipsanStatus>;
 }
@@ -1343,7 +1343,7 @@ export async function syncTakipsan(date?: string): Promise<{
     error?: string;
   };
   if (!res.ok) {
-    throw new Error(d.error ?? d.message ?? "Takipsan senkronu başarısız");
+    throw new Error(d.error ?? d.message ?? "Paketleme verisi güncellenemedi");
   }
   return d as { ok: boolean; packageCount?: number; readCount?: number; orderQuantity?: number };
 }

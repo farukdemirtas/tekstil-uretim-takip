@@ -149,6 +149,7 @@ function normalizePackageRow(row) {
       items: row[2],
       status: row[3],
       size: row[4],
+      created_at: row[6],
     };
   } else if (typeof row === "object") {
     raw = {
@@ -156,6 +157,7 @@ function normalizePackageRow(row) {
       items: row.items ?? row.item_count ?? row.itemCount,
       status: row.status,
       size: row.size ?? row.beden,
+      created_at: row.created_at ?? row.createdAt,
     };
   } else {
     return null;
@@ -165,6 +167,7 @@ function normalizePackageRow(row) {
     items: parseIntSafe(raw.items),
     status: stripHtml(raw.status),
     size: String(raw.size ?? "").trim().toUpperCase(),
+    createdAt: String(raw.created_at ?? "").trim(),
   };
 }
 
@@ -369,6 +372,8 @@ export class TakipsanClient {
       { data: "items", name: "items", orderable: "true" },
       { data: "status", name: "status", orderable: "true" },
       { data: "size", name: "size", orderable: "true" },
+      { data: "created_user_id", name: "created_user_id", orderable: "true" },
+      { data: "created_at", name: "created_at", orderable: "true" },
     ];
     columns.forEach((col, i) => {
       params.set(`columns[${i}][data]`, col.data);

@@ -579,7 +579,7 @@ export function initDb() {
       CREATE TABLE IF NOT EXISTS utu_paket_slots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         production_date TEXT NOT NULL,
-        stage TEXT NOT NULL CHECK(stage IN ('temizleme', 'optik', 'utu', 'paketleme')),
+        stage TEXT NOT NULL CHECK(stage IN ('optik', 'utu', 'paketleme')),
         h0900 INTEGER NOT NULL DEFAULT 0,
         h1000 INTEGER NOT NULL DEFAULT 0,
         h1115 INTEGER NOT NULL DEFAULT 0,
@@ -593,6 +593,54 @@ export function initDb() {
       )
     `);
     db.run(`CREATE INDEX IF NOT EXISTS idx_utu_paket_slots_date ON utu_paket_slots (production_date)`);
+
+    db.get(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'utu_paket_slots'`,
+      (slotSchemaErr, slotSchemaRow) => {
+        if (slotSchemaErr || !slotSchemaRow?.sql) return;
+        const slotSql = String(slotSchemaRow.sql);
+        if (!slotSql.includes("'temizleme'")) return;
+        db.exec(
+          `
+          PRAGMA foreign_keys = OFF;
+          BEGIN TRANSACTION;
+          DELETE FROM utu_paket_slots WHERE stage = 'temizleme';
+          CREATE TABLE utu_paket_slots__mig (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            production_date TEXT NOT NULL,
+            stage TEXT NOT NULL CHECK(stage IN ('optik', 'utu', 'paketleme')),
+            h0900 INTEGER NOT NULL DEFAULT 0,
+            h1000 INTEGER NOT NULL DEFAULT 0,
+            h1115 INTEGER NOT NULL DEFAULT 0,
+            h1215 INTEGER NOT NULL DEFAULT 0,
+            h1300 INTEGER NOT NULL DEFAULT 0,
+            h1445 INTEGER NOT NULL DEFAULT 0,
+            h1545 INTEGER NOT NULL DEFAULT 0,
+            h1700 INTEGER NOT NULL DEFAULT 0,
+            h1830 INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(production_date, stage)
+          );
+          INSERT INTO utu_paket_slots__mig (
+            id, production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830
+          )
+          SELECT id, production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830
+          FROM utu_paket_slots
+          WHERE stage IN ('optik', 'utu', 'paketleme');
+          DROP TABLE utu_paket_slots;
+          ALTER TABLE utu_paket_slots__mig RENAME TO utu_paket_slots;
+          CREATE INDEX IF NOT EXISTS idx_utu_paket_slots_date ON utu_paket_slots (production_date);
+          COMMIT;
+          PRAGMA foreign_keys = ON;
+          `,
+          (migrateErr) => {
+            if (migrateErr) {
+              // eslint-disable-next-line no-console
+              console.error("[tekstil-db] utu_paket_slots temizleme kaldırma migrasyonu:", migrateErr.message);
+            }
+          }
+        );
+      }
+    );
 
     db.run(`
       CREATE TABLE IF NOT EXISTS utu_paket_beden (
@@ -620,6 +668,7 @@ export function initDb() {
       "ALTER TABLE utu_paket_meta ADD COLUMN takipsan_order_code TEXT NOT NULL DEFAULT ''",
       () => {}
     );
+    db.run("ALTER TABLE utu_paket_meta ADD COLUMN takipsan_packages_json TEXT", () => {});
 
     db.run(`
       CREATE TABLE IF NOT EXISTS proses_veri_rows (

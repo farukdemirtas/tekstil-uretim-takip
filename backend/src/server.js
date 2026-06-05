@@ -92,7 +92,7 @@ import {
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 import { scheduleWeeklyBriefingCron, sendWeeklyReportForCurrentTurkeyBusinessWeek } from "./weeklyReportJob.js";
 import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
-import { syncTakipsanToUtuPaket, takipsanSyncState } from "./takipsanSync.js";
+import { syncTakipsanToUtuPaket, takipsanSyncState, todayTurkeyIso } from "./takipsanSync.js";
 import { isTakipsanConfigured } from "./takipsanClient.js";
 
 const app = express();
@@ -1388,12 +1388,26 @@ app.delete("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => 
 
 // ─── Takipsan Plus → Ütü–Paket paketleme köprüsü ───────────────────────────
 
-app.get("/api/takipsan/status", requirePermission("utuPaket"), (_req, res) => {
+app.get("/api/takipsan/status", requirePermission("utuPaket"), async (_req, res) => {
+  let lastPackages = takipsanSyncState.lastPackages || [];
+  const hasCreatedAt = lastPackages.some((row) => String(row?.createdAt || row?.created_at || "").trim());
+  if (!hasCreatedAt) {
+    try {
+      const day = await getUtuPaketDay(todayTurkeyIso());
+      const stored = day?.takipsan?.packages;
+      if (Array.isArray(stored) && stored.length > 0) {
+        lastPackages = stored;
+      }
+    } catch {
+      // Bellekteki durum yeterli
+    }
+  }
   return res.json({
     configured: isTakipsanConfigured(),
     consignmentId: process.env.TAKIPSAN_CONSIGNMENT_ID || null,
     syncIntervalMs: Number(process.env.TAKIPSAN_SYNC_INTERVAL_MS) || 30_000,
     ...takipsanSyncState,
+    lastPackages,
   });
 });
 
@@ -1401,7 +1415,7 @@ app.post("/api/takipsan/sync", requirePermission("utuPaket"), async (req, res) =
   if (!isTakipsanConfigured()) {
     return res.status(400).json({
       message:
-        "Takipsan yapılandırılmamış. backend/.env içinde TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID tanımlayın.",
+        "Paketleme entegrasyonu yapılandırılmamış. backend/.env içinde TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID tanımlayın.",
     });
   }
   try {
@@ -1416,7 +1430,7 @@ app.post("/api/takipsan/sync", requirePermission("utuPaket"), async (req, res) =
     return res.json(result);
   } catch (err) {
     return res.status(500).json({
-      message: "Takipsan senkronu başarısız",
+      message: "Paketleme verisi güncellenemedi",
       error: String(err?.message ?? err),
     });
   }

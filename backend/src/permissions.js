@@ -25,7 +25,7 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   isBitirmeHesaplama: false,
   /** Ürün modeli analizi */
   modelAnalizi: false,
-  /** Ütü–paket hattı: temizleme, optik, ütü, paketleme (saatlik + beden) */
+  /** Ütü–paket hattı: optik, ütü, paketleme (saatlik + beden) */
   utuPaket: false,
   /** Girişte koyu mod (veri girişi kullanıcıları; yöneticiler her zaman açık mod varsayımı) */
   defaultDarkMode: false,
