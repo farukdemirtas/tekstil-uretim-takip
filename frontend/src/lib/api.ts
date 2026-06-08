@@ -681,7 +681,17 @@ export async function getHedefTakipStageTotals(
   return parseHedefStageTotalsPayload(raw);
 }
 
-export type ProductModelListItem = { id: number; modelCode: string; productName: string; createdAt?: string };
+export type ProductModelListItem = {
+  id: number;
+  modelCode: string;
+  productName: string;
+  createdAt?: string;
+  takipsanProductLabel?: string;
+  takipsanOrderCode?: string;
+  targetQuantity?: number;
+  sessionStartDate?: string | null;
+  isTakipsanLinked?: boolean;
+};
 
 /** arkaHalf: DB alanı adı; 1 ise o satırın üretim toplamı 0.5 ile çarpılır. */
 export type ProductModelBaseline = {
@@ -708,10 +718,15 @@ export async function getProductModel(id: number): Promise<ProductModelDetail> {
 }
 
 export async function createProductModel(payload: {
-  modelCode: string;
-  productName: string;
+  modelCode?: string;
+  productName?: string;
   baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
-}): Promise<{ id: number; modelCode: string; productName: string }> {
+  fromTakipsan?: boolean;
+  takipsanProductLabel?: string;
+  takipsanOrderCode?: string;
+  targetQuantity?: number;
+  sessionStartDate?: string | null;
+}): Promise<{ id: number; modelCode: string; productName: string; targetQuantity?: number }> {
   const res = await apiFetch(`${apiBase()}/product-models`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -727,11 +742,12 @@ export async function createProductModel(payload: {
 export async function updateProductModel(
   id: number,
   payload: {
-    modelCode: string;
-    productName: string;
+    modelCode?: string;
+    productName?: string;
     baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
+    sessionStartDate?: string | null;
   }
-): Promise<{ id: number; modelCode: string; productName: string }> {
+): Promise<{ id: number; modelCode: string; productName: string; sessionStartDate?: string | null }> {
   const res = await apiFetch(`${apiBase()}/product-models/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -1282,6 +1298,76 @@ export async function getUtuPaket(date: string): Promise<UtuPaketDayPayload> {
     throw new Error(d.message ?? "Ütü–paket verisi alınamadı");
   }
   return res.json() as Promise<UtuPaketDayPayload>;
+}
+
+export type Ekran1GenelIlerleme = {
+  date: string;
+  target: number;
+  hasModelTarget: boolean;
+  hasUtuPaketTarget: boolean;
+  totalCompleted: number;
+  todayProduced: number;
+  dataStartDate: string | null;
+  affectingStage: {
+    sortOrder: number;
+    teamLabel: string;
+    processName: string;
+  } | null;
+};
+
+export async function getEkran1GenelIlerleme(
+  date: string,
+  modelId?: number | null
+): Promise<Ekran1GenelIlerleme> {
+  const q = new URLSearchParams({ date });
+  if (modelId != null && Number.isFinite(modelId)) q.set("modelId", String(modelId));
+  const res = await apiFetch(`${apiBase()}/ekran1/genel-ilerleme?${q.toString()}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Genel ilerleme özeti alınamadı");
+  }
+  return res.json() as Promise<Ekran1GenelIlerleme>;
+}
+
+export type TakipsanConsignmentInfo = {
+  consignmentId: string;
+  /** Stok / ürün referansı (68131-01-KIND-SKYBLUE403-1/Bershka) */
+  productRef: string;
+  productLabel: string;
+  productName: string;
+  modelCode: string;
+  orderCode: string;
+  orderQuantity: number;
+  readCount: number;
+};
+
+export async function getTakipsanConsignmentInfo(): Promise<TakipsanConsignmentInfo> {
+  const res = await apiFetch(`${apiBase()}/takipsan/consignment-info`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Takipsan sevkiyat bilgisi alınamadı");
+  }
+  return res.json() as Promise<TakipsanConsignmentInfo>;
+}
+
+export async function refreshProductModelTarget(
+  id: number
+): Promise<{ id: number; targetQuantity: number; productLabel?: string; orderQuantity?: number }> {
+  const res = await apiFetch(`${apiBase()}/product-models/${id}/refresh-target`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Hedef adet güncellenemedi");
+  }
+  return res.json();
 }
 
 export async function saveUtuPaket(

@@ -103,6 +103,135 @@ function parseWidgetByLabel(html, label) {
   return m ? parseQuantityText(m[1]) : null;
 }
 
+function parseWidgetTextByLabel(html, label) {
+  if (!html || !label) return "";
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `kt-widget__subtitle[^>]*>\\s*${escaped}\\s*</span>\\s*<span class="kt-widget__value"[^>]*>([\\s\\S]*?)</span>\\s*</div>`,
+    "i"
+  );
+  const m = html.match(re);
+  return m ? stripHtml(m[1]).trim() : "";
+}
+
+const CONSIGNMENT_EXCLUDED_WIDGET_LABELS = new Set([
+  "Sipariş Kodu",
+  "Sipariş Sayısı",
+  "Paket Sayısı",
+  "Okunan Sayısı",
+  "Okunan",
+  "Toplam",
+  "Durum",
+]);
+
+/** Sevkiyat özetindeki tüm kt-widget alanları */
+export function parseAllConsignmentWidgets(html) {
+  const fields = {};
+  if (!html || typeof html !== "string") return fields;
+  const re =
+    /kt-widget__subtitle[^>]*>\s*([^<]+)\s*<\/span>\s*<span class="kt-widget__value"[^>]*>([\s\S]*?)<\/span>\s*<\/div>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const label = stripHtml(m[1]).trim();
+    const value = stripHtml(m[2]).trim();
+    if (label && value) fields[label] = value;
+  }
+  return fields;
+}
+
+function looksLikeOrderCode(value) {
+  const v = String(value || "").trim();
+  return /^[A-Z]{2,}[-_][A-Z0-9]+$/i.test(v) && v.length <= 20;
+}
+
+function looksLikeProductRef(value, orderCode) {
+  const v = String(value || "").trim();
+  if (!v || v === orderCode) return false;
+  if (looksLikeOrderCode(v)) return false;
+  const digitsOnly = v.replace(/[^\d]/g, "");
+  if (digitsOnly && digitsOnly.length >= v.replace(/[\s.,]/g, "").length * 0.8) return false;
+  if (v.includes("/")) return true;
+  if (v.length >= 12 && /\d/.test(v) && v.includes("-")) return true;
+  return false;
+}
+
+/**
+ * Stok / ürün referansı (ör. 68131-01-KIND-SKYBLUE403-1/Bershka) — Sipariş Kodu değil.
+ */
+export function parseConsignmentProductRefFromHtml(html, orderCode = "") {
+  const fields = parseAllConsignmentWidgets(html);
+  const oc = String(orderCode || fields["Sipariş Kodu"] || "").trim();
+
+  const refLabels = [
+    "Stok Kodu",
+    "Ürün Kodu",
+    "Model Kodu",
+    "Referans Kodu",
+    "Müşteri Referansı",
+    "Ürün Referansı",
+    "Özel Kod",
+    "Belge Kodu",
+    "Alıcı Stok Kodu",
+    "Buyer Product Code",
+    "SKU",
+  ];
+  for (const label of refLabels) {
+    const v = fields[label];
+    if (v && v !== oc && !looksLikeOrderCode(v)) return v;
+  }
+
+  for (const [label, value] of Object.entries(fields)) {
+    if (CONSIGNMENT_EXCLUDED_WIDGET_LABELS.has(label)) continue;
+    if (looksLikeProductRef(value, oc)) return value;
+  }
+
+  return "";
+}
+
+/** Ürün adı ve model kodu ayrı widget’lardan (gösterim için) */
+export function parseConsignmentProductFieldsFromHtml(html, orderCode = "") {
+  const fields = parseAllConsignmentWidgets(html);
+  const oc = String(orderCode || fields["Sipariş Kodu"] || "").trim();
+  const productRef = parseConsignmentProductRefFromHtml(html, oc);
+
+  const nameLabels = ["Ürün Adı", "Ürün", "Stok Adı", "Model Adı", "Ürün İsmi"];
+  let productName = "";
+  for (const label of nameLabels) {
+    const v = fields[label];
+    if (v && v !== oc && v !== productRef && !looksLikeOrderCode(v)) {
+      productName = v;
+      break;
+    }
+  }
+
+  const modelLabels = ["Model", "Model Kodu", "Model No"];
+  let modelCode = "";
+  for (const label of modelLabels) {
+    const v = fields[label];
+    if (v && v !== oc && v !== productRef && v !== productName && !looksLikeOrderCode(v)) {
+      modelCode = v;
+      break;
+    }
+  }
+
+  if (!productName && productRef.includes("/")) {
+    const slash = productRef.split("/");
+    productName = slash[slash.length - 1].trim();
+    modelCode = modelCode || slash.slice(0, -1).join("/").trim();
+  }
+
+  if (!modelCode) modelCode = productRef;
+
+  return { productRef, productName, modelCode, orderCode: oc };
+}
+
+/** Geriye dönük: ürün referansı (stok kodu); sipariş kodu kullanılmaz */
+export function parseConsignmentProductLabelFromHtml(html) {
+  const summary = parseConsignmentSummaryFromHtml(html);
+  const { productRef } = parseConsignmentProductFieldsFromHtml(html, summary.orderCode);
+  return productRef;
+}
+
 export function parseConsignmentSummaryFromHtml(html) {
   const orderCodeMatch = html.match(
     /kt-widget__subtitle[^>]*>\s*Sipariş Kodu\s*<\/span>\s*<span class="kt-widget__value"[^>]*>([\s\S]*?)<\/span>\s*<\/div>/i
@@ -455,12 +584,23 @@ export class TakipsanClient {
       packages.rows.length ??
       null;
     const orderQuantity = summary.orderQuantity;
+    const productFields = parseConsignmentProductFieldsFromHtml(html, summary.orderCode);
+    const productRef = productFields.productRef;
+    const productLabel =
+      productRef ||
+      (productFields.productName && productFields.modelCode
+        ? `${productFields.productName} · ${productFields.modelCode}`
+        : productFields.productName || productFields.modelCode || "");
 
     return {
       consignmentId: id,
       readCount,
       orderQuantity,
       orderCode: summary.orderCode || "",
+      productRef,
+      productName: productFields.productName,
+      modelCode: productFields.modelCode,
+      productLabel,
       packageCount: packageCount ?? 0,
       packageCountFromHtml,
       source,

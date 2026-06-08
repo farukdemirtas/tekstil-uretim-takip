@@ -2,6 +2,7 @@ import db from "./db.js";
 import { turkeyCalendarDayStartUtcSql, turkeyCalendarDayEndUtcSql, utcNowSqlite } from "./datetimeIstanbul.js";
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from "crypto";
 import { DEFAULT_DATA_ENTRY_PERMISSIONS, permissionsJsonForDb } from "./permissions.js";
+import { splitTakipsanProductLabel, buildTakipsanProductLabel } from "./takipsanProduct.js";
 
 const DEFAULT_PERMS_JSON = permissionsJsonForDb(DEFAULT_DATA_ENTRY_PERMISSIONS);
 
@@ -1124,6 +1125,101 @@ export async function getHedefTakipStageTotals(startDate, endDate, modelId) {
   return { stages };
 }
 
+function findBottleneckStageIndex(stages) {
+  const list = stages ?? [];
+  if (list.length === 0) return 0;
+  let idx = 0;
+  let minVal = Infinity;
+  for (let i = 0; i < list.length; i++) {
+    const v = Number(list[i]?.total) || 0;
+    if (v < minVal) {
+      minVal = v;
+      idx = i;
+    }
+  }
+  return idx;
+}
+
+/** Ekran 1: model hedefi (Takipsan) + üretim takip verisi (etkileyen/darboğaz proses) */
+export async function getEkran1GenelIlerleme(date, modelId) {
+  const mid =
+    modelId != null && Number.isFinite(Number(modelId)) && Number(modelId) > 0
+      ? Number(modelId)
+      : null;
+
+  let target = 0;
+  let hasModelTarget = false;
+  let dataStartDate = null;
+
+  if (mid) {
+    const modelRow = await dbGet(
+      `SELECT target_quantity, session_start_date FROM product_models WHERE id = ?`,
+      [mid]
+    );
+    if (modelRow) {
+      target = Math.max(0, Math.floor(Number(modelRow.target_quantity) || 0));
+      hasModelTarget = target > 0;
+      if (modelRow.session_start_date) {
+        dataStartDate = String(modelRow.session_start_date);
+      }
+    }
+  }
+
+  if (target <= 0) {
+    const day = await getUtuPaketDay(date);
+    target = Math.max(
+      0,
+      Math.floor(Number(day.packagingTarget) || Number(day.takipsan?.orderQuantity) || 0)
+    );
+  }
+
+  if (mid && !dataStartDate) {
+    const row = await dbGet(
+      `SELECT MIN(production_date) AS d FROM daily_product_meta WHERE model_id = ?`,
+      [mid]
+    );
+    dataStartDate = row?.d ? String(row.d) : null;
+  }
+  if (!dataStartDate) {
+    const row = await dbGet(`SELECT MIN(production_date) AS d FROM production_entries`);
+    dataStartDate = row?.d ? String(row.d) : String(date);
+  }
+
+  const rangeStart = dataStartDate <= date ? dataStartDate : String(date);
+  const cumulative = await getHedefTakipStageTotals(rangeStart, date, mid);
+  const todayRes = await getHedefTakipStageTotals(date, date, mid);
+
+  const cStages = cumulative.stages ?? [];
+  const tStages = todayRes.stages ?? [];
+  const bottleneckIdx = findBottleneckStageIndex(cStages);
+
+  const totalCompleted = cStages.length
+    ? Math.max(0, Math.floor(Number(cStages[bottleneckIdx]?.total) || 0))
+    : 0;
+  const todayProduced =
+    tStages.length && bottleneckIdx < tStages.length
+      ? Math.max(0, Math.floor(Number(tStages[bottleneckIdx]?.total) || 0))
+      : 0;
+
+  const aff = cStages[bottleneckIdx];
+  return {
+    date: String(date),
+    target,
+    hasModelTarget,
+    hasUtuPaketTarget: !hasModelTarget && target > 0,
+    totalCompleted,
+    todayProduced,
+    dataStartDate: rangeStart,
+    affectingStage: aff
+      ? {
+          sortOrder: Number(aff.sortOrder) || 0,
+          teamLabel: String(aff.teamLabel || ""),
+          processName: String(aff.processName || ""),
+        }
+      : null,
+  };
+}
+
 function eachWeekdayIsoInRange(startIso, endIso) {
   const parse = (s) => {
     const [y, m, d] = String(s).split("-").map(Number);
@@ -1186,12 +1282,24 @@ export function applyHedefSessionToDailyMeta({ modelId, startDate, endDate, prod
 export function listProductModels() {
   return new Promise((resolve, reject) => {
     db.all(
-      `SELECT id, model_code AS modelCode, product_name AS productName, created_at AS createdAt
+      `SELECT id, model_code AS modelCode, product_name AS productName, created_at AS createdAt,
+              takipsan_product_label AS takipsanProductLabel,
+              takipsan_order_code AS takipsanOrderCode,
+              target_quantity AS targetQuantity,
+              session_start_date AS sessionStartDate
        FROM product_models ORDER BY model_code COLLATE NOCASE`,
       [],
       (err, rows) => {
         if (err) return reject(err);
-        resolve(rows || []);
+        resolve(
+          (rows || []).map((r) => ({
+            ...r,
+            targetQuantity: Math.max(0, Math.floor(Number(r.targetQuantity) || 0)),
+            isTakipsanLinked: Boolean(
+              String(r.takipsanProductLabel || r.takipsanOrderCode || "").trim()
+            ),
+          }))
+        );
       }
     );
   });
@@ -1200,7 +1308,11 @@ export function listProductModels() {
 export function getProductModelWithBaselines(id) {
   return new Promise((resolve, reject) => {
     db.get(
-      `SELECT id, model_code AS modelCode, product_name AS productName, created_at AS createdAt
+      `SELECT id, model_code AS modelCode, product_name AS productName, created_at AS createdAt,
+              takipsan_product_label AS takipsanProductLabel,
+              takipsan_order_code AS takipsanOrderCode,
+              target_quantity AS targetQuantity,
+              session_start_date AS sessionStartDate
        FROM product_models WHERE id = ?`,
       [id],
       (err, row) => {
@@ -1213,7 +1325,14 @@ export function getProductModelWithBaselines(id) {
           [id],
           (e2, baselines) => {
             if (e2) return reject(e2);
-            resolve({ ...row, baselines: baselines || [] });
+            resolve({
+              ...row,
+              targetQuantity: Math.max(0, Math.floor(Number(row.targetQuantity) || 0)),
+              isTakipsanLinked: Boolean(
+                String(row.takipsanProductLabel || row.takipsanOrderCode || "").trim()
+              ),
+              baselines: baselines || [],
+            });
           }
         );
       }
@@ -1243,16 +1362,93 @@ function validateBaselineRows(teamCodes, baselines) {
   }
 }
 
-export async function createProductModel({ modelCode, productName, baselines }, teamCodes) {
-  const code = String(modelCode ?? "").trim();
-  const pname = String(productName ?? "").trim();
+export async function refreshProductModelTargetsFromTakipsan(takipsan, modelId = null) {
+  const qty = Math.max(0, Math.floor(Number(takipsan?.orderQuantity) || 0));
+  const orderCode = String(takipsan?.orderCode || "").trim();
+  const label = String(takipsan?.productLabel || "").trim();
+  const productRef = String(takipsan?.productRef || label).trim();
+  const parsed = splitTakipsanProductLabel(label);
+  const explicitName = String(takipsan?.productName || "").trim();
+  const explicitCode = String(takipsan?.modelCode || "").trim();
+  const productName = explicitName || parsed.productName;
+  const modelCode = explicitCode || parsed.modelCode || productRef;
+  const productLabel = productRef || buildTakipsanProductLabel(productName, modelCode);
+
+  if (modelId != null && Number.isFinite(Number(modelId)) && Number(modelId) > 0) {
+    await dbRun(
+      `UPDATE product_models SET
+        target_quantity = ?,
+        takipsan_product_label = CASE WHEN ? != '' THEN ? ELSE takipsan_product_label END,
+        takipsan_order_code = CASE WHEN ? != '' THEN ? ELSE takipsan_order_code END,
+        product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
+        model_code = CASE WHEN ? != '' THEN ? ELSE model_code END
+       WHERE id = ?`,
+      [qty, productLabel, productLabel, orderCode, orderCode, productName, productName, modelCode, modelCode, Number(modelId)]
+    );
+    return { ok: true, targetQuantity: qty, productLabel, productName, modelCode };
+  }
+
+  await dbRun(
+    `UPDATE product_models SET
+      target_quantity = ?,
+      takipsan_product_label = CASE WHEN ? != '' THEN ? ELSE takipsan_product_label END,
+      takipsan_order_code = CASE WHEN ? != '' THEN ? ELSE takipsan_order_code END
+     WHERE (? != '' AND takipsan_product_label = ?)
+        OR (? != '' AND model_code = ?)
+        OR (? != '' AND takipsan_order_code = ?)
+        OR (? != '' AND ? != '' AND model_code = ? AND product_name = ?)`,
+    [
+      qty,
+      productLabel,
+      productLabel,
+      orderCode,
+      orderCode,
+      productRef,
+      productRef,
+      modelCode,
+      modelCode,
+      orderCode,
+      orderCode,
+      modelCode,
+      productName,
+      modelCode,
+      productName,
+    ]
+  );
+  return { ok: true, targetQuantity: qty, productLabel, productName, modelCode };
+}
+
+export async function createProductModel(payload, teamCodes) {
+  const tsl = String(payload?.takipsanProductLabel ?? "").trim();
+  const toc = String(payload?.takipsanOrderCode ?? "").trim();
+  const fromTakipsan = Boolean(payload?.fromTakipsan || tsl || toc);
+  const parsed = splitTakipsanProductLabel(tsl);
+
+  let code = String(payload?.modelCode ?? "").trim();
+  let pname = String(payload?.productName ?? "").trim();
+  if (fromTakipsan) {
+    if (!code) code = parsed.modelCode || tsl;
+    if (!pname) pname = parsed.productName;
+    if (!code && tsl) code = tsl;
+  }
   if (!code) throw new Error("Model kodu gerekli");
-  validateBaselineRows(teamCodes, baselines);
-  const rows = Array.isArray(baselines) ? baselines : [];
+
+  const tqty = Math.max(0, Math.floor(Number(payload?.targetQuantity) || 0));
+  const sessionStart = payload?.sessionStartDate
+    ? String(payload.sessionStartDate).trim()
+    : null;
+  const productLabel =
+    tsl || (pname && code ? buildTakipsanProductLabel(pname, code) : "");
+
+  validateBaselineRows(teamCodes, payload?.baselines);
+  const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
+
   return new Promise((resolve, reject) => {
     db.run(
-      "INSERT INTO product_models (model_code, product_name) VALUES (?, ?)",
-      [code, pname],
+      `INSERT INTO product_models (
+        model_code, product_name, takipsan_product_label, takipsan_order_code, target_quantity, session_start_date
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+      [code, pname, productLabel, toc, tqty, sessionStart],
       function onIns(err) {
         if (err) return reject(err);
         const modelId = this.lastID;
@@ -1266,23 +1462,44 @@ export async function createProductModel({ modelCode, productName, baselines }, 
         });
         stmt.finalize((fe) => {
           if (fe) return reject(fe);
-          resolve({ id: modelId, modelCode: code, productName: pname });
+          resolve({
+            id: modelId,
+            modelCode: code,
+            productName: pname,
+            targetQuantity: tqty,
+            takipsanProductLabel: productLabel,
+          });
         });
       }
     );
   });
 }
 
-export async function updateProductModel(id, { modelCode, productName, baselines }, teamCodes) {
-  const code = String(modelCode ?? "").trim();
-  const pname = String(productName ?? "").trim();
+export async function updateProductModel(id, payload, teamCodes) {
+  const existing = await getProductModelWithBaselines(id);
+  if (!existing) throw new Error("Model bulunamadı");
+
+  const isLinked = Boolean(existing.isTakipsanLinked);
+  const code = isLinked ? String(existing.modelCode || "").trim() : String(payload?.modelCode ?? "").trim();
+  const pname = isLinked
+    ? String(existing.productName || "").trim()
+    : String(payload?.productName ?? "").trim();
   if (!code) throw new Error("Model kodu gerekli");
-  validateBaselineRows(teamCodes, baselines);
-  const rows = Array.isArray(baselines) ? baselines : [];
+
+  const sessionStart =
+    payload?.sessionStartDate !== undefined
+      ? payload.sessionStartDate
+        ? String(payload.sessionStartDate).trim()
+        : null
+      : existing.sessionStartDate ?? null;
+
+  validateBaselineRows(teamCodes, payload?.baselines);
+  const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
+
   return new Promise((resolve, reject) => {
     db.run(
-      "UPDATE product_models SET model_code = ?, product_name = ? WHERE id = ?",
-      [code, pname, id],
+      `UPDATE product_models SET model_code = ?, product_name = ?, session_start_date = ? WHERE id = ?`,
+      [code, pname, sessionStart, id],
       function onUp(err) {
         if (err) return reject(err);
         if (this.changes === 0) return reject(new Error("Kayıt bulunamadı"));
@@ -1298,7 +1515,7 @@ export async function updateProductModel(id, { modelCode, productName, baselines
           });
           stmt.finalize((fe) => {
             if (fe) return reject(fe);
-            resolve({ id, modelCode: code, productName: pname });
+            resolve({ id, modelCode: code, productName: pname, sessionStartDate: sessionStart });
           });
         });
       }
@@ -3321,6 +3538,73 @@ function serializeTakipsanPackages(packages) {
     })
     .filter(Boolean);
   return rows.length > 0 ? JSON.stringify(rows) : null;
+}
+
+function packageCreatedOnDateIso(createdAt, dateIso) {
+  const m = String(createdAt || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] === dateIso : false;
+}
+
+function packageDateFromCreatedAt(createdAt) {
+  const m = String(createdAt || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+/** Ekran 1 Genel İlerleme: ütü-paket hedefi, kümülatif paketlenen, bugün üretilen */
+export async function getUtuPaketEkran1Summary(date) {
+  const day = await getUtuPaketDay(date);
+  const target = Math.max(
+    0,
+    Math.floor(Number(day.packagingTarget) || Number(day.takipsan?.orderQuantity) || 0)
+  );
+
+  const startRow = await dbGet(
+    `SELECT MIN(production_date) AS dataStartDate
+     FROM utu_paket_meta
+     WHERE takipsan_synced_at IS NOT NULL OR packaging_target > 0`
+  );
+  const dataStartDate = startRow?.dataStartDate ? String(startRow.dataStartDate) : null;
+
+  let packages = day.takipsan?.packages || [];
+  if (!packages.length) {
+    const pkgRow = await dbGet(
+      `SELECT takipsan_packages_json AS json
+       FROM utu_paket_meta
+       WHERE takipsan_packages_json IS NOT NULL AND TRIM(takipsan_packages_json) != ''
+       ORDER BY production_date DESC
+       LIMIT 1`
+    );
+    packages = parseTakipsanPackagesJson(pkgRow?.json);
+  }
+
+  const rangeStart = dataStartDate || date;
+  let todayProduced = 0;
+  let totalCompleted = 0;
+
+  for (const pkg of packages) {
+    const items = Math.max(0, Math.floor(Number(pkg.items) || 0));
+    if (items <= 0) continue;
+    const pkgDate = packageDateFromCreatedAt(pkg.createdAt);
+    if (pkgDate && pkgDate >= rangeStart && pkgDate <= date) {
+      totalCompleted += items;
+    }
+    if (packageCreatedOnDateIso(pkg.createdAt, date)) {
+      todayProduced += items;
+    }
+  }
+
+  if (totalCompleted === 0 && packages.length === 0) {
+    totalCompleted = Math.max(0, Math.floor(Number(day.takipsan?.readCount) || 0));
+  }
+
+  return {
+    date,
+    target,
+    totalCompleted,
+    todayProduced,
+    dataStartDate,
+    hasUtuPaketData: Boolean(dataStartDate || target > 0 || packages.length > 0 || totalCompleted > 0),
+  };
 }
 
 export function getUtuPaketDay(date) {

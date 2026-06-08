@@ -281,6 +281,21 @@ export function initDb() {
           }
         });
       }
+      for (const col of [
+        ["takipsan_product_label", "TEXT NOT NULL DEFAULT ''"],
+        ["takipsan_order_code", "TEXT NOT NULL DEFAULT ''"],
+        ["target_quantity", "INTEGER NOT NULL DEFAULT 0"],
+        ["session_start_date", "TEXT"],
+      ]) {
+        if (!names.has(col[0])) {
+          db.run(`ALTER TABLE product_models ADD COLUMN ${col[0]} ${col[1]}`, (e) => {
+            if (e) {
+              // eslint-disable-next-line no-console
+              console.error(`[tekstil-db] product_models ${col[0]} migration:`, e.message);
+            }
+          });
+        }
+      }
     });
 
     db.run(`

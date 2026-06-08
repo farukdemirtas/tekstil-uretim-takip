@@ -10,13 +10,16 @@ import {
   getProcesses,
   getProductModel,
   getTeams,
+  getTakipsanConsignmentInfo,
   listProductModels,
+  refreshProductModelTarget,
   updateProductModel,
   type ProcessRow,
   type ProductModelListItem,
   type TeamRow,
 } from "@/lib/api";
 import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { formatModelPickerLabel, formatProductDisplayLine } from "@/lib/takipsanProduct";
 import { hasPermission } from "@/lib/permissions";
 
 const MAX_BASELINE_ROWS = 20;
@@ -48,6 +51,13 @@ export default function ProductModelsSection() {
   const [modelCode, setModelCode] = useState("");
   const [productName, setProductName] = useState("");
   const [baselines, setBaselines] = useState<BaselineRow[]>([emptyRow()]);
+  const [sessionStartDate, setSessionStartDate] = useState(() => clampToWeekdayIso(todayWeekdayIso()));
+  const [fromTakipsan, setFromTakipsan] = useState(false);
+  const [takipsanProductLabel, setTakipsanProductLabel] = useState("");
+  const [takipsanOrderCode, setTakipsanOrderCode] = useState("");
+  const [targetQuantity, setTargetQuantity] = useState(0);
+  const [isTakipsanLinkedEdit, setIsTakipsanLinkedEdit] = useState(false);
+  const [takipsanBusy, setTakipsanBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hedefApplyModelId, setHedefApplyModelId] = useState<number | "">("");
   const [hedefApplyStart, setHedefApplyStart] = useState(() => clampToWeekdayIso(todayWeekdayIso()));
@@ -109,11 +119,40 @@ export default function ProductModelsSection() {
     setModelCode("");
     setProductName("");
     setBaselines([emptyRow()]);
+    setFromTakipsan(false);
+    setTakipsanProductLabel("");
+    setTakipsanOrderCode("");
+    setTargetQuantity(0);
+    setIsTakipsanLinkedEdit(false);
+    setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
     setError(null);
     try {
       await loadTeamsAndProcesses();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Bölüm ve proses listesi alınamadı");
+    }
+  }
+
+  async function startNewFromTakipsan() {
+    setTakipsanBusy(true);
+    setError(null);
+    try {
+      await loadTeamsAndProcesses();
+      const info = await getTakipsanConsignmentInfo();
+      setEditingId("new");
+      setFromTakipsan(true);
+      setIsTakipsanLinkedEdit(true);
+      setModelCode(info.modelCode || info.productRef);
+      setProductName(info.productName);
+      setTakipsanProductLabel(info.productRef || info.productLabel);
+      setTakipsanOrderCode(info.orderCode);
+      setTargetQuantity(info.orderQuantity);
+      setBaselines([emptyRow()]);
+      setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Takipsan verisi alınamadı");
+    } finally {
+      setTakipsanBusy(false);
     }
   }
 
@@ -130,6 +169,14 @@ export default function ProductModelsSection() {
       setEditingId(id);
       setModelCode(d.modelCode);
       setProductName(d.productName);
+      setFromTakipsan(Boolean(d.isTakipsanLinked));
+      setIsTakipsanLinkedEdit(Boolean(d.isTakipsanLinked));
+      setTakipsanProductLabel(d.takipsanProductLabel || "");
+      setTakipsanOrderCode(d.takipsanOrderCode || "");
+      setTargetQuantity(d.targetQuantity ?? 0);
+      setSessionStartDate(
+        d.sessionStartDate ? clampToWeekdayIso(String(d.sessionStartDate)) : clampToWeekdayIso(todayWeekdayIso())
+      );
       const rows = (d.baselines || [])
         .slice()
         .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -175,6 +222,15 @@ export default function ProductModelsSection() {
         processName: b.processName,
         arkaHalf: b.arkaHalf ? 1 : 0,
       })),
+      sessionStartDate: sessionStartDate || null,
+      ...(editingId === "new" && fromTakipsan
+        ? {
+            fromTakipsan: true,
+            takipsanProductLabel,
+            takipsanOrderCode,
+            targetQuantity,
+          }
+        : {}),
     };
     try {
       if (editingId === "new") {
@@ -257,19 +313,29 @@ export default function ProductModelsSection() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Ürün modelleri (hedef bazı)</h2>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Bu üründe kaç bölüm hattı izlenecekse o kadar satır ekleyin (ör. 3 veya 5). Her satırda{" "}
-            <strong className="font-medium text-slate-700 dark:text-slate-200">çalışılacak bölüm</strong> ve o bölümde
-            üretim toplamına <strong className="font-medium text-slate-700 dark:text-slate-200">baz alınacak proses</strong>{" "}
-            seçilir. Genel tamamlanan, bu satırların adetlerinin minimumudur.
+            Takipsan sevkiyatından ürün adı ve hedef adet otomatik gelir. Siz yalnızca{" "}
+            <strong className="font-medium text-slate-700 dark:text-slate-200">baz alınacak proses</strong> ve{" "}
+            <strong className="font-medium text-slate-700 dark:text-slate-200">takip başlangıç tarihi</strong>ni
+            belirlersiniz. Eski manuel modeller aynen kalır.
           </p>
         </div>
+        <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void startNewFromTakipsan()}
+          disabled={takipsanBusy}
+          className="shrink-0 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        >
+          {takipsanBusy ? "Takipsan…" : "Takipsan'dan ürün ekle"}
+        </button>
         <button
           type="button"
           onClick={() => startNew()}
-          className="shrink-0 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
+          className="shrink-0 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
         >
-          Yeni model
+          Manuel model
         </button>
+        </div>
       </div>
 
       {hasPermission("hedefTakip") ? (
@@ -300,7 +366,7 @@ export default function ProductModelsSection() {
             <option value="">Model seçin…</option>
             {list.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.modelCode} — {m.productName || "—"}
+                {formatModelPickerLabel(m.productName, m.modelCode, m.targetQuantity)}
               </option>
             ))}
           </select>
@@ -353,28 +419,75 @@ export default function ProductModelsSection() {
       {editingId !== null ? (
         <div className="mt-6 space-y-4 border-t border-slate-200 pt-6 dark:border-slate-600">
           <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-            {editingId === "new" ? "Yeni model" : "Modeli düzenle"}
+            {editingId === "new" ? (fromTakipsan ? "Takipsan ürünü" : "Yeni model") : "Modeli düzenle"}
           </h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Model kodu</label>
-              <input
-                value={modelCode}
-                onChange={(e) => setModelCode(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                placeholder="Örn. YM-2026-04"
-              />
+
+          {isTakipsanLinkedEdit ? (
+            <div className="rounded-lg border border-sky-200 bg-sky-50/80 p-4 dark:border-sky-900/40 dark:bg-sky-950/20">
+              <p className="text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                Takipsan ürünü
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                {takipsanProductLabel || formatProductDisplayLine(productName, modelCode)}
+              </p>
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                Hedef adet (sipariş sayısı):{" "}
+                <strong className="text-slate-800 dark:text-slate-100">
+                  {targetQuantity > 0 ? targetQuantity.toLocaleString("tr-TR") : "—"}
+                </strong>
+              </p>
+              {typeof editingId === "number" ? (
+                <button
+                  type="button"
+                  disabled={takipsanBusy}
+                  onClick={() => {
+                    setTakipsanBusy(true);
+                    void refreshProductModelTarget(editingId)
+                      .then((r) => {
+                        setTargetQuantity(r.targetQuantity);
+                        if (r.productLabel) setTakipsanProductLabel(r.productLabel);
+                      })
+                      .catch((e) => setError(e instanceof Error ? e.message : "Güncellenemedi"))
+                      .finally(() => setTakipsanBusy(false));
+                  }}
+                  className="mt-2 rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-slate-900 dark:text-sky-200"
+                >
+                  {takipsanBusy ? "Yenileniyor…" : "Takipsan'dan hedefi yenile"}
+                </button>
+              ) : null}
             </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Ürün adı</label>
-              <input
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                placeholder="Örn. Polo tişört"
-              />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Model kodu</label>
+                <input
+                  value={modelCode}
+                  onChange={(e) => setModelCode(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  placeholder="Örn. YM-2026-04"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Ürün adı</label>
+                <input
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  placeholder="Örn. Polo tişört"
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          <WeekdayDatePicker
+            label="Takip başlangıç tarihi"
+            value={sessionStartDate}
+            onChange={(v) => setSessionStartDate(coerceWeekdayPickerValue(v))}
+            className="max-w-xs"
+          />
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            Ekran 1 ve hedef özette «Biten» toplamı bu tarihten itibaren sayılır.
+          </p>
 
           <div className="overflow-x-auto">
             {teams.length === 0 || processes.length === 0 ? (
@@ -502,8 +615,16 @@ export default function ProductModelsSection() {
                 className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
               >
                 <div>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{m.modelCode}</span>
-                  <span className="text-slate-500 dark:text-slate-400"> — {m.productName || "—"}</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {m.isTakipsanLinked
+                      ? m.takipsanProductLabel || formatModelPickerLabel(m.productName, m.modelCode)
+                      : `${m.modelCode} — ${m.productName || "—"}`}
+                  </span>
+                  {m.targetQuantity != null && m.targetQuantity > 0 ? (
+                    <span className="ml-2 text-xs text-teal-700 dark:text-teal-300">
+                      {m.targetQuantity.toLocaleString("tr-TR")} adet
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex gap-2">
                   <button

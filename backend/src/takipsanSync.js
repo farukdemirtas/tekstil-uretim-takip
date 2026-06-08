@@ -4,8 +4,10 @@ import {
   UTU_PAKET_SIZE_CODES,
   getUtuPaketDay,
   saveUtuPaketDay,
+  refreshProductModelTargetsFromTakipsan,
 } from "./queries.js";
 import { TakipsanClient, isTakipsanConfigured } from "./takipsanClient.js";
+import { splitTakipsanProductLabel, buildTakipsanProductLabel } from "./takipsanProduct.js";
 
 const SLOT_BOUNDARIES = [
   { key: "h0900", start: 9 * 60 },
@@ -132,6 +134,14 @@ export async function syncTakipsanToUtuPaket(options = {}) {
         takipsanPackages: data.packages,
       });
 
+      await refreshProductModelTargetsFromTakipsan({
+        orderCode: data.orderCode,
+        orderQuantity: packagingTarget,
+        productLabel: data.productRef || data.productLabel || "",
+        productName: data.productName,
+        modelCode: data.modelCode,
+      }).catch(() => {});
+
       const result = {
         ok: true,
         date,
@@ -139,6 +149,7 @@ export async function syncTakipsanToUtuPaket(options = {}) {
         readCount: data.readCount,
         orderQuantity: packagingTarget,
         orderCode: data.orderCode,
+        productLabel: data.productLabel || "",
         source: data.source,
         fromHtml: data.fromHtml,
         fromPackages: data.fromPackages,
@@ -180,4 +191,33 @@ export async function syncTakipsanToUtuPaket(options = {}) {
 export function refreshTakipsanEnabledFlag() {
   updateState({ enabled: isTakipsanConfigured() });
   return takipsanSyncState.enabled;
+}
+
+/** Ayarlar / Hedef Takip: sevkiyattan ürün adı ve hedef adet önizlemesi */
+export async function fetchTakipsanConsignmentProductInfo() {
+  if (!isTakipsanConfigured()) {
+    throw new Error(
+      "Takipsan entegrasyonu yapılandırılmamış (TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID)"
+    );
+  }
+  const consignmentId = String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
+  const client = getTakipsanClient();
+  const data = await client.fetchConsignmentReadData(consignmentId);
+  const productRef = String(data.productRef || data.productLabel || "").trim();
+  const productName = String(data.productName || "").trim();
+  const modelCode = String(data.modelCode || productRef || "").trim();
+  const productLabel =
+    productRef ||
+    buildTakipsanProductLabel(productName, modelCode) ||
+    "";
+  return {
+    consignmentId,
+    productLabel,
+    productRef: productRef || productLabel,
+    productName,
+    modelCode,
+    orderCode: String(data.orderCode || "").trim(),
+    orderQuantity: Math.max(0, Math.floor(Number(data.orderQuantity) || 0)),
+    readCount: Math.max(0, Math.floor(Number(data.readCount) || 0)),
+  };
 }

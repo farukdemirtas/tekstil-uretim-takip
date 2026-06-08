@@ -70,6 +70,9 @@ import {
   deleteRepairEntries,
   getUtuPaketDay,
   getUtuPaketAnalytics,
+  getUtuPaketEkran1Summary,
+  getEkran1GenelIlerleme,
+  refreshProductModelTargetsFromTakipsan,
   saveUtuPaketDay,
   deleteUtuPaketDay,
   getProsesVeriRows,
@@ -92,7 +95,7 @@ import {
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 import { scheduleWeeklyBriefingCron, sendWeeklyReportForCurrentTurkeyBusinessWeek } from "./weeklyReportJob.js";
 import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
-import { syncTakipsanToUtuPaket, takipsanSyncState, todayTurkeyIso } from "./takipsanSync.js";
+import { syncTakipsanToUtuPaket, takipsanSyncState, todayTurkeyIso, fetchTakipsanConsignmentProductInfo } from "./takipsanSync.js";
 import { isTakipsanConfigured } from "./takipsanClient.js";
 
 const app = express();
@@ -620,6 +623,30 @@ app.delete("/api/product-models/:id", requirePermission("ayarlar"), async (req, 
   }
 });
 
+app.post(
+  "/api/product-models/:id/refresh-target",
+  requireAnyPermission(["ayarlar", "hedefTakip"]),
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: "Geçersiz id" });
+    try {
+      const info = await fetchTakipsanConsignmentProductInfo();
+      await refreshProductModelTargetsFromTakipsan(info, id);
+      const model = await getProductModelWithBaselines(id);
+      if (!model) return res.status(404).json({ message: "Bulunamadı" });
+      return res.json({
+        id: model.id,
+        targetQuantity: model.targetQuantity,
+        productLabel: info.productRef || info.productLabel,
+        productRef: info.productRef || info.productLabel,
+        orderQuantity: info.orderQuantity,
+      });
+    } catch (e) {
+      return res.status(500).json({ message: String(e.message || e) });
+    }
+  }
+);
+
 app.post("/api/hedef/apply-session", requirePermission("hedefTakip"), async (req, res) => {
   const { modelId, startDate, endDate, productName, productModel } = req.body || {};
   const mid = Number(modelId);
@@ -885,6 +912,21 @@ app.get("/api/production/hedef-stage-totals", requireAuth, async (req, res) => {
     res.json(totals);
   } catch (error) {
     res.status(500).json({ message: "Hedef takip verisi alınamadı", error: String(error) });
+  }
+});
+
+app.get("/api/ekran1/genel-ilerleme", requireAnyPermission(["ekran1", "hedefTakip"]), async (req, res) => {
+  const { date, modelId: modelIdRaw } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu (YYYY-MM-DD)" });
+  const modelId =
+    modelIdRaw != null && String(modelIdRaw).trim() !== "" && Number.isFinite(Number(modelIdRaw))
+      ? Number(modelIdRaw)
+      : null;
+  try {
+    const data = await getEkran1GenelIlerleme(String(date), modelId);
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ message: "Genel ilerleme özeti alınamadı", error: String(err) });
   }
 });
 
@@ -1362,6 +1404,17 @@ app.get("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
   }
 });
 
+app.get("/api/utu-paket/ekran1-summary", requireAnyPermission(["ekran1", "utuPaket"]), async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    const data = await getUtuPaketEkran1Summary(String(date));
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ message: "Ütü–paket özeti alınamadı", error: String(err) });
+  }
+});
+
 app.put("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
   const { date, stages, beden, packagingTarget } = req.body || {};
   if (!date) return res.status(400).json({ message: "date zorunlu" });
@@ -1387,6 +1440,18 @@ app.delete("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => 
 });
 
 // ─── Takipsan Plus → Ütü–Paket paketleme köprüsü ───────────────────────────
+
+app.get("/api/takipsan/consignment-info", requireAnyPermission(["ayarlar", "hedefTakip", "utuPaket"]), async (_req, res) => {
+  try {
+    const info = await fetchTakipsanConsignmentProductInfo();
+    return res.json(info);
+  } catch (err) {
+    return res.status(500).json({
+      message: "Takipsan sevkiyat bilgisi alınamadı",
+      error: String(err?.message ?? err),
+    });
+  }
+});
 
 app.get("/api/takipsan/status", requirePermission("utuPaket"), async (_req, res) => {
   let lastPackages = takipsanSyncState.lastPackages || [];

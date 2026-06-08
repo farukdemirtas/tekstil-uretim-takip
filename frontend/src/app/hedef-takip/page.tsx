@@ -8,11 +8,13 @@ import {
   getHedefTakipStageTotals,
   getProductModel,
   listProductModels,
+  refreshProductModelTarget,
   setAuthToken,
   type HedefStageLineDto,
   type ProductModelListItem,
 } from "@/lib/api";
 import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { formatModelPickerLabel, formatProductDisplayLine } from "@/lib/takipsanProduct";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission } from "@/lib/permissions";
 
@@ -137,15 +139,35 @@ export default function HedefTakip() {
             setSelectedModelId(mid);
           }
 
-          setTarget(t);
-          setStartDate(today);
-          setEndDate(today);
-          persistSettings(t, today, today, rm, mid);
+          const loadTarget = async (modelId: number) => {
+            try {
+              const m = await getProductModel(modelId);
+              let qty = m.targetQuantity ?? 0;
+              if (m.isTakipsanLinked && qty <= 0) {
+                try {
+                  const r = await refreshProductModelTarget(modelId);
+                  qty = r.targetQuantity;
+                } catch {
+                  /* ignore */
+                }
+              }
+              return qty;
+            } catch {
+              return 0;
+            }
+          };
 
-          if (rm && mid != null) {
-            setRangeMode(true);
-            void fetchRangeData(today, today, false, mid);
-          }
+          void (async () => {
+            const qty = mid != null ? await loadTarget(mid) : 0;
+            setTarget(qty);
+            setStartDate(today);
+            setEndDate(today);
+            persistSettings(qty, today, today, rm, mid);
+            if (rm && mid != null) {
+              setRangeMode(true);
+              void fetchRangeData(today, today, false, mid);
+            }
+          })();
         } catch { /* ignore */ }
       })
       .catch(() => {});
@@ -263,12 +285,32 @@ export default function HedefTakip() {
   function handleModelChange(id: string) {
     if (id === "") {
       setSelectedModelId("");
-      persistSettings(target, startDate, endDate, rangeMode, null);
+      setTarget(0);
+      persistSettings(0, startDate, endDate, rangeMode, null);
       return;
     }
     const num = Number(id);
     setSelectedModelId(num);
-    persistSettings(target, startDate, endDate, rangeMode, num);
+    void (async () => {
+      try {
+        let m = await getProductModel(num);
+        let qty = m.targetQuantity ?? 0;
+        if (m.isTakipsanLinked && qty <= 0) {
+          try {
+            const refreshed = await refreshProductModelTarget(num);
+            qty = refreshed.targetQuantity;
+            m = await getProductModel(num);
+          } catch {
+            /* mevcut değer */
+          }
+        }
+        setTarget(qty);
+        persistSettings(qty, startDate, endDate, rangeMode, num);
+      } catch {
+        setTarget(0);
+        persistSettings(0, startDate, endDate, rangeMode, num);
+      }
+    })();
   }
 
   /* ─── Hesaplamalar ─── */
@@ -327,18 +369,15 @@ export default function HedefTakip() {
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Hedef adet */}
+          {/* Hedef adet — Takipsan / model kaydından */}
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/30">
             <label className="text-sm font-medium">Toplam Hedef Adet</label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={target}
-              onChange={(e) => handleTargetChange(e.target.value)}
-              className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:focus:border-blue-400"
-            />
-            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">Sayfa yenilenince korunur</div>
+            <div className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold tabular-nums text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+              {target > 0 ? target.toLocaleString("tr-TR") : "—"}
+            </div>
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Seçili ürün modelinden (Takipsan sipariş sayısı). Manuel giriş kaldırıldı.
+            </div>
           </div>
 
           {/* Genel özet */}
@@ -381,7 +420,7 @@ export default function HedefTakip() {
             <option value="">Model seçin…</option>
             {models.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.modelCode} — {m.productName || "—"}
+                {formatModelPickerLabel(m.productName, m.modelCode, m.targetQuantity)}
               </option>
             ))}
           </select>
@@ -391,8 +430,10 @@ export default function HedefTakip() {
             </p>
           ) : selectedModelId !== "" ? (
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-              Ürün: <strong>{models.find((x) => x.id === selectedModelId)?.productName || "—"}</strong> · Kod:{" "}
-              <strong>{models.find((x) => x.id === selectedModelId)?.modelCode}</strong>
+              {formatProductDisplayLine(
+                models.find((x) => x.id === selectedModelId)?.productName || "",
+                models.find((x) => x.id === selectedModelId)?.modelCode || ""
+              )}
             </p>
           ) : null}
         </div>

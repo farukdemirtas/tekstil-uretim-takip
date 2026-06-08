@@ -9,10 +9,12 @@ import {
   getProduction,
   getProsesVeriRowsFromServer,
   getPersonnelBirthdaysToday,
+  getEkran1GenelIlerleme,
   setAuthToken,
   type HedefAlertEvalPayload,
   type HedefStageLineDto,
   type PersonnelBirthdayRow,
+  type Ekran1GenelIlerleme,
 } from "@/lib/api";
 
 import {
@@ -343,6 +345,7 @@ export default function Ekran1IcerikPage() {
   const [birthdayOverlayVisible, setBirthdayOverlayVisible] = useState(false);
   const [birthdaySlideIndex, setBirthdaySlideIndex] = useState(0);
   const [hedefAlertServer, setHedefAlertServer] = useState<HedefAlertEvalPayload | null>(null);
+  const [genelIlerleme, setGenelIlerleme] = useState<Ekran1GenelIlerleme | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const birthdayCelebration = useMemo(() => {
@@ -386,13 +389,19 @@ export default function Ekran1IcerikPage() {
     return list[birthdaySlideIndex % list.length]!;
   }, [birthdayCelebration.people, birthdaySlideIndex]);
 
+  const genelHedef = useMemo(() => genelIlerleme?.target ?? 0, [genelIlerleme]);
+
   const genelTamamlanan = useMemo(() => {
+    if (genelIlerleme) return genelIlerleme.totalCompleted;
     if (!stages.length) return 0;
     return Math.min(...stages.map((s) => (Number.isFinite(s.total) ? s.total : 0)));
-  }, [stages]);
+  }, [genelIlerleme, stages]);
+
+  const bugunUretilen = useMemo(() => genelIlerleme?.todayProduced ?? 0, [genelIlerleme]);
+
   const genelPercent = useMemo(
-    () => calcPercent(genelTamamlanan, target),
-    [genelTamamlanan, target]
+    () => calcPercent(genelTamamlanan, genelHedef),
+    [genelTamamlanan, genelHedef]
   );
 
   const fetchData = useCallback(async (silent: boolean) => {
@@ -405,12 +414,14 @@ export default function Ekran1IcerikPage() {
       const isSingleDay = startDate === endDate;
 
       // Verimlilik API’si başarısız olsa da (eski: yalnız ekran1 yetkisi → 403) ana özet yüklenir; ticker boş kalır.
-      const [totals, rawCurrent, rawPrev, dayRowsRaw] = await Promise.all([
+      const [totals, rawCurrent, rawPrev, dayRowsRaw, genelOzet] = await Promise.all([
         getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined),
         getTopWorkersAnalytics({ startDate, endDate, limit: 200 }).catch(() => []),
         getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }).catch(() => []),
         isSingleDay ? getProduction(endDate).catch(() => []) : Promise.resolve([]),
+        getEkran1GenelIlerleme(endDate, modelId).catch(() => null),
       ]);
+      setGenelIlerleme(genelOzet);
       const dayRows = isSingleDay ? dayRowsRaw : [];
       setStages(totals.stages ?? []);
 
@@ -702,13 +713,13 @@ export default function Ekran1IcerikPage() {
       return {
         label,
         value,
-        pct: calcPercent(value, target),
+        pct: calcPercent(value, genelHedef),
         gradient: STAGE_GRADIENTS[i % STAGE_GRADIENTS.length],
         glow: STAGE_GLOWS[i % STAGE_GLOWS.length],
         textColor: STAGE_TEXT[i % STAGE_TEXT.length],
       };
     });
-  }, [stages, target]);
+  }, [stages, genelHedef]);
 
   if (!hasToken) {
     return (
@@ -1000,19 +1011,19 @@ export default function Ekran1IcerikPage() {
                 </div>
               </div>
 
-              {/* Hedef / gerçekleşen / kalan — biraz daha kompakt */}
-              <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3 md:mt-5 md:gap-4">
+              {/* Hedef / gerçekleşen / kalan / bugün — ütü-paket kaynaklı */}
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 md:mt-5 md:gap-4">
                 <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-slate-200 bg-white px-2 py-3 shadow-sm sm:py-4">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 sm:text-[10px]">Hedef</p>
                   <p
                     className="font-black tabular-nums text-slate-800"
                     style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
                   >
-                    {target.toLocaleString("tr-TR")}
+                    {genelHedef.toLocaleString("tr-TR")}
                   </p>
                 </div>
                 <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-2 py-3 shadow-sm sm:py-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 sm:text-[10px]">Gerçekleşen</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 sm:text-[10px]">BİTEN</p>
                   <p
                     className="font-black tabular-nums text-emerald-700"
                     style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
@@ -1026,7 +1037,16 @@ export default function Ekran1IcerikPage() {
                     className="font-black tabular-nums text-amber-800"
                     style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
                   >
-                    {Math.max(0, target - genelTamamlanan).toLocaleString("tr-TR")}
+                    {Math.max(0, genelHedef - genelTamamlanan).toLocaleString("tr-TR")}
+                  </p>
+                </div>
+                <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-teal-200 bg-teal-50 px-2 py-3 shadow-sm sm:py-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-teal-600 sm:text-[10px]">Bugün üretilen</p>
+                  <p
+                    className="font-black tabular-nums text-teal-700"
+                    style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
+                  >
+                    {bugunUretilen.toLocaleString("tr-TR")}
                   </p>
                 </div>
               </div>
@@ -1141,7 +1161,7 @@ export default function Ekran1IcerikPage() {
                     </div>
 
                     <p className="mt-2 text-[11px] font-bold tabular-nums text-slate-950 sm:text-xs md:text-sm dark:text-slate-200">
-                      {row.value.toLocaleString("tr-TR")} / {target.toLocaleString("tr-TR")}
+                      {row.value.toLocaleString("tr-TR")} / {genelHedef.toLocaleString("tr-TR")}
                     </p>
                   </div>
                 ))}

@@ -52,6 +52,7 @@ import {
   sumProductionRow,
   type ProductionSlotKey,
 } from "@/lib/productionSlots";
+import { formatProductDisplayLine } from "@/lib/takipsanProduct";
 import ExcelImportPanel from "@/components/ExcelImportPanel";
 import BulkEntryPanel from "@/components/BulkEntryPanel";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
@@ -1120,6 +1121,15 @@ export default function HomePage() {
           rakamları, tanımlı modele göre seçilen bölüm ve proseslerden hesaplanır.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1 sm:col-span-2">
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Ürün özeti</span>
+            <div
+              className="input-modern w-full cursor-default bg-slate-50/90 text-sm font-medium text-slate-800 dark:bg-slate-900/50 dark:text-slate-100"
+              title="Hedef Takip / ürün modeli üzerinden güncellenir"
+            >
+              {formatProductDisplayLine(productName, productModel)}
+            </div>
+          </div>
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Ürün adı</span>
             <div
