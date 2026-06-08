@@ -6,8 +6,21 @@ import { THEME_CHANGE_EVENT } from "@/lib/permissions";
 
 type Theme = "light" | "dark";
 
+function useEkran5EmbeddedView(): boolean {
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    const sync = () => setActive(document.body.dataset.ekran5View === "true");
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(document.body, { attributes: true, attributeFilter: ["data-ekran5-view"] });
+    return () => obs.disconnect();
+  }, []);
+  return active;
+}
+
 export default function ThemeToggle() {
   const pathname = usePathname();
+  const ekran5Embedded = useEkran5EmbeddedView();
   const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
@@ -34,9 +47,12 @@ export default function ThemeToggle() {
     pathname.startsWith("/ekran2") ||
     pathname.startsWith("/ekran3") ||
     pathname.startsWith("/ekran4") ||
+    pathname.startsWith("/ekran5") ||
     pathname.startsWith("/proses-kontrol") ||
-    pathname.startsWith("/hata-rapor")
-  ) return null;
+    pathname.startsWith("/hata-rapor") ||
+    ekran5Embedded
+  )
+    return null;
 
   function toggleTheme() {
     const next: Theme = theme === "dark" ? "light" : "dark";

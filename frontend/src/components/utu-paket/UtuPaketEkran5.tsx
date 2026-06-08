@@ -6,6 +6,7 @@ import { todayWeekdayIso } from "@/lib/businessCalendar";
 import {
   calcUtuPaketPercent,
   normalizeUtuPaketPayload,
+  sumGunPaketlenen,
   sumUtuPaketSlots,
 } from "@/lib/utuPaket";
 
@@ -97,7 +98,9 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [hasToken, setHasToken] = useState(false);
   const [displayDate, setDisplayDate] = useState(dateIso || todayWeekdayIso());
   const [optikCount, setOptikCount] = useState(0);
+  const [utuCount, setUtuCount] = useState(0);
   const [paketCount, setPaketCount] = useState(0);
+  const [gunPaketlenen, setGunPaketlenen] = useState(0);
   const [target, setTarget] = useState(0);
   const [productLabel, setProductLabel] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
@@ -131,8 +134,10 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       const data = normalizeUtuPaketPayload({ ...raw, date });
       setDisplayDate(date);
       setOptikCount(sumUtuPaketSlots(data.stages.optik));
-      setPaketCount(sumUtuPaketSlots(data.stages.paketleme));
-      setTarget(data.packagingTarget);
+      setUtuCount(sumUtuPaketSlots(data.stages.utu));
+      setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
+      setGunPaketlenen(sumGunPaketlenen(data.takipsan?.packages, date).adet);
+      setTarget(data.takipsan?.orderQuantity ?? data.packagingTarget);
       const label = [meta?.productName, meta?.productModel].filter(Boolean).join(" · ");
       setProductLabel(label);
       setLastUpdated(formatClock());
@@ -187,24 +192,24 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
 
       <div className="relative z-10 mx-auto flex h-full w-full max-w-[min(100%,120rem)] flex-col gap-2 px-3 py-2 sm:px-5 sm:py-3 md:px-8">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 shadow-sm sm:px-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-lg bg-gradient-to-r from-teal-600 to-emerald-500 px-3 py-1 text-xs font-black uppercase tracking-widest text-white shadow">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 shadow-sm sm:px-4 sm:py-2.5">
+          <div className="min-w-0 flex-1">
+            <span className="inline-block rounded-lg bg-gradient-to-r from-teal-600 to-emerald-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-white shadow">
               EKRAN 5
             </span>
-            <div>
-              <p className="text-sm font-extrabold text-neutral-950 md:text-base">
-                {formatDateTr(displayDate)}
-                {productLabel ? ` · ${productLabel}` : ""}
-              </p>
-              {lastUpdated ? (
-                <p className="text-[11px] font-semibold text-slate-600">
-                  Son güncelleme {lastUpdated} · 30 sn yenileme
-                </p>
+            <p className="mt-1.5 truncate text-sm font-extrabold leading-snug text-neutral-950 sm:text-base md:text-lg">
+              {formatDateTr(displayDate)}
+              {productLabel ? (
+                <span className="font-bold text-neutral-700"> · {productLabel}</span>
               ) : null}
-            </div>
+            </p>
+            {lastUpdated ? (
+              <p className="mt-0.5 text-[10px] font-semibold text-slate-500 sm:text-xs">
+                Son güncelleme {lastUpdated} · 30 sn yenileme
+              </p>
+            ) : null}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             {embedded ? (
               <button
                 type="button"
@@ -237,40 +242,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
           </div>
         ) : null}
 
-        <div className="flex shrink-0 justify-center px-1">
-          <h1
-            className="rounded-xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 px-5 py-1.5 text-center font-black uppercase tracking-[0.14em] text-white shadow-md ring-1 ring-slate-700/50 sm:px-8"
-            style={{ fontSize: "clamp(0.9rem, 2vw, 1.5rem)" }}
-          >
-            Ütü–Paket Takip
-          </h1>
-        </div>
-
-        {/* Üst satır: kompakt özet */}
-        <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-          <StageTvCard
-            title="Optik–Ütü"
-            count={optikCount}
-            target={target}
-            gradient="from-violet-600 to-purple-500"
-            glow="shadow-violet-500/20"
-            doneBox="border-violet-300 bg-violet-50"
-            doneLabel="text-violet-800"
-            doneValue="text-violet-900"
-          />
-          <StageTvCard
-            title="Paketleme"
-            count={paketCount}
-            target={target}
-            gradient="from-emerald-600 to-teal-500"
-            glow="shadow-emerald-500/20"
-            doneBox="border-emerald-300 bg-emerald-50"
-            doneLabel="text-emerald-800"
-            doneValue="text-emerald-900"
-          />
-        </div>
-
-        {/* Paketleme ilerlemesi — ana odak */}
+        {/* Paketleme ilerlemesi — üstte ana odak */}
         <section className="flex min-h-0 flex-1 flex-col justify-center pb-2">
           <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center rounded-2xl border-2 border-slate-300 bg-white px-4 py-5 shadow-xl ring-1 ring-slate-200/80 sm:px-8 sm:py-8 md:rounded-3xl md:px-10 md:py-10">
             <div className="mb-4 flex justify-center sm:mb-6">
@@ -312,7 +284,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
                 </div>
               </div>
             </div>
-            <div className="mt-5 grid grid-cols-3 gap-3 sm:mt-8 sm:gap-5">
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-8 sm:grid-cols-4 sm:gap-5">
               <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border-2 border-slate-200 bg-slate-50 px-2 py-4 shadow-sm sm:py-5">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 sm:text-xs">
                   Hedef
@@ -335,6 +307,17 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
                   {paketCount.toLocaleString("tr-TR")}
                 </p>
               </div>
+              <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border-2 border-teal-400 bg-teal-50 px-2 py-4 shadow-sm sm:py-5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-teal-800 sm:text-xs">
+                  Bugün paketlenen
+                </p>
+                <p
+                  className="font-black tabular-nums text-teal-800"
+                  style={{ fontSize: "clamp(1.5rem, 5vw, 4rem)" }}
+                >
+                  {gunPaketlenen.toLocaleString("tr-TR")}
+                </p>
+              </div>
               <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border-2 border-amber-300 bg-amber-50 px-2 py-4 shadow-sm sm:py-5">
                 <p className="text-[10px] font-black uppercase tracking-widest text-amber-800 sm:text-xs">
                   Kalan
@@ -349,6 +332,30 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
             </div>
           </div>
         </section>
+
+        {/* Alt satır: Optik + Ütü */}
+        <div className="grid shrink-0 grid-cols-1 gap-3 pb-2 sm:grid-cols-2 sm:gap-4">
+          <StageTvCard
+            title="Optik"
+            count={optikCount}
+            target={target}
+            gradient="from-violet-600 to-purple-500"
+            glow="shadow-violet-500/20"
+            doneBox="border-violet-300 bg-violet-50"
+            doneLabel="text-violet-800"
+            doneValue="text-violet-900"
+          />
+          <StageTvCard
+            title="Ütü"
+            count={utuCount}
+            target={target}
+            gradient="from-amber-600 to-orange-500"
+            glow="shadow-amber-500/20"
+            doneBox="border-orange-500 bg-orange-50"
+            doneLabel="text-orange-800"
+            doneValue="text-orange-900"
+          />
+        </div>
       </div>
     </div>
   );

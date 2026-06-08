@@ -27,6 +27,7 @@ import {
   emptyUtuPaketStages,
   normalizeTakipsanPackages,
   normalizeUtuPaketPayload,
+  sumGunPaketlenen,
   sumUtuPaketSlots,
   type UtuPaketDayPayload,
   type UtuPaketSlotKey,
@@ -43,6 +44,12 @@ function formatPackageCreatedAt(raw: string): string {
   const [, y, mo, d, h, mi] = m;
   const date = `${d}.${mo}.${y}`;
   return h && mi ? `${date} ${h}:${mi}` : date;
+}
+
+function formatDayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}.${m}.${y}`;
 }
 
 const STAGE_TAB_CLASS: Record<string, string> = {
@@ -185,6 +192,17 @@ export default function UtuPaketPage() {
     return () => window.clearInterval(id);
   }, [authorized, mainTab, activeStage, runTakipsanSync]);
 
+  useEffect(() => {
+    if (mainTab === "ekran5") {
+      document.body.dataset.ekran5View = "true";
+    } else {
+      delete document.body.dataset.ekran5View;
+    }
+    return () => {
+      delete document.body.dataset.ekran5View;
+    };
+  }, [mainTab]);
+
   const stageTotals = useMemo(() => {
     const out = {} as Record<UtuPaketStage, number>;
     for (const st of UTU_PAKET_STAGES) {
@@ -214,6 +232,16 @@ export default function UtuPaketPage() {
     takipsanStatus?.lastPackageCount ?? 0
   );
   const paketOrderQty = data.takipsan?.orderQuantity ?? data.packagingTarget ?? 0;
+
+  const gunPaketOzeti = useMemo(
+    () => sumGunPaketlenen(paketPackages, selectedDate),
+    [paketPackages, selectedDate]
+  );
+
+  const gunPaketLabel =
+    selectedDate === todayIsoTurkey()
+      ? "Bugün paketlenen"
+      : `${formatDayLabel(selectedDate)} paketlenen`;
 
   const pipelineMin = useMemo(() => {
     const vals = UTU_PAKET_STAGES.map((s) => stageTotals[s]).filter((n) => n > 0);
@@ -416,12 +444,31 @@ export default function UtuPaketPage() {
                 <p className="text-lg font-bold">{m.label}</p>
               </div>
               <div className="px-4 py-3">
-                <p className="text-2xl font-black tabular-nums text-slate-900 dark:text-white">
-                  {loading ? "—" : total.toLocaleString("tr-TR")}
-                </p>
-                {st !== "paketleme" ? (
-                  <MiniSpark values={UTU_PAKET_SLOT_DEFS.map(({ key }) => slots[key])} />
-                ) : null}
+                {st === "paketleme" ? (
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Toplam</p>
+                      <p className="text-2xl font-black tabular-nums text-slate-900 dark:text-white">
+                        {loading ? "—" : paketReadCount.toLocaleString("tr-TR")}
+                      </p>
+                    </div>
+                    <div className="border-t border-emerald-200/80 pt-2 dark:border-emerald-900/40">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                        {selectedDate === todayIsoTurkey() ? "Bugün" : formatDayLabel(selectedDate)}
+                      </p>
+                      <p className="text-xl font-black tabular-nums text-emerald-800 dark:text-emerald-300">
+                        {loading ? "—" : gunPaketOzeti.adet.toLocaleString("tr-TR")}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-2xl font-black tabular-nums text-slate-900 dark:text-white">
+                      {loading ? "—" : total.toLocaleString("tr-TR")}
+                    </p>
+                    <MiniSpark values={UTU_PAKET_SLOT_DEFS.map(({ key }) => slots[key])} />
+                  </>
+                )}
               </div>
             </button>
           );
@@ -507,6 +554,27 @@ export default function UtuPaketPage() {
                 Veri hatası: {takipsanStatus.lastError}
               </p>
             ) : null}
+          </div>
+
+          <div className="grid gap-3 border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80 sm:grid-cols-2">
+            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 px-4 py-4 dark:border-emerald-900/50 dark:bg-emerald-950/25">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+                {gunPaketLabel}
+              </p>
+              <p className="mt-2 text-3xl font-black tabular-nums text-emerald-900 dark:text-emerald-100">
+                {gunPaketOzeti.adet.toLocaleString("tr-TR")}
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Adet</p>
+            </div>
+            <div className="rounded-2xl border border-teal-200/80 bg-teal-50/70 px-4 py-4 dark:border-teal-900/50 dark:bg-teal-950/25">
+              <p className="text-xs font-bold uppercase tracking-wide text-teal-800 dark:text-teal-300">
+                {selectedDate === todayIsoTurkey() ? "Bugün oluşturulan" : "Gün paket sayısı"}
+              </p>
+              <p className="mt-2 text-3xl font-black tabular-nums text-teal-900 dark:text-teal-100">
+                {gunPaketOzeti.paket.toLocaleString("tr-TR")}
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Paket</p>
+            </div>
           </div>
 
           <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">

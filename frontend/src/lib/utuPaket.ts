@@ -84,6 +84,24 @@ export function normalizeTakipsanPackages(
   return rows.map(normalizeTakipsanPackageRow).filter((row) => row.packageNo);
 }
 
+export function packageCreatedOnDate(createdAt: string, dateIso: string): boolean {
+  const m = String(createdAt || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] === dateIso : false;
+}
+
+export function sumGunPaketlenen(
+  packages: TakipsanPackageRow[] | undefined,
+  dateIso: string
+): { adet: number; paket: number } {
+  const rows = normalizeTakipsanPackages(packages).filter((row) =>
+    packageCreatedOnDate(row.createdAt, dateIso)
+  );
+  return {
+    adet: rows.reduce((s, row) => s + row.items, 0),
+    paket: rows.length,
+  };
+}
+
 export type UtuPaketDayPayload = {
   date: string;
   stages: Record<UtuPaketStage, UtuPaketSlots>;
