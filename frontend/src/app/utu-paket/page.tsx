@@ -35,7 +35,7 @@ import {
   type TakipsanStatus,
 } from "@/lib/utuPaket";
 
-const TAKIPSAN_REFRESH_MS = 30_000;
+/** Veri girişi: otomatik döngü yok; gizli F5 ile yenileme */
 
 function formatPackageCreatedAt(raw: string): string {
   if (!raw) return "—";
@@ -102,6 +102,7 @@ export default function UtuPaketPage() {
   const [takipsanStatus, setTakipsanStatus] = useState<TakipsanStatus | null>(null);
   const [takipsanSyncing, setTakipsanSyncing] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const f5RefreshBusy = useRef(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -183,14 +184,61 @@ export default function UtuPaketPage() {
     }
   }, [selectedDate, loadDay, refreshTakipsan]);
 
+  /** Paketleme sekmesine geçince tek seferlik senkron; sürekli döngü yok (F5 ile yenilenir) */
   useEffect(() => {
     if (!authorized || mainTab !== "entry" || activeStage !== "paketleme") return;
     void runTakipsanSync();
-    const id = window.setInterval(() => {
-      void runTakipsanSync();
-    }, TAKIPSAN_REFRESH_MS);
-    return () => window.clearInterval(id);
   }, [authorized, mainTab, activeStage, runTakipsanSync]);
+
+  /** Gizli F5: tarayıcı yenilemesini engelle, veriyi arka planda güncelle */
+  useEffect(() => {
+    if (!authorized || mainTab !== "entry") return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "F5") return;
+      e.preventDefault();
+      if (f5RefreshBusy.current) return;
+      f5RefreshBusy.current = true;
+
+      void (async () => {
+        try {
+          if (saveTimer.current) {
+            clearTimeout(saveTimer.current);
+            saveTimer.current = null;
+          }
+          if (dirty) await persist(data);
+          if (activeStage === "paketleme") {
+            await runTakipsanSync();
+          } else {
+            await loadDay(selectedDate);
+            await refreshTakipsan();
+          }
+          setSaveMsg({ ok: true, text: "Veriler yenilendi" });
+          window.setTimeout(() => setSaveMsg(null), 2000);
+        } catch (err) {
+          setSaveMsg({
+            ok: false,
+            text: err instanceof Error ? err.message : "Yenileme başarısız",
+          });
+        } finally {
+          f5RefreshBusy.current = false;
+        }
+      })();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    authorized,
+    mainTab,
+    activeStage,
+    dirty,
+    data,
+    selectedDate,
+    loadDay,
+    runTakipsanSync,
+    refreshTakipsan,
+  ]);
 
   useEffect(() => {
     if (mainTab === "ekran5") {
