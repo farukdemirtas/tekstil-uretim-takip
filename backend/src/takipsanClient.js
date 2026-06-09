@@ -155,10 +155,29 @@ function looksLikeProductRef(value, orderCode) {
   return false;
 }
 
+function parseConsignmentSubheaderProductRef(html) {
+  if (!html || typeof html !== "string") return "";
+  const patterns = [
+    /id=["']kt_subheader_total["'][^>]*>([\s\S]*?)<\/span>/i,
+    /class=["'][^"']*kt-subheader__desc[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (!m) continue;
+    const v = stripHtml(m[1]).trim();
+    if (!v) continue;
+    if (v.includes("/") || (v.length >= 10 && /\d/.test(v) && v.includes("-"))) return v;
+  }
+  return "";
+}
+
 /**
  * Stok / ürün referansı (ör. 68131-01-KIND-SKYBLUE403-1/Bershka) — Sipariş Kodu değil.
  */
 export function parseConsignmentProductRefFromHtml(html, orderCode = "") {
+  const subheaderRef = parseConsignmentSubheaderProductRef(html);
+  if (subheaderRef) return subheaderRef;
+
   const fields = parseAllConsignmentWidgets(html);
   const oc = String(orderCode || fields["Sipariş Kodu"] || "").trim();
 
@@ -216,8 +235,12 @@ export function parseConsignmentProductFieldsFromHtml(html, orderCode = "") {
 
   if (!productName && productRef.includes("/")) {
     const slash = productRef.split("/");
-    productName = slash[slash.length - 1].trim();
+    productName = fields["Sevk Edilecek Firma"] || slash[slash.length - 1].trim();
     modelCode = modelCode || slash.slice(0, -1).join("/").trim();
+  }
+
+  if (!productName && fields["Sevk Edilecek Firma"]) {
+    productName = fields["Sevk Edilecek Firma"];
   }
 
   if (!modelCode) modelCode = productRef;
