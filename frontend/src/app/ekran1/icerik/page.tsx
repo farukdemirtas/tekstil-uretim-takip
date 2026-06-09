@@ -351,6 +351,8 @@ export default function Ekran1IcerikPage() {
   const [birthdaySlideIndex, setBirthdaySlideIndex] = useState(0);
   const [hedefAlertServer, setHedefAlertServer] = useState<HedefAlertEvalPayload | null>(null);
   const [genelIlerleme, setGenelIlerleme] = useState<Ekran1GenelIlerleme | null>(null);
+  const [productName, setProductName] = useState("");
+  const [productModel, setProductModel] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
   const birthdayCelebration = useMemo(() => {
@@ -423,12 +425,12 @@ export default function Ekran1IcerikPage() {
 
       // Verimlilik API’si başarısız olsa da (eski: yalnız ekran1 yetkisi → 403) ana özet yüklenir; ticker boş kalır.
       let effectiveModelId = modelId;
-      if (effectiveModelId == null) {
-        const meta = await getDayProductMeta(endDate).catch(() => null);
-        if (meta?.modelId != null && Number.isFinite(meta.modelId)) {
-          effectiveModelId = meta.modelId;
-        }
+      const meta = await getDayProductMeta(endDate).catch(() => null);
+      if (meta?.modelId != null && Number.isFinite(meta.modelId)) {
+        effectiveModelId = meta.modelId;
       }
+      if (meta?.productName) setProductName(meta.productName);
+      if (meta?.productModel) setProductModel(meta.productModel);
 
       const [totals, todayTotals, rawCurrent, rawPrev, dayRowsRaw, genelOzet] = await Promise.all([
         getHedefTakipStageTotals(startDate, endDate, effectiveModelId ?? undefined),
@@ -636,6 +638,8 @@ export default function Ekran1IcerikPage() {
           initRangeMode = Boolean(saved.rangeMode);
         } else {
           const meta = await getDayProductMeta(today).catch(() => null);
+          if (meta?.productName) setProductName(meta.productName);
+          if (meta?.productModel) setProductModel(meta.productModel);
           const resolvedModelId =
             meta?.modelId != null && Number.isFinite(meta.modelId) ? meta.modelId : initModelId;
           if (resolvedModelId != null) {
@@ -1019,9 +1023,18 @@ export default function Ekran1IcerikPage() {
                 EKRAN1
               </span>
               <div>
-                <p className="text-base font-extrabold text-neutral-950 md:text-lg">
-                  {isSingleDay ? formatDateTr(startDate) : `${formatDateTr(startDate)} — ${formatDateTr(endDate)}`}
-                </p>
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <p className="text-base font-extrabold text-neutral-950 md:text-lg">
+                    {isSingleDay ? formatDateTr(startDate) : `${formatDateTr(startDate)} — ${formatDateTr(endDate)}`}
+                  </p>
+                  {(productName || productModel) && (
+                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 ring-1 ring-slate-300 md:text-sm">
+                      {productName && productModel
+                        ? `${productName} · Kod: ${productModel}`
+                        : productName || `Kod: ${productModel}`}
+                    </span>
+                  )}
+                </div>
                 {lastUpdated && (
                   <p className="text-[11px] font-semibold text-slate-700">
                     Son güncelleme {lastUpdated} · 30 sn yenileme
@@ -1098,9 +1111,9 @@ export default function Ekran1IcerikPage() {
               </div>
 
               {/* Hedef / BİTEN / Bugün üretilen / Kalan */}
-              <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 md:mt-5 md:gap-4">
+              <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 md:mt-3 md:gap-4">
                 {/* Hedef */}
-                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-slate-300 bg-white px-2 py-5 shadow-md ring-1 ring-slate-200/80 sm:min-h-[8.5rem] sm:py-6 md:min-h-[10rem] md:py-7">
+                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-slate-300 bg-white px-2 py-3 shadow-md ring-1 ring-slate-200/80 sm:min-h-[8.5rem] sm:py-4 md:min-h-[10rem] md:py-5">
                   <p className="text-xs font-black uppercase tracking-[0.15em] text-slate-500 sm:text-sm md:text-base">
                     Hedef
                   </p>
@@ -1112,7 +1125,7 @@ export default function Ekran1IcerikPage() {
                   </p>
                 </div>
                 {/* BİTEN */}
-                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-emerald-400 bg-emerald-50 px-2 py-5 shadow-md ring-1 ring-emerald-200/90 sm:min-h-[8.5rem] sm:py-6 md:min-h-[10rem] md:py-7">
+                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-emerald-400 bg-emerald-50 px-2 py-3 shadow-md ring-1 ring-emerald-200/90 sm:min-h-[8.5rem] sm:py-4 md:min-h-[10rem] md:py-5">
                   <p className="text-xs font-black uppercase tracking-[0.15em] text-emerald-700 sm:text-sm md:text-base">
                     BİTEN
                   </p>
@@ -1124,9 +1137,9 @@ export default function Ekran1IcerikPage() {
                   </p>
                 </div>
                 {/* Bugün üretilen */}
-                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-teal-400 bg-teal-50 px-2 py-5 shadow-md ring-1 ring-teal-200/90 sm:min-h-[8.5rem] sm:py-6 md:min-h-[10rem] md:py-7">
-                  <p className="text-xs font-black uppercase tracking-[0.1em] text-teal-700 sm:text-sm md:text-base">
-                    Bugün üretilen
+                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-teal-400 bg-teal-50 px-2 py-3 shadow-md ring-1 ring-teal-200/90 sm:min-h-[8.5rem] sm:py-4 md:min-h-[10rem] md:py-5">
+                  <p className="w-full text-center text-xs font-black uppercase tracking-[0.1em] text-teal-700 sm:text-sm md:text-base">
+                    Bugün
                   </p>
                   <p
                     className="w-full text-center font-black tabular-nums leading-none text-teal-800"
@@ -1136,7 +1149,7 @@ export default function Ekran1IcerikPage() {
                   </p>
                 </div>
                 {/* Kalan */}
-                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-amber-400 bg-amber-50 px-2 py-5 shadow-md ring-1 ring-amber-200/90 sm:min-h-[8.5rem] sm:py-6 md:min-h-[10rem] md:py-7">
+                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-amber-400 bg-amber-50 px-2 py-3 shadow-md ring-1 ring-amber-200/90 sm:min-h-[8.5rem] sm:py-4 md:min-h-[10rem] md:py-5">
                   <p className="text-xs font-black uppercase tracking-[0.15em] text-amber-700 sm:text-sm md:text-base">
                     Kalan
                   </p>
