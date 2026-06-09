@@ -311,6 +311,35 @@ export function initDb() {
       )
     `);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS model_gunluk_ozet_processes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_id INTEGER NOT NULL,
+        sort_order INTEGER NOT NULL,
+        team_code TEXT NOT NULL,
+        process_name TEXT NOT NULL,
+        arka_half INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (model_id, sort_order),
+        FOREIGN KEY (model_id) REFERENCES product_models(id) ON DELETE CASCADE
+      )
+    `);
+
+    db.all("PRAGMA table_info(model_gunluk_ozet_processes)", [], (pragmaErr, cols) => {
+      if (pragmaErr || !Array.isArray(cols) || cols.length === 0) return;
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has("arka_half")) {
+        db.run(
+          "ALTER TABLE model_gunluk_ozet_processes ADD COLUMN arka_half INTEGER NOT NULL DEFAULT 0",
+          (e) => {
+            if (e) {
+              // eslint-disable-next-line no-console
+              console.error("[tekstil-db] model_gunluk_ozet_processes arka_half migration:", e.message);
+            }
+          }
+        );
+      }
+    });
+
     db.all("PRAGMA table_info(model_hedef_baselines)", [], (pragmaErr, cols) => {
       if (pragmaErr || !Array.isArray(cols) || cols.length === 0) return;
       const names = new Set(cols.map((c) => c.name));

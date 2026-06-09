@@ -132,7 +132,10 @@ export default function HomePage() {
   const [role, setRole] = useState<string>("data_entry");
   const [selectedDate, setSelectedDate] = useState<string>(todayWeekdayIso());
   const [rows, setRows] = useState<ProductionRow[]>([]);
-  const [hedefStageTotals, setHedefStageTotals] = useState<HedefStageTotals>({ stages: [] });
+  const [hedefStageTotals, setHedefStageTotals] = useState<HedefStageTotals>({
+    stages: [],
+    dailySummaryStages: [],
+  });
   const [hedefStageError, setHedefStageError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,7 +227,7 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     setHedefStageError(null);
-    const emptyHedef: HedefStageTotals = { stages: [] };
+    const emptyHedef: HedefStageTotals = { stages: [], dailySummaryStages: [] };
     try {
       const meta = await getDayProductMeta(date).catch(
         (): DayProductMeta => ({
@@ -1057,7 +1060,11 @@ export default function HomePage() {
           hasPermission("ekran2") ||
           hasPermission("ekran3") ||
           hasPermission("ekran4") ? (
-            <Link href="/ekran1" className="btn-nav shrink-0">
+            <Link
+              href="/ekran1"
+              onClick={() => sessionStorage.removeItem("ekran1_from_hedef_takip_v1")}
+              className="btn-nav shrink-0"
+            >
               TV Ekranları
             </Link>
           ) : null}

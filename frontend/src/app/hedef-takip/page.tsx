@@ -19,6 +19,7 @@ import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission } from "@/lib/permissions";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
+const EKRAN1_FROM_HEDEF_SESSION_KEY = "ekran1_from_hedef_takip_v1";
 const AUTO_REFRESH_MS = 30_000;
 
 function clampPercent(value: number) {
@@ -349,6 +350,16 @@ export default function HedefTakip() {
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <Link
               href="/ekran1"
+              onClick={() => {
+                persistSettings(
+                  target,
+                  startDate,
+                  endDate,
+                  rangeMode,
+                  selectedModelId === "" ? null : Number(selectedModelId)
+                );
+                sessionStorage.setItem(EKRAN1_FROM_HEDEF_SESSION_KEY, "1");
+              }}
               className="rounded-md border border-emerald-600/50 bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500"
             >
               EKRAN1

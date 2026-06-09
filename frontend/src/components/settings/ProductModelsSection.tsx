@@ -23,6 +23,7 @@ import { formatModelPickerLabel, formatProductDisplayLine } from "@/lib/takipsan
 import { hasPermission } from "@/lib/permissions";
 
 const MAX_BASELINE_ROWS = 20;
+const MAX_DAILY_SUMMARY_ROWS = 20;
 const HEDEF_TAKIP_SETTINGS_KEY = "hedef_takip_settings_v1";
 
 function persistHedefSettingsModelId(modelId: number | null) {
@@ -36,8 +37,13 @@ function persistHedefSettingsModelId(modelId: number | null) {
 }
 
 type BaselineRow = { teamCode: string; processName: string; arkaHalf: number };
+type DailySummaryRow = { teamCode: string; processName: string; arkaHalf: number };
 
 function emptyRow(): BaselineRow {
+  return { teamCode: "", processName: "", arkaHalf: 0 };
+}
+
+function emptyDailyRow(): DailySummaryRow {
   return { teamCode: "", processName: "", arkaHalf: 0 };
 }
 
@@ -51,6 +57,7 @@ export default function ProductModelsSection() {
   const [modelCode, setModelCode] = useState("");
   const [productName, setProductName] = useState("");
   const [baselines, setBaselines] = useState<BaselineRow[]>([emptyRow()]);
+  const [dailySummaryRows, setDailySummaryRows] = useState<DailySummaryRow[]>([]);
   const [sessionStartDate, setSessionStartDate] = useState(() => clampToWeekdayIso(todayWeekdayIso()));
   const [fromTakipsan, setFromTakipsan] = useState(false);
   const [takipsanProductLabel, setTakipsanProductLabel] = useState("");
@@ -119,6 +126,7 @@ export default function ProductModelsSection() {
     setModelCode("");
     setProductName("");
     setBaselines([emptyRow()]);
+    setDailySummaryRows([]);
     setFromTakipsan(false);
     setTakipsanProductLabel("");
     setTakipsanOrderCode("");
@@ -148,6 +156,7 @@ export default function ProductModelsSection() {
       setTakipsanOrderCode(info.orderCode);
       setTargetQuantity(info.orderQuantity);
       setBaselines([emptyRow()]);
+      setDailySummaryRows([]);
       setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Takipsan verisi alınamadı");
@@ -186,6 +195,15 @@ export default function ProductModelsSection() {
           arkaHalf: row.arkaHalf ? 1 : 0,
         }));
       setBaselines(rows.length ? rows : [emptyRow()]);
+      const dailyRows = (d.dailySummaryProcesses || [])
+        .slice()
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((row) => ({
+          teamCode: row.teamCode,
+          processName: row.processName,
+          arkaHalf: row.arkaHalf ? 1 : 0,
+        }));
+      setDailySummaryRows(dailyRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Model yüklenemedi");
     }
@@ -202,12 +220,28 @@ export default function ProductModelsSection() {
     );
   }
 
+  function setDailyRow(index: number, field: keyof DailySummaryRow, value: string | number) {
+    setDailySummaryRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [field]: value } : row))
+    );
+  }
+
   function addRow() {
     setBaselines((prev) => (prev.length >= MAX_BASELINE_ROWS ? prev : [...prev, emptyRow()]));
   }
 
   function removeRow(index: number) {
     setBaselines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  }
+
+  function addDailyRow() {
+    setDailySummaryRows((prev) =>
+      prev.length >= MAX_DAILY_SUMMARY_ROWS ? prev : [...prev, emptyDailyRow()]
+    );
+  }
+
+  function removeDailyRow(index: number) {
+    setDailySummaryRows((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSave() {
@@ -222,6 +256,13 @@ export default function ProductModelsSection() {
         processName: b.processName,
         arkaHalf: b.arkaHalf ? 1 : 0,
       })),
+      dailySummaryProcesses: dailySummaryRows
+        .filter((b) => b.teamCode.trim() && b.processName.trim())
+        .map((b) => ({
+          teamCode: b.teamCode,
+          processName: b.processName,
+          arkaHalf: b.arkaHalf ? 1 : 0,
+        })),
       sessionStartDate: sessionStartDate || null,
       ...(editingId === "new" && fromTakipsan
         ? {
@@ -313,10 +354,11 @@ export default function ProductModelsSection() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Ürün modelleri (hedef bazı)</h2>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Takipsan sevkiyatından ürün adı ve hedef adet otomatik gelir. Siz yalnızca{" "}
-            <strong className="font-medium text-slate-700 dark:text-slate-200">baz alınacak proses</strong> ve{" "}
-            <strong className="font-medium text-slate-700 dark:text-slate-200">takip başlangıç tarihi</strong>ni
-            belirlersiniz. Eski manuel modeller aynen kalır.
+            Takipsan sevkiyatından ürün adı ve hedef adet otomatik gelir.{" "}
+            <strong className="font-medium text-teal-800 dark:text-teal-300">Çalışılacak bölüm</strong> hedef ve
+            darboğaz içindir;{" "}
+            <strong className="font-medium text-violet-800 dark:text-violet-300">günlük özet prosesleri</strong> yalnızca
+            ana ekrandaki sayı toplamı kutuları içindir. Takip başlangıç tarihini de siz belirlersiniz.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -489,19 +531,26 @@ export default function ProductModelsSection() {
             Ekran 1 ve hedef özette «Biten» toplamı bu tarihten itibaren sayılır.
           </p>
 
-          <div className="overflow-x-auto">
-            {teams.length === 0 || processes.length === 0 ? (
-              <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
-                {teams.length === 0 && processes.length === 0
-                  ? "Henüz bölüm ve proses tanımı yok. Ayarlar’da «Proses ve bölüm» sekmesinden önce liste oluşturun."
-                  : teams.length === 0
-                    ? "Henüz bölüm yok. Ayarlar’da «Proses ve bölüm» sekmesinden ekleyin."
-                    : "Henüz proses yok. Ayarlar’da «Proses ve bölüm» sekmesinden ekleyin."}
-              </p>
-            ) : null}
+          {teams.length === 0 || processes.length === 0 ? (
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+              {teams.length === 0 && processes.length === 0
+                ? "Henüz bölüm ve proses tanımı yok. Ayarlar’da «Proses ve bölüm» sekmesinden önce liste oluşturun."
+                : teams.length === 0
+                  ? "Henüz bölüm yok. Ayarlar’da «Proses ve bölüm» sekmesinden ekleyin."
+                  : "Henüz proses yok. Ayarlar’da «Proses ve bölüm» sekmesinden ekleyin."}
+            </p>
+          ) : null}
+
+          <div className="overflow-x-auto rounded-xl border-2 border-teal-200 bg-teal-50/30 p-3 dark:border-teal-800/50 dark:bg-teal-950/15">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-teal-800 dark:text-teal-300">
+              Çalışılacak bölüm (hedef / darboğaz)
+            </p>
+            <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
+              Hedef Takip, Ekran 1 ve «Genel tamamlanan» bu satırlardan hesaplanır.
+            </p>
             <table className="w-full min-w-[720px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase text-slate-600 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-400">
+                <tr className="border-b border-teal-200/80 bg-teal-100/50 text-left text-xs font-semibold uppercase text-teal-900 dark:border-teal-800/40 dark:bg-teal-950/40 dark:text-teal-200">
                   <th className="w-10 py-2 pr-1">#</th>
                   <th className="py-2 pr-2">Çalışılacak bölüm</th>
                   <th className="py-2 pr-2">Baz alınacak proses</th>
@@ -511,7 +560,7 @@ export default function ProductModelsSection() {
               </thead>
               <tbody>
                 {baselines.map((row, index) => (
-                  <tr key={index} className="border-b border-slate-100 dark:border-slate-700/80">
+                  <tr key={index} className="border-b border-teal-100/80 dark:border-teal-900/30">
                     <td className="py-2 pr-1 text-center text-xs font-medium text-slate-500 dark:text-slate-400">
                       {index + 1}
                     </td>
@@ -519,7 +568,7 @@ export default function ProductModelsSection() {
                       <select
                         value={row.teamCode}
                         onChange={(e) => setRow(index, "teamCode", e.target.value)}
-                        className="w-full min-w-[10rem] rounded border border-slate-300 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                        className="w-full min-w-[10rem] rounded border border-teal-200 bg-white px-2 py-1.5 text-xs dark:border-teal-800 dark:bg-slate-900 dark:text-slate-100"
                       >
                         <option value="">Bölüm seçin…</option>
                         {teams.map((t) => (
@@ -533,7 +582,7 @@ export default function ProductModelsSection() {
                       <select
                         value={row.processName}
                         onChange={(e) => setRow(index, "processName", e.target.value)}
-                        className="w-full min-w-[10rem] rounded border border-slate-300 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                        className="w-full min-w-[10rem] rounded border border-teal-200 bg-white px-2 py-1.5 text-xs dark:border-teal-800 dark:bg-slate-900 dark:text-slate-100"
                       >
                         <option value="">Proses seçin…</option>
                         {processNames.map((n) => (
@@ -579,6 +628,104 @@ export default function ProductModelsSection() {
               </button>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
                 En az 1, en çok {MAX_BASELINE_ROWS} satır
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border-2 border-violet-200 bg-violet-50/40 p-3 dark:border-violet-800/50 dark:bg-violet-950/15">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-300">
+              Günlük özet prosesleri (yalnızca sayı toplamı)
+            </p>
+            <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
+              Ana üretim ekranındaki Günlük Özet’te mor kutularda gösterilir; hedef ve genel tamamlanana dahil
+              edilmez.
+            </p>
+            {dailySummaryRows.length === 0 ? (
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                İsteğe bağlı — eklemek için aşağıdaki düğmeyi kullanın.
+              </p>
+            ) : null}
+            {dailySummaryRows.length > 0 ? (
+              <table className="w-full min-w-[720px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-violet-200/80 bg-violet-100/50 text-left text-xs font-semibold uppercase text-violet-900 dark:border-violet-800/40 dark:bg-violet-950/40 dark:text-violet-200">
+                    <th className="w-10 py-2 pr-1">#</th>
+                    <th className="py-2 pr-2">Bölüm</th>
+                    <th className="py-2 pr-2">Proses</th>
+                    <th className="py-2">İsteğe bağlı 0.5 çarpan</th>
+                    <th className="w-14 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailySummaryRows.map((row, index) => (
+                    <tr key={index} className="border-b border-violet-100/80 dark:border-violet-900/30">
+                      <td className="py-2 pr-1 text-center text-xs font-medium text-slate-500 dark:text-slate-400">
+                        {index + 1}
+                      </td>
+                      <td className="py-2 pr-2">
+                        <select
+                          value={row.teamCode}
+                          onChange={(e) => setDailyRow(index, "teamCode", e.target.value)}
+                          className="w-full min-w-[10rem] rounded border border-violet-200 bg-white px-2 py-1.5 text-xs dark:border-violet-800 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">Bölüm seçin…</option>
+                          {teams.map((t) => (
+                            <option key={t.code} value={t.code}>
+                              {t.label} ({t.code})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 pr-2">
+                        <select
+                          value={row.processName}
+                          onChange={(e) => setDailyRow(index, "processName", e.target.value)}
+                          className="w-full min-w-[10rem] rounded border border-violet-200 bg-white px-2 py-1.5 text-xs dark:border-violet-800 dark:bg-slate-900 dark:text-slate-100"
+                        >
+                          <option value="">Proses seçin…</option>
+                          {processNames.map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 text-center">
+                        <label className="inline-flex cursor-pointer items-center justify-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={row.arkaHalf === 1}
+                            onChange={(e) => setDailyRow(index, "arkaHalf", e.target.checked ? 1 : 0)}
+                          />
+                          <span className="text-slate-600 dark:text-slate-400">Girilen × ½</span>
+                        </label>
+                      </td>
+                      <td className="py-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => removeDailyRow(index)}
+                          className="rounded border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                          title="Satırı kaldır"
+                        >
+                          Sil
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={addDailyRow}
+                disabled={dailySummaryRows.length >= MAX_DAILY_SUMMARY_ROWS}
+                className="rounded-lg border border-violet-600 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-950/60"
+              >
+                + Günlük özet prosesi ekle
+              </button>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                En çok {MAX_DAILY_SUMMARY_ROWS} satır (isteğe bağlı)
               </span>
             </div>
           </div>

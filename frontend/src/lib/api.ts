@@ -587,9 +587,10 @@ export type HedefStageLineDto = {
 
 export type HedefStageTotalsDto = {
   stages: HedefStageLineDto[];
+  dailySummaryStages: HedefStageLineDto[];
 };
 
-const ZERO_HEDEF: HedefStageTotalsDto = { stages: [] };
+const ZERO_HEDEF: HedefStageTotalsDto = { stages: [], dailySummaryStages: [] };
 
 function num(v: unknown): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -619,7 +620,11 @@ export function parseHedefStageTotalsPayload(raw: unknown): HedefStageTotalsDto 
   const stagesRaw = o.stages;
   if (Array.isArray(stagesRaw)) {
     const stages = stagesRaw.map(parseStageLine).filter((s): s is HedefStageLineDto => s != null);
-    return { stages };
+    const dailyRaw = o.dailySummaryStages ?? o.daily_summary_stages;
+    const dailySummaryStages = Array.isArray(dailyRaw)
+      ? dailyRaw.map(parseStageLine).filter((s): s is HedefStageLineDto => s != null)
+      : [];
+    return { stages, dailySummaryStages };
   }
   // Eski API (5 sabit anahtar) — geriye dönük
   if ("SAG_ON" in o || "sag_on" in o) {
@@ -634,6 +639,7 @@ export function parseHedefStageTotalsPayload(raw: unknown): HedefStageTotalsDto 
         teamLabel: labels[i],
         total: num(o[k] ?? o[alt[i]]),
       })),
+      dailySummaryStages: [],
     };
   }
   return { ...ZERO_HEDEF };
@@ -701,8 +707,16 @@ export type ProductModelBaseline = {
   arkaHalf: number;
 };
 
+export type ProductModelDailySummaryProcess = {
+  sortOrder: number;
+  teamCode: string;
+  processName: string;
+  arkaHalf: number;
+};
+
 export type ProductModelDetail = ProductModelListItem & {
   baselines: ProductModelBaseline[];
+  dailySummaryProcesses: ProductModelDailySummaryProcess[];
 };
 
 export async function listProductModels(): Promise<ProductModelListItem[]> {
@@ -721,6 +735,7 @@ export async function createProductModel(payload: {
   modelCode?: string;
   productName?: string;
   baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
+  dailySummaryProcesses?: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
   fromTakipsan?: boolean;
   takipsanProductLabel?: string;
   takipsanOrderCode?: string;
@@ -745,6 +760,7 @@ export async function updateProductModel(
     modelCode?: string;
     productName?: string;
     baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
+    dailySummaryProcesses?: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
     sessionStartDate?: string | null;
   }
 ): Promise<{ id: number; modelCode: string; productName: string; sessionStartDate?: string | null }> {
@@ -1308,6 +1324,8 @@ export type Ekran1GenelIlerleme = {
   totalCompleted: number;
   todayProduced: number;
   dataStartDate: string | null;
+  stages: HedefStageLineDto[];
+  todayStages: HedefStageLineDto[];
   affectingStage: {
     sortOrder: number;
     teamLabel: string;
@@ -1329,7 +1347,30 @@ export async function getEkran1GenelIlerleme(
     const d = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(d.message ?? "Genel ilerleme özeti alınamadı");
   }
-  return res.json() as Promise<Ekran1GenelIlerleme>;
+  const raw = (await res.json()) as Record<string, unknown>;
+  const stages = parseHedefStageTotalsPayload({ stages: raw.stages }).stages;
+  const todayStages = parseHedefStageTotalsPayload({
+    stages: raw.todayStages ?? raw.today_stages,
+  }).stages;
+  return {
+    date: String(raw.date ?? date),
+    target: num(raw.target),
+    hasModelTarget: Boolean(raw.hasModelTarget),
+    hasUtuPaketTarget: Boolean(raw.hasUtuPaketTarget),
+    totalCompleted: num(raw.totalCompleted),
+    todayProduced: num(raw.todayProduced),
+    dataStartDate: raw.dataStartDate != null ? String(raw.dataStartDate) : null,
+    stages,
+    todayStages,
+    affectingStage:
+      raw.affectingStage && typeof raw.affectingStage === "object"
+        ? {
+            sortOrder: num((raw.affectingStage as Record<string, unknown>).sortOrder),
+            teamLabel: String((raw.affectingStage as Record<string, unknown>).teamLabel ?? ""),
+            processName: String((raw.affectingStage as Record<string, unknown>).processName ?? ""),
+          }
+        : null,
+  };
 }
 
 export type TakipsanConsignmentInfo = {

@@ -1089,6 +1089,7 @@ export async function getHedefTakipStageTotals(startDate, endDate, modelId) {
         teamLabel,
         total: nums[i],
       })),
+      dailySummaryStages: [],
     };
   }
 
@@ -1122,7 +1123,32 @@ export async function getHedefTakipStageTotals(startDate, endDate, modelId) {
       total,
     });
   }
-  return { stages };
+
+  const dailyRows = await dbAll(
+    `SELECT sort_order AS sortOrder, team_code AS teamCode, process_name AS processName,
+            COALESCE(arka_half, 0) AS arkaHalf
+     FROM model_gunluk_ozet_processes WHERE model_id = ? ORDER BY sort_order ASC`,
+    [modelId]
+  );
+  const dailySummaryStages = [];
+  for (const r of dailyRows) {
+    const total = await sumProductionForBaselineRow(
+      startDate,
+      endDate,
+      r.teamCode,
+      r.processName,
+      Number(r.arkaHalf) === 1
+    );
+    dailySummaryStages.push({
+      sortOrder: Number(r.sortOrder) || 0,
+      teamCode: String(r.teamCode || ""),
+      processName: String(r.processName || ""),
+      teamLabel: labelByCode[r.teamCode] || String(r.teamCode || ""),
+      total,
+    });
+  }
+
+  return { stages, dailySummaryStages };
 }
 
 function findBottleneckStageIndex(stages) {
@@ -1210,6 +1236,9 @@ export async function getEkran1GenelIlerleme(date, modelId) {
     totalCompleted,
     todayProduced,
     dataStartDate: rangeStart,
+    /** Alt proses barları: kümülatif (biten) + bugünkü üretim */
+    stages: cStages,
+    todayStages: tStages,
     affectingStage: aff
       ? {
           sortOrder: Number(aff.sortOrder) || 0,
@@ -1325,14 +1354,24 @@ export function getProductModelWithBaselines(id) {
           [id],
           (e2, baselines) => {
             if (e2) return reject(e2);
-            resolve({
-              ...row,
-              targetQuantity: Math.max(0, Math.floor(Number(row.targetQuantity) || 0)),
-              isTakipsanLinked: Boolean(
-                String(row.takipsanProductLabel || row.takipsanOrderCode || "").trim()
-              ),
-              baselines: baselines || [],
-            });
+            db.all(
+              `SELECT sort_order AS sortOrder, team_code AS teamCode, process_name AS processName,
+                      COALESCE(arka_half, 0) AS arkaHalf
+               FROM model_gunluk_ozet_processes WHERE model_id = ? ORDER BY sort_order ASC`,
+              [id],
+              (e3, dailySummaryProcesses) => {
+                if (e3) return reject(e3);
+                resolve({
+                  ...row,
+                  targetQuantity: Math.max(0, Math.floor(Number(row.targetQuantity) || 0)),
+                  isTakipsanLinked: Boolean(
+                    String(row.takipsanProductLabel || row.takipsanOrderCode || "").trim()
+                  ),
+                  baselines: baselines || [],
+                  dailySummaryProcesses: dailySummaryProcesses || [],
+                });
+              }
+            );
           }
         );
       }
@@ -1341,6 +1380,7 @@ export function getProductModelWithBaselines(id) {
 }
 
 const MAX_HEDEF_BASELINE_ROWS = 20;
+const MAX_DAILY_SUMMARY_ROWS = 20;
 
 function validateBaselineRows(teamCodes, baselines) {
   const set = new Set(teamCodes);
@@ -1360,6 +1400,42 @@ function validateBaselineRows(teamCodes, baselines) {
       throw new Error(`Geçersiz bölüm kodu: ${b.teamCode}`);
     }
   }
+}
+
+function validateDailySummaryRows(teamCodes, rows) {
+  const set = new Set(teamCodes);
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length > MAX_DAILY_SUMMARY_ROWS) {
+    throw new Error(`En fazla ${MAX_DAILY_SUMMARY_ROWS} günlük özet prosesi eklenebilir`);
+  }
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (!b || !String(b.teamCode ?? "").trim() || !String(b.processName ?? "").trim()) {
+      throw new Error(`Günlük özet satır ${i + 1}: bölüm ve proses seçilmelidir`);
+    }
+    if (!set.has(String(b.teamCode))) {
+      throw new Error(`Günlük özet: geçersiz bölüm kodu: ${b.teamCode}`);
+    }
+  }
+}
+
+async function insertDailySummaryRows(modelId, rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return new Promise((resolve, reject) => {
+    db.run("DELETE FROM model_gunluk_ozet_processes WHERE model_id = ?", [modelId], (delErr) => {
+      if (delErr) return reject(delErr);
+      if (!list.length) return resolve();
+      const stmt = db.prepare(
+        `INSERT INTO model_gunluk_ozet_processes (model_id, sort_order, team_code, process_name, arka_half)
+         VALUES (?, ?, ?, ?, ?)`
+      );
+      list.forEach((b, idx) => {
+        const ah = Number(b.arkaHalf) === 1 ? 1 : 0;
+        stmt.run([modelId, idx, String(b.teamCode).trim(), String(b.processName).trim(), ah]);
+      });
+      stmt.finalize((fe) => (fe ? reject(fe) : resolve()));
+    });
+  });
 }
 
 export async function refreshProductModelTargetsFromTakipsan(takipsan, modelId = null) {
@@ -1441,7 +1517,9 @@ export async function createProductModel(payload, teamCodes) {
     tsl || (pname && code ? buildTakipsanProductLabel(pname, code) : "");
 
   validateBaselineRows(teamCodes, payload?.baselines);
+  validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
   const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
+  const dailyRows = Array.isArray(payload?.dailySummaryProcesses) ? payload.dailySummaryProcesses : [];
 
   return new Promise((resolve, reject) => {
     db.run(
@@ -1460,15 +1538,20 @@ export async function createProductModel(payload, teamCodes) {
           const ah = Number(b.arkaHalf) === 1 ? 1 : 0;
           stmt.run([modelId, idx, String(b.teamCode).trim(), String(b.processName).trim(), ah]);
         });
-        stmt.finalize((fe) => {
+        stmt.finalize(async (fe) => {
           if (fe) return reject(fe);
-          resolve({
-            id: modelId,
-            modelCode: code,
-            productName: pname,
-            targetQuantity: tqty,
-            takipsanProductLabel: productLabel,
-          });
+          try {
+            await insertDailySummaryRows(modelId, dailyRows);
+            resolve({
+              id: modelId,
+              modelCode: code,
+              productName: pname,
+              targetQuantity: tqty,
+              takipsanProductLabel: productLabel,
+            });
+          } catch (e) {
+            reject(e);
+          }
         });
       }
     );
@@ -1494,7 +1577,9 @@ export async function updateProductModel(id, payload, teamCodes) {
       : existing.sessionStartDate ?? null;
 
   validateBaselineRows(teamCodes, payload?.baselines);
+  validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
   const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
+  const dailyRows = Array.isArray(payload?.dailySummaryProcesses) ? payload.dailySummaryProcesses : [];
 
   return new Promise((resolve, reject) => {
     db.run(
@@ -1513,9 +1598,14 @@ export async function updateProductModel(id, payload, teamCodes) {
             const ah = Number(b.arkaHalf) === 1 ? 1 : 0;
             stmt.run([id, idx, String(b.teamCode).trim(), String(b.processName).trim(), ah]);
           });
-          stmt.finalize((fe) => {
+          stmt.finalize(async (fe) => {
             if (fe) return reject(fe);
-            resolve({ id, modelCode: code, productName: pname, sessionStartDate: sessionStart });
+            try {
+              await insertDailySummaryRows(id, dailyRows);
+              resolve({ id, modelCode: code, productName: pname, sessionStartDate: sessionStart });
+            } catch (e) {
+              reject(e);
+            }
           });
         });
       }

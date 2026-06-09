@@ -9,6 +9,7 @@ import {
   getProduction,
   getProsesVeriRowsFromServer,
   getPersonnelBirthdaysToday,
+  getDayProductMeta,
   getEkran1GenelIlerleme,
   setAuthToken,
   type HedefAlertEvalPayload,
@@ -34,6 +35,8 @@ import { hasPermission } from "@/lib/permissions";
 import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker";
 
 const STORAGE_KEY = "hedef_takip_settings_v1";
+/** Hedef Takip → EKRAN1 geçişinde sessionStorage ile işaretlenir */
+const FROM_HEDEF_SESSION_KEY = "ekran1_from_hedef_takip_v1";
 const AUTO_REFRESH_MS = 30_000;
 /** Doğum günü: yalnızca periyodik overlay — tek kişide ~10 sn görünür, ardından ~50 sn gizli (döngü 60 sn). Çoklu kişide süre uzar; sırayla dönüş. */
 const BDAY_OVERLAY_VISIBLE_MS = 10_000;
@@ -331,12 +334,14 @@ function Ekran1BirthdayCake({ className, age }: { className?: string; age?: numb
 export default function Ekran1IcerikPage() {
   const [target, setTarget] = useState(5000);
   const [stages, setStages] = useState<HedefStageLineDto[]>([]);
+  const [todayStages, setTodayStages] = useState<HedefStageLineDto[]>([]);
   const [startDate, setStartDate] = useState(() => todayWorkdayIsoTurkey());
   const [endDate, setEndDate] = useState(() => todayWorkdayIsoTurkey());
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
   const [hasToken, setHasToken] = useState(false);
+  const [datesReady, setDatesReady] = useState(false);
   const [modelId, setModelId] = useState<number | null>(null);
   const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
   const [avgEfficiencyStats, setAvgEfficiencyStats] = useState({ avg: 0, count: 0 });
@@ -389,7 +394,10 @@ export default function Ekran1IcerikPage() {
     return list[birthdaySlideIndex % list.length]!;
   }, [birthdayCelebration.people, birthdaySlideIndex]);
 
-  const genelHedef = useMemo(() => genelIlerleme?.target ?? 0, [genelIlerleme]);
+  const genelHedef = useMemo(() => {
+    const fromApi = genelIlerleme?.target ?? 0;
+    return fromApi > 0 ? fromApi : target;
+  }, [genelIlerleme, target]);
 
   const genelTamamlanan = useMemo(() => {
     if (genelIlerleme) return genelIlerleme.totalCompleted;
@@ -414,16 +422,38 @@ export default function Ekran1IcerikPage() {
       const isSingleDay = startDate === endDate;
 
       // Verimlilik API’si başarısız olsa da (eski: yalnız ekran1 yetkisi → 403) ana özet yüklenir; ticker boş kalır.
-      const [totals, rawCurrent, rawPrev, dayRowsRaw, genelOzet] = await Promise.all([
-        getHedefTakipStageTotals(startDate, endDate, modelId ?? undefined),
+      let effectiveModelId = modelId;
+      if (effectiveModelId == null) {
+        const meta = await getDayProductMeta(endDate).catch(() => null);
+        if (meta?.modelId != null && Number.isFinite(meta.modelId)) {
+          effectiveModelId = meta.modelId;
+        }
+      }
+
+      const [totals, todayTotals, rawCurrent, rawPrev, dayRowsRaw, genelOzet] = await Promise.all([
+        getHedefTakipStageTotals(startDate, endDate, effectiveModelId ?? undefined),
+        getHedefTakipStageTotals(endDate, endDate, effectiveModelId ?? undefined),
         getTopWorkersAnalytics({ startDate, endDate, limit: 200 }).catch(() => []),
         getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }).catch(() => []),
         isSingleDay ? getProduction(endDate).catch(() => []) : Promise.resolve([]),
-        getEkran1GenelIlerleme(endDate, modelId).catch(() => null),
+        getEkran1GenelIlerleme(endDate, effectiveModelId).catch(() => null),
       ]);
       setGenelIlerleme(genelOzet);
       const dayRows = isSingleDay ? dayRowsRaw : [];
-      setStages(totals.stages ?? []);
+      const stageLines =
+        genelOzet?.stages?.length
+          ? genelOzet.stages
+          : totals.stages?.length
+            ? totals.stages
+            : [];
+      setStages(stageLines);
+      setTodayStages(
+        genelOzet?.todayStages?.length
+          ? genelOzet.todayStages
+          : todayTotals.stages?.length
+            ? todayTotals.stages
+            : []
+      );
 
       const genelRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE).catch(() => []);
       if (genelRows.length > 0) {
@@ -571,42 +601,88 @@ export default function Ekran1IcerikPage() {
     }
     setHasToken(true);
     setAuthToken(token);
+
     const today = todayWorkdayIsoTurkey();
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as {
-          target?: number;
-          startDate?: string;
-          endDate?: string;
-          rangeMode?: boolean;
-          modelId?: number | null;
-        };
-        if (Number.isFinite(Number(saved.target))) setTarget(Number(saved.target));
+    const fromHedef = sessionStorage.getItem(FROM_HEDEF_SESSION_KEY) === "1";
+    sessionStorage.removeItem(FROM_HEDEF_SESSION_KEY);
+
+    void (async () => {
+      let initStart = today;
+      let initEnd = today;
+      let initModelId: number | null = null;
+      let initTarget = 5000;
+      let initRangeMode = false;
+
+      try {
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        const saved = raw
+          ? (JSON.parse(raw) as {
+              target?: number;
+              startDate?: string;
+              endDate?: string;
+              rangeMode?: boolean;
+              modelId?: number | null;
+            })
+          : {};
+
+        if (Number.isFinite(Number(saved.target))) initTarget = Number(saved.target);
         if (saved.modelId != null && Number.isFinite(Number(saved.modelId))) {
-          setModelId(Number(saved.modelId));
+          initModelId = Number(saved.modelId);
         }
+
+        if (fromHedef) {
+          if (saved.startDate && /^\d{4}-\d{2}-\d{2}$/.test(saved.startDate)) initStart = saved.startDate;
+          if (saved.endDate && /^\d{4}-\d{2}-\d{2}$/.test(saved.endDate)) initEnd = saved.endDate;
+          initRangeMode = Boolean(saved.rangeMode);
+        } else {
+          const meta = await getDayProductMeta(today).catch(() => null);
+          const resolvedModelId =
+            meta?.modelId != null && Number.isFinite(meta.modelId) ? meta.modelId : initModelId;
+          if (resolvedModelId != null) {
+            initModelId = resolvedModelId;
+            const genel = await getEkran1GenelIlerleme(today, resolvedModelId).catch(() => null);
+            const rangeStart = genel?.dataStartDate?.trim();
+            if (rangeStart && /^\d{4}-\d{2}-\d{2}$/.test(rangeStart)) {
+              initStart = rangeStart <= today ? rangeStart : today;
+            }
+            initEnd = today;
+            initRangeMode = initStart !== initEnd;
+          }
+        }
+
+        if (initStart > initEnd) initStart = initEnd;
+
+        setTarget(initTarget);
+        setModelId(initModelId);
+        setStartDate(initStart);
+        setEndDate(initEnd);
+
         window.localStorage.setItem(
           STORAGE_KEY,
           JSON.stringify({
-            target: Number.isFinite(Number(saved.target)) ? Number(saved.target) : 5000,
-            startDate: today,
-            endDate: today,
-            rangeMode: Boolean(saved.rangeMode),
-            modelId: saved.modelId ?? null,
+            target: initTarget,
+            startDate: initStart,
+            endDate: initEnd,
+            rangeMode: initRangeMode,
+            modelId: initModelId,
           })
         );
+      } catch {
+        setStartDate(today);
+        setEndDate(today);
+      } finally {
+        setDatesReady(true);
       }
-    } catch { /* ignore */ }
-    // Her açılış: tek güne kilit (EKRAN3’teki «bugün» gibi). Gece 00:00 TR reload sonrası yeni gün → API’de veri yoksa 0.
-    setStartDate(today);
-    setEndDate(today);
+    })();
   }, []);
 
   useEffect(() => {
-    if (!hasToken) { setLoading(false); return; }
+    if (!hasToken || !datesReady) {
+      if (!hasToken) setLoading(false);
+      return;
+    }
     void fetchData(false);
-  }, [hasToken, startDate, endDate, fetchData]);
+  }, [hasToken, datesReady, startDate, endDate, fetchData]);
 
   useEffect(() => {
     if (!hasToken) return;
@@ -706,20 +782,30 @@ export default function Ekran1IcerikPage() {
   }
 
   const stageRows = useMemo(() => {
+    const todayList = todayStages;
     return stages.map((s, i) => {
       const shortP = s.processName.length > 18 ? `${s.processName.slice(0, 16)}…` : s.processName;
       const label = s.processName ? `${s.teamLabel} · ${shortP}` : s.teamLabel;
-      const value = Number.isFinite(s.total) ? s.total : 0;
+      const todayMatch =
+        todayList.find(
+          (t) =>
+            t.sortOrder === s.sortOrder &&
+            t.teamCode === s.teamCode &&
+            t.processName === s.processName
+        ) ?? todayList[i];
+      const biten = Number.isFinite(s.total) ? s.total : 0;
+      const bugun = Number.isFinite(todayMatch?.total) ? todayMatch.total : 0;
       return {
         label,
-        value,
-        pct: calcPercent(value, genelHedef),
+        biten,
+        bugun,
+        pct: calcPercent(biten, genelHedef),
         gradient: STAGE_GRADIENTS[i % STAGE_GRADIENTS.length],
         glow: STAGE_GLOWS[i % STAGE_GLOWS.length],
         textColor: STAGE_TEXT[i % STAGE_TEXT.length],
       };
     });
-  }, [stages, genelHedef]);
+  }, [stages, todayStages, genelHedef]);
 
   if (!hasToken) {
     return (
@@ -1160,9 +1246,24 @@ export default function Ekran1IcerikPage() {
                       />
                     </div>
 
-                    <p className="mt-2 text-[11px] font-bold tabular-nums text-slate-950 sm:text-xs md:text-sm dark:text-slate-200">
-                      {row.value.toLocaleString("tr-TR")} / {genelHedef.toLocaleString("tr-TR")}
-                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-700">
+                      <div className="min-w-0 text-center">
+                        <p className="text-[8px] font-black uppercase tracking-wide text-emerald-600 sm:text-[9px]">
+                          Biten
+                        </p>
+                        <p className="text-sm font-black tabular-nums text-emerald-800 sm:text-base dark:text-emerald-300">
+                          {row.biten.toLocaleString("tr-TR")}
+                        </p>
+                      </div>
+                      <div className="min-w-0 text-center">
+                        <p className="text-[8px] font-black uppercase tracking-wide text-teal-600 sm:text-[9px]">
+                          Bugün
+                        </p>
+                        <p className="text-sm font-black tabular-nums text-teal-800 sm:text-base dark:text-teal-300">
+                          +{row.bugun.toLocaleString("tr-TR")}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 ))}
                 </div>

@@ -10,9 +10,10 @@ export type HedefStageLine = {
   total: number;
 };
 
-/** `/api/production/hedef-stage-totals` — Ayarlar’daki ürün modelinde seçilen bölüm/proses satırları */
+/** `/api/production/hedef-stage-totals` — çalışılacak bölüm + günlük özet prosesleri */
 export type HedefStageTotals = {
   stages: HedefStageLine[];
+  dailySummaryStages: HedefStageLine[];
 };
 
 type AdminPanelProps = {
@@ -30,36 +31,53 @@ function genelTamamlananFromStages(stages: HedefStageLine[]): number {
   return Math.min(...stages.map((s) => safeNum(s.total)));
 }
 
+function stageLabel(s: HedefStageLine): string {
+  const shortProcess =
+    s.processName.length > 18 ? `${s.processName.slice(0, 16)}…` : s.processName;
+  return s.processName ? `${s.teamLabel} · ${shortProcess}` : s.teamLabel;
+}
+
 export default function AdminPanel({
   workerCount,
   stageTotals,
   stageError,
 }: AdminPanelProps) {
   const stages = stageTotals.stages ?? [];
+  const dailySummaryStages = stageTotals.dailySummaryStages ?? [];
   const genelTamamlanan = useMemo(() => genelTamamlananFromStages(stages), [stages]);
 
   const boxNeutral =
-    "border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800/90 dark:shadow-none";
+    "border-teal-200 bg-teal-50/50 shadow-sm dark:border-teal-800/50 dark:bg-teal-950/25 dark:shadow-none";
   const boxHighlight =
     "border-emerald-200 bg-emerald-50/90 shadow-md ring-1 ring-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/35 dark:ring-emerald-900/40";
-  const numNeutral = "text-slate-800 dark:text-slate-100";
-  const numHighlight = "text-emerald-700 dark:text-emerald-300";
+  const boxWorker =
+    "border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800/90 dark:shadow-none";
+  const boxDailySummary =
+    "border-violet-200 bg-violet-50/70 shadow-sm dark:border-violet-800/50 dark:bg-violet-950/30 dark:shadow-none";
 
-  const stageTiles = stages.map((s, i) => {
-    const shortProcess =
-      s.processName.length > 18 ? `${s.processName.slice(0, 16)}…` : s.processName;
-    const label = s.processName ? `${s.teamLabel} · ${shortProcess}` : s.teamLabel;
-    return {
-      key: `stage-${s.sortOrder}-${i}`,
-      label,
-      value: safeNum(s.total),
-      valueClass: numNeutral,
-      boxClass: boxNeutral,
-    };
-  });
+  const numNeutral = "text-teal-800 dark:text-teal-200";
+  const numHighlight = "text-emerald-700 dark:text-emerald-300";
+  const numWorker = "text-slate-800 dark:text-slate-100";
+  const numDailySummary = "text-violet-800 dark:text-violet-200";
+
+  const baselineTiles = stages.map((s, i) => ({
+    key: `stage-${s.sortOrder}-${i}`,
+    label: stageLabel(s),
+    value: safeNum(s.total),
+    valueClass: numNeutral,
+    boxClass: boxNeutral,
+  }));
+
+  const dailyTiles = dailySummaryStages.map((s, i) => ({
+    key: `daily-${s.sortOrder}-${i}`,
+    label: stageLabel(s),
+    value: safeNum(s.total),
+    valueClass: numDailySummary,
+    boxClass: boxDailySummary,
+  }));
 
   const tiles: Array<{ key: string; label: string; value: number; valueClass: string; boxClass: string }> = [
-    { key: "calisan", label: "Çalışan", value: safeNum(workerCount), valueClass: numNeutral, boxClass: boxNeutral },
+    { key: "calisan", label: "Çalışan", value: safeNum(workerCount), valueClass: numWorker, boxClass: boxWorker },
     {
       key: "genel",
       label: "Genel tamamlanan",
@@ -67,7 +85,8 @@ export default function AdminPanel({
       valueClass: numHighlight,
       boxClass: boxHighlight,
     },
-    ...stageTiles,
+    ...baselineTiles,
+    ...dailyTiles,
   ];
 
   return (
@@ -75,7 +94,10 @@ export default function AdminPanel({
       <div className="mb-4">
         <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">Günlük Özet</h2>
         <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
-          Aşama toplamları, o günün üretim saatleri ile ek adet sütununu birlikte sayar.
+          <span className="font-medium text-teal-700 dark:text-teal-300">Teal kutular</span> çalışılacak bölüm
+          aşamalarıdır;{" "}
+          <span className="font-medium text-violet-700 dark:text-violet-300">mor kutular</span> yalnızca sayı
+          toplamı için seçilen günlük özet prosesleridir.
         </p>
       </div>
       {stageError && (
