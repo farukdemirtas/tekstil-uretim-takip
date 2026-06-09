@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDayProductMeta, getUtuPaket, setAuthToken } from "@/lib/api";
+import { getDayProductMeta, getEkran1GenelIlerleme, getUtuPaket, getUtuPaketAnalytics, setAuthToken } from "@/lib/api";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
 import {
   calcUtuPaketPercent,
@@ -24,18 +24,22 @@ function formatClock() {
 
 type StageCardProps = {
   title: string;
-  count: number;
+  total: number;
+  todayCount: number;
   target: number;
   gradient: string;
   glow: string;
   doneBox: string;
   doneLabel: string;
   doneValue: string;
+  todayBox: string;
+  todayLabel: string;
+  todayValue: string;
 };
 
-function StageTvCard({ title, count, target, gradient, glow, doneBox, doneLabel, doneValue }: StageCardProps) {
-  const pct = calcUtuPaketPercent(count, target);
-  const remaining = Math.max(0, target - count);
+function StageTvCard({ title, total, todayCount, target, gradient, glow, doneBox, doneLabel, doneValue, todayBox, todayLabel, todayValue }: StageCardProps) {
+  const pct = calcUtuPaketPercent(total, target);
+  const remaining = Math.max(0, target - total);
 
   return (
     <div
@@ -47,9 +51,7 @@ function StageTvCard({ title, count, target, gradient, glow, doneBox, doneLabel,
       >
         {title}
       </h2>
-      <p
-        className="mt-1 text-center text-xs font-extrabold text-slate-500 sm:text-sm"
-      >
+      <p className="mt-1 text-center text-xs font-extrabold text-slate-500 sm:text-sm">
         Yapılan iş
       </p>
       <p
@@ -58,16 +60,27 @@ function StageTvCard({ title, count, target, gradient, glow, doneBox, doneLabel,
       >
         %{pct.toFixed(0)}
       </p>
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:gap-3">
+      <div className="mt-3 grid grid-cols-3 gap-2 sm:mt-4 sm:gap-3">
         <div className={`rounded-xl border-2 px-2 py-2.5 text-center shadow-sm sm:py-3 ${doneBox}`}>
           <p className={`text-[9px] font-black uppercase tracking-widest sm:text-[10px] ${doneLabel}`}>
             Gerçekleşen
           </p>
           <p
             className={`mt-0.5 font-black tabular-nums ${doneValue}`}
-            style={{ fontSize: "clamp(1.35rem, 3.2vw, 2.25rem)" }}
+            style={{ fontSize: "clamp(1.1rem, 2.6vw, 2rem)" }}
           >
-            {count.toLocaleString("tr-TR")}
+            {total.toLocaleString("tr-TR")}
+          </p>
+        </div>
+        <div className={`rounded-xl border-2 px-2 py-2.5 text-center shadow-sm sm:py-3 ${todayBox}`}>
+          <p className={`text-[9px] font-black uppercase tracking-widest sm:text-[10px] ${todayLabel}`}>
+            Bugün
+          </p>
+          <p
+            className={`mt-0.5 font-black tabular-nums ${todayValue}`}
+            style={{ fontSize: "clamp(1.1rem, 2.6vw, 2rem)" }}
+          >
+            {todayCount.toLocaleString("tr-TR")}
           </p>
         </div>
         <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-2 py-2.5 text-center shadow-sm sm:py-3">
@@ -76,7 +89,7 @@ function StageTvCard({ title, count, target, gradient, glow, doneBox, doneLabel,
           </p>
           <p
             className="mt-0.5 font-black tabular-nums text-amber-900"
-            style={{ fontSize: "clamp(1.35rem, 3.2vw, 2.25rem)" }}
+            style={{ fontSize: "clamp(1.1rem, 2.6vw, 2rem)" }}
           >
             {target > 0 ? remaining.toLocaleString("tr-TR") : "—"}
           </p>
@@ -98,7 +111,9 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [hasToken, setHasToken] = useState(false);
   const [displayDate, setDisplayDate] = useState(dateIso || todayWeekdayIso());
   const [optikCount, setOptikCount] = useState(0);
+  const [optikTotal, setOptikTotal] = useState(0);
   const [utuCount, setUtuCount] = useState(0);
+  const [utuTotal, setUtuTotal] = useState(0);
   const [paketCount, setPaketCount] = useState(0);
   const [gunPaketlenen, setGunPaketlenen] = useState(0);
   const [target, setTarget] = useState(0);
@@ -127,19 +142,34 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const [raw, meta] = await Promise.all([
+      const [raw, meta, genelOzet] = await Promise.all([
         getUtuPaket(date),
         getDayProductMeta(date).catch(() => null),
+        getEkran1GenelIlerleme(date, undefined).catch(() => null),
       ]);
       const data = normalizeUtuPaketPayload({ ...raw, date });
+      const todayOptik = sumUtuPaketSlots(data.stages.optik);
+      const todayUtu = sumUtuPaketSlots(data.stages.utu);
       setDisplayDate(date);
-      setOptikCount(sumUtuPaketSlots(data.stages.optik));
-      setUtuCount(sumUtuPaketSlots(data.stages.utu));
+      setOptikCount(todayOptik);
+      setUtuCount(todayUtu);
       setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
       setGunPaketlenen(sumGunPaketlenen(data.takipsan?.packages, date).adet);
       setTarget(data.takipsan?.orderQuantity ?? data.packagingTarget);
       const label = [meta?.productName, meta?.productModel].filter(Boolean).join(" · ");
       setProductLabel(label);
+
+      // Dönem başından bugüne kümülatif optik/ütü toplamı
+      const startDate = genelOzet?.dataStartDate ?? date;
+      if (startDate && startDate <= date) {
+        const analytics = await getUtuPaketAnalytics({ startDate, endDate: date }).catch(() => null);
+        setOptikTotal(analytics?.periodTotals?.optik ?? todayOptik);
+        setUtuTotal(analytics?.periodTotals?.utu ?? todayUtu);
+      } else {
+        setOptikTotal(todayOptik);
+        setUtuTotal(todayUtu);
+      }
+
       setLastUpdated(formatClock());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Veri alınamadı");
@@ -337,23 +367,31 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         <div className="grid shrink-0 grid-cols-1 gap-3 pb-2 sm:grid-cols-2 sm:gap-4">
           <StageTvCard
             title="Optik"
-            count={optikCount}
+            total={optikTotal}
+            todayCount={optikCount}
             target={target}
             gradient="from-violet-600 to-purple-500"
             glow="shadow-violet-500/20"
             doneBox="border-violet-300 bg-violet-50"
             doneLabel="text-violet-800"
             doneValue="text-violet-900"
+            todayBox="border-violet-400 bg-violet-100"
+            todayLabel="text-violet-700"
+            todayValue="text-violet-900"
           />
           <StageTvCard
             title="Ütü"
-            count={utuCount}
+            total={utuTotal}
+            todayCount={utuCount}
             target={target}
             gradient="from-amber-600 to-orange-500"
             glow="shadow-amber-500/20"
-            doneBox="border-orange-500 bg-orange-50"
+            doneBox="border-orange-400 bg-orange-50"
             doneLabel="text-orange-800"
             doneValue="text-orange-900"
+            todayBox="border-amber-400 bg-amber-100"
+            todayLabel="text-amber-700"
+            todayValue="text-amber-900"
           />
         </div>
       </div>
