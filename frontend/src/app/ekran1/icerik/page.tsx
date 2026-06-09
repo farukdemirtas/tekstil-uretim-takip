@@ -1097,42 +1097,54 @@ export default function Ekran1IcerikPage() {
                 </div>
               </div>
 
-              {/* Hedef / gerçekleşen / kalan / bugün — ütü-paket kaynaklı */}
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 md:mt-5 md:gap-4">
-                <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-slate-200 bg-white px-2 py-3 shadow-sm sm:py-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 sm:text-[10px]">Hedef</p>
+              {/* Hedef / BİTEN / Bugün üretilen / Kalan */}
+              <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 md:mt-5 md:gap-4">
+                {/* Hedef */}
+                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-slate-300 bg-white px-2 py-5 shadow-md ring-1 ring-slate-200/80 sm:min-h-[8.5rem] sm:py-6 md:min-h-[10rem] md:py-7">
+                  <p className="text-xs font-black uppercase tracking-[0.15em] text-slate-500 sm:text-sm md:text-base">
+                    Hedef
+                  </p>
                   <p
-                    className="font-black tabular-nums text-slate-800"
-                    style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
+                    className="w-full text-center font-black tabular-nums leading-none text-slate-900"
+                    style={{ fontSize: "clamp(1.4rem, 3.5vw, 3.5rem)" }}
                   >
                     {genelHedef.toLocaleString("tr-TR")}
                   </p>
                 </div>
-                <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-2 py-3 shadow-sm sm:py-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 sm:text-[10px]">BİTEN</p>
+                {/* BİTEN */}
+                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-emerald-400 bg-emerald-50 px-2 py-5 shadow-md ring-1 ring-emerald-200/90 sm:min-h-[8.5rem] sm:py-6 md:min-h-[10rem] md:py-7">
+                  <p className="text-xs font-black uppercase tracking-[0.15em] text-emerald-700 sm:text-sm md:text-base">
+                    BİTEN
+                  </p>
                   <p
-                    className="font-black tabular-nums text-emerald-700"
-                    style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
+                    className="w-full text-center font-black tabular-nums leading-none text-emerald-800"
+                    style={{ fontSize: "clamp(1.4rem, 3.5vw, 3.5rem)" }}
                   >
                     {genelTamamlanan.toLocaleString("tr-TR")}
                   </p>
                 </div>
-                <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-amber-200 bg-amber-50 px-2 py-3 shadow-sm sm:py-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 sm:text-[10px]">Kalan</p>
-                  <p
-                    className="font-black tabular-nums text-amber-800"
-                    style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
-                  >
-                    {Math.max(0, genelHedef - genelTamamlanan).toLocaleString("tr-TR")}
+                {/* Bugün üretilen */}
+                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-teal-400 bg-teal-50 px-2 py-5 shadow-md ring-1 ring-teal-200/90 sm:min-h-[8.5rem] sm:py-6 md:min-h-[10rem] md:py-7">
+                  <p className="text-xs font-black uppercase tracking-[0.1em] text-teal-700 sm:text-sm md:text-base">
+                    Bugün üretilen
                   </p>
-                </div>
-                <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-teal-200 bg-teal-50 px-2 py-3 shadow-sm sm:py-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-teal-600 sm:text-[10px]">Bugün üretilen</p>
                   <p
-                    className="font-black tabular-nums text-teal-700"
-                    style={{ fontSize: "clamp(1.35rem, 4vw, 3.25rem)" }}
+                    className="w-full text-center font-black tabular-nums leading-none text-teal-800"
+                    style={{ fontSize: "clamp(1.4rem, 3.5vw, 3.5rem)" }}
                   >
                     {bugunUretilen.toLocaleString("tr-TR")}
+                  </p>
+                </div>
+                {/* Kalan */}
+                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-amber-400 bg-amber-50 px-2 py-5 shadow-md ring-1 ring-amber-200/90 sm:min-h-[8.5rem] sm:py-6 md:min-h-[10rem] md:py-7">
+                  <p className="text-xs font-black uppercase tracking-[0.15em] text-amber-700 sm:text-sm md:text-base">
+                    Kalan
+                  </p>
+                  <p
+                    className="w-full text-center font-black tabular-nums leading-none text-amber-900"
+                    style={{ fontSize: "clamp(1.4rem, 3.5vw, 3.5rem)" }}
+                  >
+                    {Math.max(0, genelHedef - genelTamamlanan).toLocaleString("tr-TR")}
                   </p>
                 </div>
               </div>
