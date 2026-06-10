@@ -99,6 +99,7 @@ export default function UtuPaketPage() {
   const [dirty, setDirty] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [ekSayimOpen, setEkSayimOpen] = useState(false);
   const [mainTab, setMainTab] = useState<"entry" | "analysis">("entry");
   const [takipsanStatus, setTakipsanStatus] = useState<TakipsanStatus | null>(null);
   const [takipsanSyncing, setTakipsanSyncing] = useState(false);
@@ -244,10 +245,13 @@ export default function UtuPaketPage() {
   const stageTotals = useMemo(() => {
     const out = {} as Record<UtuPaketStage, number>;
     for (const st of UTU_PAKET_STAGES) {
-      out[st] = sumUtuPaketSlots(data.stages[st]);
+      const slotSum = sumUtuPaketSlots(data.stages[st]);
+      const ekSayim =
+        st !== "paketleme" ? (data.stageEkSayim?.[st as "optik" | "utu"] ?? 0) : 0;
+      out[st] = slotSum + ekSayim;
     }
     return out;
-  }, [data.stages]);
+  }, [data.stages, data.stageEkSayim]);
 
   const bedenTotal = useMemo(
     () => UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (data.beden[c] || 0), 0),
@@ -297,6 +301,7 @@ export default function UtuPaketPage() {
         date: payload.date,
         stages: payload.stages,
         beden: payload.beden,
+        stageEkSayim: payload.stageEkSayim,
       });
       setData(payload);
       setDirty(false);
@@ -329,6 +334,18 @@ export default function UtuPaketPage() {
           ...prev.stages,
           [stage]: { ...prev.stages[stage], [key]: v },
         },
+      };
+      scheduleSave(next);
+      return next;
+    });
+  }
+
+  function setEkSayim(stage: "optik" | "utu", raw: string) {
+    const v = Math.max(0, parseInt(raw, 10) || 0);
+    setData((prev) => {
+      const next = {
+        ...prev,
+        stageEkSayim: { ...prev.stageEkSayim, [stage]: v },
       };
       scheduleSave(next);
       return next;
@@ -818,11 +835,33 @@ export default function UtuPaketPage() {
       ) : (
         <section className="surface-card dark:text-slate-100">
           <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white">{meta.label}</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400">{meta.description}</p>
-            <p className="mt-2 text-2xl font-black tabular-nums text-teal-700 dark:text-teal-400">
-              Günlük toplam: {stageTotals[activeStage].toLocaleString("tr-TR")} adet
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">{meta.label}</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-400">{meta.description}</p>
+                <p className="mt-2 text-2xl font-black tabular-nums text-teal-700 dark:text-teal-400">
+                  Günlük toplam: {stageTotals[activeStage].toLocaleString("tr-TR")} adet
+                </p>
+              </div>
+              {(activeStage === "optik" || activeStage === "utu") && (
+                <button
+                  type="button"
+                  onClick={() => setEkSayimOpen((o) => !o)}
+                  className={`mt-0.5 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm transition ${
+                    ekSayimOpen
+                      ? "border-teal-400 bg-teal-50 text-teal-800 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-200"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
+                  aria-expanded={ekSayimOpen}
+                  title="Ek adet girişi"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  Ek adet
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid gap-3 p-5 sm:grid-cols-3">
@@ -846,6 +885,39 @@ export default function UtuPaketPage() {
               </label>
             ))}
           </div>
+
+          {(activeStage === "optik" || activeStage === "utu") && ekSayimOpen && (() => {
+            const ekStage = activeStage;
+            const ekVal = data.stageEkSayim?.[ekStage] ?? 0;
+            return (
+              <div className="border-t border-slate-200/80 bg-slate-50/40 px-5 py-4 dark:border-slate-700/80 dark:bg-slate-800/20">
+                <p className="mb-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                  Aşağıdaki ek adet saatlik tabloya eklenerek günlük toplamı günceller.
+                  Ana tablodaki saat dilimleri değişmez.
+                </p>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      className="w-28 rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-center text-xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-teal-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
+                      value={ekVal || ""}
+                      onChange={(e) => setEkSayim(ekStage, e.target.value)}
+                      aria-label={`${meta.label} ek adet`}
+                    />
+                    <span className="text-sm text-slate-500 dark:text-slate-400">adet</span>
+                  </label>
+                  {ekVal > 0 && (
+                    <p className="text-xs text-teal-600 dark:text-teal-400">
+                      Saatlik: {sumUtuPaketSlots(data.stages[activeStage]).toLocaleString("tr-TR")} + ek: {ekVal.toLocaleString("tr-TR")} ={" "}
+                      <strong>{stageTotals[activeStage].toLocaleString("tr-TR")}</strong>
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
             <p className="mb-2 text-xs font-semibold text-slate-500">Gün içi dağılım</p>

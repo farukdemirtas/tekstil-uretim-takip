@@ -381,9 +381,14 @@ export class TakipsanClient {
   }
 
   async ensureSession() {
-    if (this.loggedIn && this.lastLoginAt && Date.now() - this.lastLoginAt < 20 * 60 * 1000) {
+    // 12 dakikada bir yenile — Takipsan sunucu-taraflı timeout genellikle 15-20 dk
+    if (this.loggedIn && this.lastLoginAt && Date.now() - this.lastLoginAt < 12 * 60 * 1000) {
       return;
     }
+    // Yeni oturum öncesi eski cookieleri temizle
+    this.jar = new CookieJar();
+    this._pageToken = null;
+    this.loggedIn = false;
     await this.login();
   }
 
@@ -467,7 +472,13 @@ export class TakipsanClient {
     this.jar.absorb(post);
 
     const loc = post.headers.get("location") || "";
-    if (post.status >= 300 && post.status < 400 && !loc.includes("/login")) {
+
+    // Başarısız giriş: /login'e redirect (yanlış şifre)
+    if (post.status >= 300 && post.status < 400 && loc.includes("/login")) {
+      throw new Error("Takipsan giriş başarısız — kullanıcı adı veya şifre hatalı");
+    }
+
+    if (post.status >= 300 && post.status < 400 && loc) {
       const hop = await fetch(loc, {
         headers: { cookie: this.jar.header(), accept: "text/html" },
         redirect: "follow",
@@ -486,6 +497,9 @@ export class TakipsanClient {
     if (this.isLoginHtml(afterHtml)) {
       throw new Error("Takipsan giriş başarısız — kullanıcı adı veya şifre hatalı");
     }
+    if (!post.ok) {
+      throw new Error(`Takipsan giriş yanıtı beklenmedik (HTTP ${post.status})`);
+    }
 
     this.loggedIn = true;
     this.lastLoginAt = Date.now();
@@ -499,8 +513,12 @@ export class TakipsanClient {
       throw new Error(`Sevkiyat sayfası alınamadı (${res.status})`);
     }
     if (this.isLoginHtml(html)) {
-      if (!retry) throw new Error("Takipsan oturumu geçersiz");
+      if (!retry) throw new Error("Takipsan oturumu geçersiz — yeniden giriş de başarısız oldu");
+      // Eski cookieleri temizleyerek sıfırdan oturum aç
+      this.jar = new CookieJar();
+      this._pageToken = null;
       this.loggedIn = false;
+      this.lastLoginAt = null;
       await this.login();
       return this.fetchConsignmentHtml(consignmentId, false);
     }

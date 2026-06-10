@@ -66,6 +66,13 @@ function bedenFromTakipsan(fromPackages) {
 
 let syncInFlight = null;
 
+// Singleton client — oturum cookielerini senkronlar arasında korur
+let _sharedClient = null;
+function getSharedClient() {
+  if (!_sharedClient) _sharedClient = new TakipsanClient();
+  return _sharedClient;
+}
+
 export const takipsanSyncState = {
   enabled: false,
   lastSyncAt: null,
@@ -87,7 +94,7 @@ function updateState(patch) {
 }
 
 export function getTakipsanClient() {
-  return new TakipsanClient();
+  return getSharedClient();
 }
 
 export async function syncTakipsanToUtuPaket(options = {}) {

@@ -3700,7 +3700,7 @@ export async function getUtuPaketEkran1Summary(date) {
 export function getUtuPaketDay(date) {
   return new Promise((resolve, reject) => {
     db.all(
-      `SELECT stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830
+      `SELECT stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
        FROM utu_paket_slots WHERE production_date = ?`,
       [date],
       (slotErr, slotRows) => {
@@ -3717,9 +3717,13 @@ export function getUtuPaketDay(date) {
               (metaErr, metaRow) => {
                 if (metaErr) return reject(metaErr);
                 const stages = {};
+                const stageEkSayim = {};
                 for (const st of UTU_PAKET_STAGES) {
                   const row = (slotRows || []).find((r) => r.stage === st);
                   stages[st] = rowToUtuPaketSlots(row);
+                  if (st !== "paketleme") {
+                    stageEkSayim[st] = Number(row?.ek_sayim) || 0;
+                  }
                 }
                 const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
                 for (const r of bedenRows || []) {
@@ -3738,6 +3742,7 @@ export function getUtuPaketDay(date) {
                 resolve({
                   date,
                   stages,
+                  stageEkSayim,
                   beden,
                   packagingTarget,
                   takipsan: {
@@ -3795,6 +3800,11 @@ export function saveUtuPaketDay(date, payload) {
       db.run("BEGIN", (beginErr) => {
         if (beginErr) return reject(beginErr);
 
+        const stageEkSayimIn =
+          payload?.stageEkSayim && typeof payload.stageEkSayim === "object"
+            ? payload.stageEkSayim
+            : null;
+
         const slotStmt = db.prepare(
           `INSERT INTO utu_paket_slots (
             production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830
@@ -3821,6 +3831,20 @@ export function saveUtuPaketDay(date, payload) {
           if (slotFinalErr) {
             db.run("ROLLBACK");
             return reject(slotFinalErr);
+          }
+
+          // ek_sayim: mevcut slot satırını güncelle (takipsan sync'ini etkilemez)
+          if (stageEkSayimIn) {
+            for (const stage of ["optik", "utu"]) {
+              if (stage in stageEkSayimIn) {
+                db.run(
+                  `INSERT INTO utu_paket_slots (production_date, stage, ek_sayim)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(production_date, stage) DO UPDATE SET ek_sayim = excluded.ek_sayim`,
+                  [date, stage, z(stageEkSayimIn[stage])]
+                );
+              }
+            }
           }
 
           db.run(`DELETE FROM utu_paket_beden WHERE production_date = ?`, [date], (delErr) => {
@@ -3885,13 +3909,14 @@ export function saveUtuPaketDay(date, payload) {
 
 function sumUtuPaketSlotRow(row) {
   if (!row) return 0;
-  return UTU_PAKET_SLOT_KEYS.reduce((s, k) => s + (Number(row[k]) || 0), 0);
+  const slotSum = UTU_PAKET_SLOT_KEYS.reduce((s, k) => s + (Number(row[k]) || 0), 0);
+  return slotSum + (Number(row.ek_sayim) || 0);
 }
 
 export function getUtuPaketAnalytics(startDate, endDate) {
   return new Promise((resolve, reject) => {
     db.all(
-      `SELECT production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830
+      `SELECT production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
        FROM utu_paket_slots
        WHERE production_date BETWEEN ? AND ?
        ORDER BY production_date ASC, stage ASC`,

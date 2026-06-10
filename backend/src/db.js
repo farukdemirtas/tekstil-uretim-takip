@@ -714,6 +714,12 @@ export function initDb() {
     );
     db.run("ALTER TABLE utu_paket_meta ADD COLUMN takipsan_packages_json TEXT", () => {});
 
+    // ek_sayim: optik ve ütü için elle girilen ek adet (saat toplamına eklenir)
+    db.run(
+      "ALTER TABLE utu_paket_slots ADD COLUMN ek_sayim INTEGER NOT NULL DEFAULT 0",
+      () => {}
+    );
+
     db.run(`
       CREATE TABLE IF NOT EXISTS proses_veri_rows (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -105,6 +105,8 @@ export function sumGunPaketlenen(
 export type UtuPaketDayPayload = {
   date: string;
   stages: Record<UtuPaketStage, UtuPaketSlots>;
+  /** Optik ve ütü için saat toplamına eklenen ek adet */
+  stageEkSayim?: Partial<Record<Exclude<UtuPaketStage, "paketleme">, number>>;
   beden: Record<string, number>;
   /** TV bar hedefi — sipariş sayısından gelir */
   packagingTarget: number;
@@ -156,6 +158,10 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
       stages[st][key] = Math.max(0, Math.floor(Number(src[key]) || 0));
     }
   }
+  const stageEkSayim: Partial<Record<Exclude<UtuPaketStage, "paketleme">, number>> = {
+    optik: Math.max(0, Math.floor(Number(raw.stageEkSayim?.optik) || 0)),
+    utu: Math.max(0, Math.floor(Number(raw.stageEkSayim?.utu) || 0)),
+  };
   const beden = emptyUtuPaketBeden();
   for (const code of UTU_PAKET_SIZE_CODES) {
     beden[code] = Math.max(0, Math.floor(Number(raw.beden?.[code]) || 0));
@@ -179,6 +185,7 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
   return {
     date: raw.date,
     stages,
+    stageEkSayim,
     beden,
     packagingTarget: Math.max(0, Math.floor(Number(raw.packagingTarget) || 0)),
     takipsan,
