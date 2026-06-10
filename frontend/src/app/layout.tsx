@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "react-day-picker/style.css";
 import ThemeToggle from "@/components/ThemeToggle";
+import { SWRProvider } from "@/components/SWRProvider";
 
 export const metadata: Metadata = {
   title: {
@@ -29,7 +30,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="tr">
       <body className="font-sans antialiased">
         <ThemeToggle />
-        {children}
+        <SWRProvider>{children}</SWRProvider>
       </body>
     </html>
   );

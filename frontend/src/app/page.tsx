@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import * as XLSX from "xlsx";
+
 import AdminPanel, { type HedefStageTotals } from "@/components/AdminPanel";
 import LoginForm from "@/components/LoginForm";
 import ProductionTable from "@/components/ProductionTable";
@@ -64,6 +64,8 @@ import {
   clearStoredPermissions,
 } from "@/lib/permissions";
 import { ProductionRow } from "@/lib/types";
+import type * as XLSX from "xlsx";
+import { loadXlsx } from "@/lib/xlsxLazy";
 
 const EXPORT_TEAM_FALLBACK = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
 
@@ -574,8 +576,9 @@ export default function HomePage() {
   }
 
   /** Tek sayfa için worksheet oluşturur */
-  function buildWorksheet(dateIso: string, dayRows: ProductionRow[], dayProductName: string, dayProductModel: string): XLSX.WorkSheet {
+  async function buildWorksheet(dateIso: string, dayRows: ProductionRow[], dayProductName: string, dayProductModel: string): Promise<XLSX.WorkSheet> {
     const { aoa, headerRowIndex, lastColIdx } = buildSheetAoa(dateIso, dayRows, dayProductName, dayProductModel);
+    const XLSX = await loadXlsx();
     const worksheet = XLSX.utils.aoa_to_sheet(aoa);
     worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } }];
     const slotCols = lastColIdx - 4;
@@ -597,9 +600,10 @@ export default function HomePage() {
   }
 
   /** İlk sayfa: tüm günlerin tek tabloda, gün gruplarıyla toplu görünümü */
-  function buildConsolidatedSheet(
+  async function buildConsolidatedSheet(
     allDays: Array<{ date: string; rows: ProductionRow[]; productName: string; productModel: string }>
-  ): XLSX.WorkSheet {
+  ): Promise<XLSX.WorkSheet> {
+    const XLSX = await loadXlsx();
     let maxColsAcross = 9;
     for (const { date } of allDays) {
       maxColsAcross = Math.max(maxColsAcross, getConsolidatedProductionExcelHeaders(date).length);
@@ -684,6 +688,7 @@ export default function HomePage() {
     setBulkExporting(true);
     setBulkExportProgress({ done: 0, total: dates.length });
     try {
+      const XLSX = await loadXlsx();
       const workbook = XLSX.utils.book_new();
       const allDays: Array<{ date: string; rows: ProductionRow[]; productName: string; productModel: string }> = [];
 
@@ -699,13 +704,13 @@ export default function HomePage() {
       }
 
       // İlk sayfa: toplu özet
-      const consolidatedSheet = buildConsolidatedSheet(allDays);
+      const consolidatedSheet = await buildConsolidatedSheet(allDays);
       XLSX.utils.book_append_sheet(workbook, consolidatedSheet, "Toplu");
 
       // Gün gün sayfalar
       for (const { date, rows: dayRows, productName, productModel } of allDays) {
         const sheetName = date.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$3.$2");
-        const worksheet = buildWorksheet(date, dayRows, productName, productModel);
+        const worksheet = await buildWorksheet(date, dayRows, productName, productModel);
         XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
       }
 
@@ -719,7 +724,8 @@ export default function HomePage() {
     }
   }
 
-  function handleExportExcel() {
+  async function handleExportExcel() {
+    const XLSX = await loadXlsx();
     const sorted = orderedExportRows(rows, teamMeta);
     /* Tablo: Sıra → Ad Soyad → Bölüm → Proses → saatler → Toplam */
     const headers = [...getProductionExcelHeaders(selectedDate)];

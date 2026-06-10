@@ -7,6 +7,10 @@ const monorepoRoot = path.resolve(process.cwd(), "..");
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: monorepoRoot,
+  experimental: {
+    // Ağır paketlerde tree-shaking (date-fns 200+ modül içeriyor)
+    optimizePackageImports: ["date-fns", "react-day-picker", "lucide-react"],
+  },
   async rewrites() {
     if (process.env.NODE_ENV !== "development") return [];
     const backend = process.env.BACKEND_DEV_URL ?? "http://127.0.0.1:4000";

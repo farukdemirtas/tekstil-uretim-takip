@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as RMouseEvent } from "react";
-import * as XLSX from "xlsx";
+
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -35,6 +35,8 @@ import {
   workerEfficiencyPercent,
 } from "@/lib/workerEfficiency";
 import { todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
+import type * as XLSX from "xlsx";
+import { loadXlsx } from "@/lib/xlsxLazy";
 
 const AUTO_REFRESH_MS = 30_000;
 /** Personel verimlilik grafiğinde en fazla gösterilecek satır (üst sıra). */
@@ -291,7 +293,7 @@ export default function AnalysisPage() {
     return efficiencyPercentForDayProduction(prosesMap, row.team, row.process, row.production);
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     const topSheet = displayRows.map((row, index) => {
       const eff = rowPeriodEfficiency(row);
       const base: Record<string, string | number> = {
@@ -313,6 +315,7 @@ export default function AnalysisPage() {
       "Günlük Toplam Üretim": row.totalProduction
     }));
 
+    const XLSX = await loadXlsx();
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(topSheet), "Top İşçi");
     if (personnelEfficiencyAnalysis.active && personnelEfficiencyAnalysis.sorted.length > 0) {

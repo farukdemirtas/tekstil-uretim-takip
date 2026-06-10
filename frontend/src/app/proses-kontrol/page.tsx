@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import * as XLSX from "xlsx";
+
 import { getProduction, getTeams, getProcesses, getWorkersForAnalytics, getDayProductMeta, setAuthToken } from "@/lib/api";
 import type { TeamRow, ProcessRow, DayProductMeta } from "@/lib/api";
 import type { ProductionRow } from "@/lib/types";
@@ -11,6 +11,8 @@ import type { Worker } from "@/lib/types";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
+import type * as XLSX from "xlsx";
+import { loadXlsx } from "@/lib/xlsxLazy";
 
 /* ─── Sabitler ───────────────────────────────────────────── */
 const SESSIONS   = 8;
@@ -243,7 +245,8 @@ export default function ProsesKontrolPage() {
   })();
 
   /* ── Excel ─────────────────────────────────────────────── */
-  function exportExcel() {
+  async function exportExcel() {
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
     const urunStr = [dayMeta?.productModel, dayMeta?.productName].filter(Boolean).join(" — ");
     const infoRows = [

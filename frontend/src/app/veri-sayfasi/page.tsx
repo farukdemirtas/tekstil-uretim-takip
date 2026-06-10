@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import * as XLSX from "xlsx";
+
 import { getProcesses, getTeams, listProductModels, setAuthToken, getProsesVeriRowsFromServer, saveProsesVeriRowsToServer } from "@/lib/api";
 import type { ProcessRow, TeamRow, ProductModelListItem } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
+import type * as XLSX from "xlsx";
+import { loadXlsx } from "@/lib/xlsxLazy";
 import {
   makeProsesKey,
   setProsesMap,
@@ -290,11 +292,12 @@ export default function VeriSayfasiPage() {
     if (!file || !activeModel) return;
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       // input'u sıfırla — onload içinde yapıyoruz ki dosya referansı kaybolmasın
       e.target.value = "";
       try {
         const bstr = ev.target!.result as string;
+        const XLSX = await loadXlsx();
         const wb   = XLSX.read(bstr, { type: "binary" });
         const ws   = wb.Sheets[wb.SheetNames[0]];
         const aoa  = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1 });
@@ -359,8 +362,9 @@ export default function VeriSayfasiPage() {
   }
 
   /* ── Excel export ───────────────────────────────────────── */
-  function handleExport() {
+  async function handleExport() {
     if (rows.length === 0) return;
+    const XLSX = await loadXlsx();
     const aoa: (string | number)[][] = [
       [`Proses Veri Sayfası — ${activeModel}`],
       ["Dışa aktarım", new Date().toLocaleString("tr-TR")],

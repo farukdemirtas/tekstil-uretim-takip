@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import * as XLSX from "xlsx";
+
 import {
   addPersonnelBirthday,
   bulkInsertPersonnelBirthdays,
@@ -12,8 +12,10 @@ import {
   type PersonnelBirthdayRow,
 } from "@/lib/api";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
+import type * as XLSX from "xlsx";
+import { loadXlsx } from "@/lib/xlsxLazy";
 
-function parseCellToIsoDate(v: unknown): string | null {
+function parseCellToIsoDate(v: unknown, xlsxMod?: typeof XLSX): string | null {
   if (v == null || v === "") return null;
   if (v instanceof Date && !Number.isNaN(v.getTime())) {
     const y = v.getFullYear();
@@ -22,7 +24,7 @@ function parseCellToIsoDate(v: unknown): string | null {
     return `${y}-${m}-${d}`;
   }
   if (typeof v === "number" && Number.isFinite(v)) {
-    const parsed = XLSX.SSF?.parse_date_code?.(v);
+    const parsed = xlsxMod?.SSF?.parse_date_code?.(v);
     if (parsed && parsed.y != null && parsed.m != null && parsed.d != null) {
       const y = parsed.y;
       const m = String(parsed.m).padStart(2, "0");
@@ -237,6 +239,7 @@ export default function BirthdaysSection() {
     setExcelBusy(true);
     try {
       const buf = await f.arrayBuffer();
+      const XLSX = await loadXlsx();
       const wb = XLSX.read(buf, { type: "array", cellDates: true });
       const sheet = wb.Sheets[wb.SheetNames[0]];
       if (!sheet) {
@@ -255,7 +258,7 @@ export default function BirthdaysSection() {
         if (!line || line.length === 0) continue;
         const fn = String(line[ad] ?? "").trim();
         const ln = String(line[soyad] ?? "").trim();
-        const iso = parseCellToIsoDate(line[tarih]);
+        const iso = parseCellToIsoDate(line[tarih], XLSX);
         if (!fn && !ln) continue;
         if (!iso) continue;
         out.push({ firstName: fn, lastName: ln, birthDate: iso });

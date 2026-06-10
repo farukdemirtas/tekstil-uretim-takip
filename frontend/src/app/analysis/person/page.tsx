@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
+
 import {
   formatTurkishPeriodDescription,
   PersonOnePageSummaryReport,
@@ -46,6 +46,8 @@ import {
   workerEfficiencyPercent,
 } from "@/lib/workerEfficiency";
 import type { HourFilter, ProductionRow, Worker, WorkerProductionDayDetail } from "@/lib/types";
+import type * as XLSX from "xlsx";
+import { loadXlsx } from "@/lib/xlsxLazy";
 
 function dayTotal(r: WorkerProductionDayDetail): number {
   return sumProductionRow(r as unknown as ProductionRow);
@@ -549,7 +551,7 @@ export default function PersonAnalysisPage() {
     return idx;
   }, [sortedDates]);
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
     if (!meta || rows.length === 0) return;
     const ozet = [
       { Alan: "Personel", Değer: meta.name },
@@ -611,6 +613,7 @@ export default function PersonAnalysisPage() {
           ? `${Math.round((100 * stats.slotTotals[key]) / stats.grandTotal)}%`
           : "0%",
     }));
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ozet), "Özet");
     if (bolumOzet.length > 0) {
@@ -672,6 +675,7 @@ export default function PersonAnalysisPage() {
     setBulkExporting(true);
     setError(null);
     try {
+      const XLSX = await loadXlsx();
       const { pm, top } = await fetchBulkSummaryData();
       const sheetRows = top.map((row) => {
         const eff = efficiencyPercentFromTotals(
