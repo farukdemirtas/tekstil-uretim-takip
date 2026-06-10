@@ -6,13 +6,14 @@ import { useEffect, useMemo, useState } from "react";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "1" | "2" | "3" | "4";
+type TabId = "1" | "2" | "3" | "4" | "5";
 
 const IFRAME_SRC: Record<TabId, string> = {
   "1": "/ekran1/icerik",
   "2": "/ekran2/icerik",
   "3": "/ekran3/icerik",
   "4": "/ekran4/icerik",
+  "5": "/ekran5/icerik",
 };
 
 const ROUTE: Record<TabId, string> = {
@@ -20,13 +21,21 @@ const ROUTE: Record<TabId, string> = {
   "2": "/ekran2",
   "3": "/ekran3",
   "4": "/ekran4",
+  "5": "/ekran5",
 };
 
-function firstAllowedRoute(can1: boolean, can2: boolean, can3: boolean, can4: boolean): string | null {
+function firstAllowedRoute(
+  can1: boolean,
+  can2: boolean,
+  can3: boolean,
+  can4: boolean,
+  can5: boolean
+): string | null {
   if (can1) return ROUTE["1"];
   if (can2) return ROUTE["2"];
   if (can3) return ROUTE["3"];
   if (can4) return ROUTE["4"];
+  if (can5) return ROUTE["5"];
   return null;
 }
 
@@ -38,12 +47,14 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
   const can2 = isAdminRole() || hasPermission("ekran2");
   const can3 = isAdminRole() || hasPermission("ekran3");
   const can4 = isAdminRole() || hasPermission("ekran4");
+  const can5 = isAdminRole() || hasPermission("ekran5");
 
   const allowedForActive =
     (active === "1" && can1) ||
     (active === "2" && can2) ||
     (active === "3" && can3) ||
-    (active === "4" && can4);
+    (active === "4" && can4) ||
+    (active === "5" && can5);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -52,20 +63,20 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
       return;
     }
     setAuthToken(token);
-    if (!can1 && !can2 && !can3 && !can4) {
+    if (!can1 && !can2 && !can3 && !can4 && !can5) {
       window.location.href = "/";
       return;
     }
     if (!allowedForActive) {
-      const fallback = firstAllowedRoute(can1, can2, can3, can4);
+      const fallback = firstAllowedRoute(can1, can2, can3, can4, can5);
       if (fallback) router.replace(fallback);
       else window.location.href = "/";
       return;
     }
     setReady(true);
-  }, [can1, can2, can3, can4, allowedForActive, router]);
+  }, [can1, can2, can3, can4, can5, allowedForActive, router]);
 
-  /** iframe içi “Tam ekran” tüm pencereye yayılır; tam ekranda TV şeridini gizle */
+  /** iframe içi "Tam ekran" tüm pencereye yayılır; tam ekranda TV şeridini gizle */
   const [shellFs, setShellFs] = useState(false);
   useEffect(() => {
     const onFs = () => setShellFs(Boolean(document.fullscreenElement));
@@ -93,8 +104,9 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
     if (can2) t.push({ id: "2", label: "EKRAN2", href: ROUTE["2"] });
     if (can3) t.push({ id: "3", label: "EKRAN3", href: ROUTE["3"] });
     if (can4) t.push({ id: "4", label: "EKRAN4", href: ROUTE["4"] });
+    if (can5) t.push({ id: "5", label: "EKRAN5", href: ROUTE["5"] });
     return t;
-  }, [can1, can2, can3, can4]);
+  }, [can1, can2, can3, can4, can5]);
 
   if (!ready || !allowedForActive) {
     return (

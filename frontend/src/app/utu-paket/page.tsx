@@ -17,7 +17,6 @@ import type { DayProductMeta } from "@/lib/api";
 import { clampToWeekdayIso, todayIsoTurkey, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import UtuPaketAnalysis from "@/components/utu-paket/UtuPaketAnalysis";
-import UtuPaketEkran5 from "@/components/utu-paket/UtuPaketEkran5";
 import {
   UTU_PAKET_SIZE_CODES,
   UTU_PAKET_SLOT_DEFS,
@@ -85,6 +84,8 @@ export default function UtuPaketPage() {
   const [authorized, setAuthorized] = useState(false);
   const [selectedDate, setSelectedDate] = useState(todayWeekdayIso);
   const [activeStage, setActiveStage] = useState<UtuPaketStage>("optik");
+  const [paketPageSize, setPaketPageSize] = useState<number>(10);
+  const [paketPage, setPaketPage] = useState<number>(1);
   const [data, setData] = useState<UtuPaketDayPayload>(() => ({
     date: todayWeekdayIso(),
     stages: emptyUtuPaketStages(),
@@ -98,7 +99,7 @@ export default function UtuPaketPage() {
   const [dirty, setDirty] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [mainTab, setMainTab] = useState<"entry" | "analysis" | "ekran5">("entry");
+  const [mainTab, setMainTab] = useState<"entry" | "analysis">("entry");
   const [takipsanStatus, setTakipsanStatus] = useState<TakipsanStatus | null>(null);
   const [takipsanSyncing, setTakipsanSyncing] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -239,17 +240,6 @@ export default function UtuPaketPage() {
     runTakipsanSync,
     refreshTakipsan,
   ]);
-
-  useEffect(() => {
-    if (mainTab === "ekran5") {
-      document.body.dataset.ekran5View = "true";
-    } else {
-      delete document.body.dataset.ekran5View;
-    }
-    return () => {
-      delete document.body.dataset.ekran5View;
-    };
-  }, [mainTab]);
 
   const stageTotals = useMemo(() => {
     const out = {} as Record<UtuPaketStage, number>;
@@ -409,7 +399,6 @@ export default function UtuPaketPage() {
             [
               { id: "entry" as const, label: "Veri girişi" },
               { id: "analysis" as const, label: "Analiz" },
-              { id: "ekran5" as const, label: "Ekran 5" },
             ] as const
           ).map((tab) => (
             <button
@@ -431,6 +420,12 @@ export default function UtuPaketPage() {
               {tab.label}
             </button>
           ))}
+          <Link
+            href="/ekran5"
+            className="rounded-t-xl px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100/80 dark:text-slate-400 dark:hover:bg-slate-800/50"
+          >
+            Ekran 5 ↗
+          </Link>
         </nav>
 
         {mainTab === "entry" ? (
@@ -469,8 +464,6 @@ export default function UtuPaketPage() {
             void handleDateChange(iso);
           }}
         />
-      ) : mainTab === "ekran5" ? (
-        <UtuPaketEkran5 dateIso={selectedDate} embedded />
       ) : (
         <>
       {/* KPI şeridi */}
@@ -705,40 +698,122 @@ export default function UtuPaketPage() {
             </div>
           </div>
 
-          {paketPackages.length > 0 ? (
-            <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Paket listesi</h3>
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[36rem] text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
-                      <th className="px-3 py-2">Paket</th>
-                      <th className="px-3 py-2">Adet</th>
-                      <th className="px-3 py-2">Beden</th>
-                      <th className="px-3 py-2">Durum</th>
-                      <th className="px-3 py-2">Oluşturma tarihi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paketPackages.map((row, i) => (
-                      <tr
-                        key={`${row.packageNo}-${i}`}
-                        className="border-b border-slate-100 dark:border-slate-800"
-                      >
-                        <td className="px-3 py-2 font-medium">{row.packageNo}</td>
-                        <td className="px-3 py-2 tabular-nums">{row.items.toLocaleString("tr-TR")}</td>
-                        <td className="px-3 py-2 font-semibold">{row.size}</td>
-                        <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{row.status}</td>
-                        <td className="px-3 py-2 tabular-nums text-slate-600 dark:text-slate-400">
-                          {formatPackageCreatedAt(row.createdAt)}
-                        </td>
+          {paketPackages.length > 0 ? (() => {
+            const totalPages = Math.max(1, Math.ceil(paketPackages.length / paketPageSize));
+            const safePage = Math.min(paketPage, totalPages);
+            const pageStart = (safePage - 1) * paketPageSize;
+            const pageRows = paketPackages.slice(pageStart, pageStart + paketPageSize);
+
+            // Sayfa numaraları: daima 1 ve son, ortada mevcut etrafında en fazla 5
+            const makePageNums = () => {
+              const nums: (number | "…")[] = [];
+              if (totalPages <= 7) {
+                for (let i = 1; i <= totalPages; i++) nums.push(i);
+              } else {
+                nums.push(1);
+                if (safePage > 3) nums.push("…");
+                for (let i = Math.max(2, safePage - 1); i <= Math.min(totalPages - 1, safePage + 1); i++) nums.push(i);
+                if (safePage < totalPages - 2) nums.push("…");
+                nums.push(totalPages);
+              }
+              return nums;
+            };
+
+            return (
+              <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+                {/* Başlık + sayfa boyutu seçici */}
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Paket listesi</h3>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="paket-page-size" className="text-xs text-slate-500 dark:text-slate-400">Sayfa başına</label>
+                    <select
+                      id="paket-page-size"
+                      value={paketPageSize}
+                      onChange={(e) => { setPaketPageSize(Number(e.target.value)); setPaketPage(1); }}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      {[10, 25, 50, 100].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tablo */}
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[36rem] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
+                        <th className="px-3 py-2">Paket</th>
+                        <th className="px-3 py-2">Adet</th>
+                        <th className="px-3 py-2">Beden</th>
+                        <th className="px-3 py-2">Durum</th>
+                        <th className="px-3 py-2">Oluşturma tarihi</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {pageRows.map((row, i) => (
+                        <tr
+                          key={`${row.packageNo}-${i}`}
+                          className="border-b border-slate-100 last:border-0 dark:border-slate-800"
+                        >
+                          <td className="px-3 py-2 font-medium">{row.packageNo}</td>
+                          <td className="px-3 py-2 tabular-nums">{row.items.toLocaleString("tr-TR")}</td>
+                          <td className="px-3 py-2 font-semibold">{row.size}</td>
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{row.status}</td>
+                          <td className="px-3 py-2 tabular-nums text-slate-600 dark:text-slate-400">
+                            {formatPackageCreatedAt(row.createdAt)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Alt: kayıt özeti + sayfalama */}
+                {totalPages > 1 && (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-700/50">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {paketPackages.length} kayıttan {pageStart + 1}–{Math.min(pageStart + paketPageSize, paketPackages.length)} arası
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setPaketPage((p) => Math.max(1, p - 1))}
+                        disabled={safePage === 1}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                      >
+                        Önceki
+                      </button>
+                      {makePageNums().map((n, idx) =>
+                        n === "…" ? (
+                          <span key={`ellipsis-${idx}`} className="px-1.5 text-xs text-slate-400">…</span>
+                        ) : (
+                          <button
+                            key={n}
+                            onClick={() => setPaketPage(n)}
+                            className={`min-w-[28px] rounded-lg border px-2 py-1 text-xs font-semibold transition ${
+                              n === safePage
+                                ? "border-teal-500 bg-teal-500 text-white dark:border-teal-500 dark:bg-teal-600"
+                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                            }`}
+                          >
+                            {n}
+                          </button>
+                        )
+                      )}
+                      <button
+                        onClick={() => setPaketPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={safePage === totalPages}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                      >
+                        Sonraki
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ) : null}
+            );
+          })() : null}
         </section>
       ) : (
         <section className="surface-card dark:text-slate-100">
