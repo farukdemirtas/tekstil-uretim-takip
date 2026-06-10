@@ -916,129 +916,123 @@ export default function HomePage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 p-4 pb-10 md:gap-7 md:p-8">
-      <section className="surface-card dark:text-slate-100">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 p-3 pb-10 md:gap-5 md:p-6">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <header className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-700/70 dark:bg-slate-900/85">
+        {/* Accent bar */}
+        <div className="h-1 w-full bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-400" />
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-5">
           <div className="flex items-center gap-3">
-            <img
-              src="/logo.png"
-              alt="Yeşil İmaj Tekstil Logo"
-              width={52}
-              height={52}
-              className="h-[52px] w-[52px] shrink-0 rounded-lg border border-slate-200 object-contain shadow-sm dark:border-slate-600"
-              onError={(e) => {
-                const el = e.currentTarget;
-                if (el.dataset.fallback === "1") return;
-                el.dataset.fallback = "1";
-                el.src = "/logo.svg";
-              }}
-            />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md">
+              <img
+                src="/logo.png"
+                alt="Yeşil İmaj Tekstil Logo"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain"
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (el.dataset.fallback === "1") return;
+                  el.dataset.fallback = "1";
+                  el.src = "/logo.svg";
+                }}
+              />
+            </div>
             <div>
-              <h1 className="text-base font-bold tracking-tight text-slate-900 sm:text-xl dark:text-white">
+              <h1 className="text-base font-extrabold tracking-tight text-slate-900 sm:text-lg dark:text-white">
                 Yeşil İmaj Tekstil
               </h1>
-              <p className="text-xs text-slate-600 sm:text-sm dark:text-slate-400">Üretim takip</p>
+              <p className="text-[11px] font-medium uppercase tracking-widest text-teal-600 dark:text-teal-400">
+                Üretim Takip
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="hidden text-sm text-slate-600 sm:inline">Kullanıcı: {currentUser}</span>
+          <div className="flex items-center gap-2.5">
+            <div className="hidden items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-1.5 sm:flex dark:border-slate-700 dark:bg-slate-800">
+              <svg className="h-3.5 w-3.5 text-teal-500" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+              </svg>
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{currentUser}</span>
+            </div>
             <button
               onClick={handleLogout}
-              className="rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-slate-600 dark:text-slate-300 dark:hover:border-red-900/50 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-red-900/50 dark:hover:bg-red-950/30 dark:hover:text-red-300"
             >
-              Çıkış Yap
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Çıkış
             </button>
           </div>
         </div>
-      </section>
+      </header>
 
-      <section className="surface-card dark:text-slate-100">
-        {/* Tarih + genel tamamlanan (Hedef Takip formülü) */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label htmlFor="date" className="text-sm font-medium">
-              Tarih
-              <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">(hafta içi)</span>
-            </label>
+      {/* ── Tarih + İstatistikler + Navigasyon ────────────────────────── */}
+      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-700/70 dark:bg-slate-900/85">
+        <div className="flex flex-wrap items-center gap-2.5 px-4 py-3 md:px-5">
+          {/* Tarih seçici */}
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 dark:border-slate-600 dark:bg-slate-800">
+            <svg className="h-4 w-4 shrink-0 text-teal-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <label htmlFor="date" className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tarih</label>
             <WeekdayDatePicker id="date" value={selectedDate} onChange={setSelectedDate} />
           </div>
+
+          {/* Genel tamamlanan chip */}
           <div
-            className="rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-2 text-sm font-semibold text-emerald-800 shadow-surface-sm dark:border-emerald-900/40 dark:from-emerald-950/50 dark:to-teal-950/40 dark:text-emerald-200"
+            className="flex items-center gap-1.5 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-1.5 dark:border-emerald-900/40 dark:from-emerald-950/50 dark:to-teal-950/40"
             title="Hedef Takip: modeldeki bölüm satırları toplamlarının minimumu"
           >
-            Genel tamamlanan: {genelTamamlanan}
+            <svg className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" aria-hidden><polyline points="20 6 9 17 4 12"/></svg>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tamamlanan</span>
+            <span className="text-sm font-black tabular-nums text-emerald-800 dark:text-emerald-200">{genelTamamlanan}</span>
           </div>
+          {/* Verimlilik chip */}
           {rows.length > 0 ? (
             <div
-              className={`rounded-xl border px-4 py-2 text-sm font-semibold shadow-surface-sm ${
+              className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 ${
                 personnelEfficiencyLive.count > 0
                   ? prevAvgEfficiency == null || personnelEfficiencyLive.avg === prevAvgEfficiency
-                    ? "border-slate-200/80 bg-slate-50 text-slate-800 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100"
-                    : prevAvgEfficiency != null && personnelEfficiencyLive.avg > prevAvgEfficiency
-                      ? "border-emerald-300/90 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
-                      : "border-rose-300/90 bg-rose-50 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/35 dark:text-rose-200"
-                  : "border-dashed border-slate-300/90 bg-slate-50/80 text-slate-600 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-400"
+                    ? "border-slate-200/80 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/80"
+                    : personnelEfficiencyLive.avg > prevAvgEfficiency
+                      ? "border-emerald-300/90 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40"
+                      : "border-rose-300/90 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/35"
+                  : "border-dashed border-slate-300/90 bg-slate-50/80 dark:border-slate-600 dark:bg-slate-900/60"
               }`}
-              title={
-                useIntradayEfficiency
-                  ? "Bugün: 9 ölçüm dilimine göre anlık saat ortalaması ÷ Veri Sayfası saat adedi. Tam gün: günlük üretim ÷ günlük adet."
-                  : "Seçilen günde günlük üretim ÷ Genel Verimlilik’teki dk hedeflerine göre günlük adet."
-              }
+              title={useIntradayEfficiency ? "Anlık saat ortalaması" : "Günlük verimlilik"}
             >
+              <svg className={`h-4 w-4 shrink-0 ${personnelEfficiencyLive.count > 0 && prevAvgEfficiency != null ? personnelEfficiencyLive.avg > prevAvgEfficiency ? "text-emerald-600" : "text-rose-500" : "text-slate-400"}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Verimlilik</span>
               {personnelEfficiencyLive.count > 0 ? (
-                <>
-                  Ortalama verimlilik: %{personnelEfficiencyLive.avg}
-                  <span className="ml-1.5 font-normal opacity-90">
-                    ({personnelEfficiencyLive.count} personel)
-                  </span>
+                <span className={`text-sm font-black tabular-nums ${prevAvgEfficiency == null || personnelEfficiencyLive.avg === prevAvgEfficiency ? "text-slate-800 dark:text-slate-100" : personnelEfficiencyLive.avg > prevAvgEfficiency ? "text-emerald-800 dark:text-emerald-200" : "text-rose-700 dark:text-rose-300"}`}>
+                  %{personnelEfficiencyLive.avg}
+                  <span className="ml-1 text-xs font-normal opacity-70">({personnelEfficiencyLive.count} kişi)</span>
                   {prevAvgEfficiency != null && personnelEfficiencyLive.avg !== prevAvgEfficiency && (
-                    <span className="ml-2 text-xs font-medium opacity-95">
-                      · önceki iş günü %{prevAvgEfficiency}
-                      {personnelEfficiencyLive.avg > prevAvgEfficiency ? " (yükseliş)" : " (düşüş)"}
+                    <span className="ml-1.5 text-xs font-semibold">
+                      {personnelEfficiencyLive.avg > prevAvgEfficiency ? "↑" : "↓"} önceki %{prevAvgEfficiency}
                     </span>
                   )}
-                </>
+                </span>
               ) : (
-                <>
-                  Anlık verimlilik:{" "}
-                  <span className="font-black text-slate-500 dark:text-slate-400">—</span>
-                  <span className="ml-1.5 text-xs font-medium">
-                    {personnelEfficiencyLive.presentCount === 0 && personnelEfficiencyLive.withTarget === 0
-                      ? "(sahada olan yok)"
-                      : personnelEfficiencyLive.withTarget === 0
-                        ? "(satırlarda dk hedefi yok)"
-                        : ""}
-                  </span>
-                </>
+                <span className="text-sm text-slate-400 dark:text-slate-500">
+                  {personnelEfficiencyLive.presentCount === 0 && personnelEfficiencyLive.withTarget === 0 ? "Sahada yok" : personnelEfficiencyLive.withTarget === 0 ? "Hedef yok" : "—"}
+                </span>
               )}
             </div>
           ) : null}
         </div>
 
-        {/* Aksiyon butonları — tek satır; dar ekranda yatay kaydırma */}
-        <div className="mt-2 flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="border-t border-slate-100 px-4 py-2.5 dark:border-slate-700/50 md:px-5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {hasPermission("utuPaket") || isAdminRole() ? (
-            <Link href="/utu-paket" className="btn-nav-utu-paket">
-              Ütü–Paket
-            </Link>
+            <Link href="/utu-paket" className="btn-nav-utu-paket">Ütü–Paket</Link>
           ) : null}
-          {hasPermission("veriSayfasi") ? (
-            <Link href="/genel-verimlilik" className="btn-nav shrink-0">
-              Genel Verimlilik
-            </Link>
+          {hasPermission("hedefTakip") ? (
+            <button onClick={() => void pushToHedefTakip()} className="btn-nav shrink-0" type="button">Hedef Takip</button>
           ) : null}
-          {hasPermission("prosesKontrol") ? (
-            <Link href="/proses-kontrol" className="btn-nav shrink-0">
-              Proses Kontrol
-            </Link>
-          ) : null}
-          {hasPermission("analysis") ||
-          hasPermission("ekran2") ||
-          hasPermission("karsilastirma") ||
-          hasPermission("modelAnalizi") ? (
+          {hasPermission("analysis") || hasPermission("ekran2") || hasPermission("karsilastirma") || hasPermission("modelAnalizi") ? (
             <button
               type="button"
-              className={`btn-nav shrink-0 border-2 border-transparent font-semibold shadow-sm transition hover:border-teal-400/50 dark:hover:border-teal-500/40 ${analysisMenuOpen ? "border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-500/40 ring-offset-2 ring-offset-white dark:border-teal-600 dark:bg-teal-950/60 dark:text-teal-100 dark:ring-teal-500/35 dark:ring-offset-slate-900" : ""}`}
+              className={`btn-nav shrink-0 border-2 border-transparent font-semibold transition hover:border-teal-400/50 dark:hover:border-teal-500/40 ${analysisMenuOpen ? "border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-500/40 ring-offset-2 ring-offset-white dark:border-teal-600 dark:bg-teal-950/60 dark:text-teal-100 dark:ring-teal-500/35 dark:ring-offset-slate-900" : ""}`}
               aria-expanded={analysisMenuOpen}
               aria-haspopup="dialog"
               onClick={() => setAnalysisMenuOpen(true)}
@@ -1046,35 +1040,23 @@ export default function HomePage() {
               Analiz
             </button>
           ) : null}
-          {hasPermission("hedefTakip") ? (
-            <button onClick={() => void pushToHedefTakip()} className="btn-nav shrink-0" type="button">
-              Hedef Takip
-            </button>
+          {hasPermission("veriSayfasi") ? (
+            <Link href="/genel-verimlilik" className="btn-nav shrink-0">Genel Verimlilik</Link>
+          ) : null}
+          {hasPermission("prosesKontrol") ? (
+            <Link href="/proses-kontrol" className="btn-nav shrink-0">Proses Kontrol</Link>
           ) : null}
           {hasPermission("isBitirmeHesaplama") ? (
-            <Link href="/is-bitirme-hesaplama" className="btn-nav shrink-0">
-              İş Hesaplama
-            </Link>
+            <Link href="/is-bitirme-hesaplama" className="btn-nav shrink-0">İş Hesaplama</Link>
           ) : null}
-          {hasPermission("ekran1") ||
-          hasPermission("ekran2") ||
-          hasPermission("ekran3") ||
-          hasPermission("ekran4") ? (
-            <Link
-              href="/ekran1"
-              onClick={() => sessionStorage.removeItem("ekran1_from_hedef_takip_v1")}
-              className="btn-nav shrink-0"
-            >
+          {hasPermission("ekran1") || hasPermission("ekran2") || hasPermission("ekran3") || hasPermission("ekran4") ? (
+            <Link href="/ekran1" onClick={() => sessionStorage.removeItem("ekran1_from_hedef_takip_v1")} className="btn-nav shrink-0">
               TV Ekranları
             </Link>
           ) : null}
           <button
             type="button"
-            onClick={() => {
-              setExcelPanelOpen((v) => !v);
-              if (!bulkExportStart) setBulkExportStart(selectedDate);
-              if (!bulkExportEnd) setBulkExportEnd(selectedDate);
-            }}
+            onClick={() => { setExcelPanelOpen((v) => !v); if (!bulkExportStart) setBulkExportStart(selectedDate); if (!bulkExportEnd) setBulkExportEnd(selectedDate); }}
             className="btn-nav shrink-0"
           >
             Excel
@@ -1086,77 +1068,35 @@ export default function HomePage() {
               onOpenChange={setImportOpen}
               onImported={(targetDate) => {
                 setImportOpen(false);
-                if (targetDate === selectedDate) {
-                  void loadDateData(selectedDate);
-                } else {
-                  setSelectedDate(targetDate);
-                }
+                if (targetDate === selectedDate) { void loadDateData(selectedDate); } else { setSelectedDate(targetDate); }
               }}
             />
           ) : null}
           {hasPermission("tamirOrani") || isAdminRole() ? (
-            <Link href="/tamir-orani" className="btn-nav shrink-0">
-              Tamir Oranı
-            </Link>
+            <Link href="/tamir-orani" className="btn-nav shrink-0">Tamir Oranı</Link>
           ) : null}
           {hasPermission("ayarlar") || isAdminRole() ? (
-            <Link href="/ayarlar" className="btn-nav shrink-0">
-              Ayarlar
-            </Link>
+            <Link href="/ayarlar" className="btn-nav shrink-0">Ayarlar</Link>
           ) : null}
+        </div>
         </div>
       </section>
 
-      {/* Ürün adı / model — Çalışan ekleme ve tablonun üstü */}
-      <section className="surface-card dark:text-slate-100">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-            Çalışılacak ürün (seçili tarih)
-          </h2>
-          {productMetaSource === "hedef" ? (
-            <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-800 dark:bg-teal-950/50 dark:text-teal-300">
-              Hedef Takip
-            </span>
-          ) : (
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">Excel / manuel</span>
-          )}
-        </div>
-        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-          Bu bilgiler <strong className="font-medium text-slate-700 dark:text-slate-300">Hedef Takip</strong> veya{" "}
-          <strong className="font-medium text-slate-700 dark:text-slate-300">Ayarlar → Ürün modelleri</strong> üzerinden
-          tarih aralığı uygulandığında otomatik yazılır; bu alanlarda doğrudan düzenleme yapılamaz. Günlük özet ve hedef
-          rakamları, tanımlı modele göre seçilen bölüm ve proseslerden hesaplanır.
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Ürün özeti</span>
-            <div
-              className="input-modern w-full cursor-default bg-slate-50/90 text-sm font-medium text-slate-800 dark:bg-slate-900/50 dark:text-slate-100"
-              title="Hedef Takip / ürün modeli üzerinden güncellenir"
-            >
-              {formatProductDisplayLine(productName, productModel)}
-            </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Ürün adı</span>
-            <div
-              className="input-modern w-full cursor-default bg-slate-50/90 text-slate-800 dark:bg-slate-900/50 dark:text-slate-100"
-              title="Hedef Takip üzerinden güncellenir"
-            >
-              {productName.trim() ? productName : "—"}
-            </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Model kodu</span>
-            <div
-              className="input-modern w-full cursor-default bg-slate-50/90 text-slate-800 dark:bg-slate-900/50 dark:text-slate-100"
-              title="Hedef Takip üzerinden güncellenir"
-            >
-              {productModel.trim() ? productModel : "—"}
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* ── Ürün bilgisi bandı ────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/85 md:px-5">
+        <svg className="h-4 w-4 shrink-0 text-teal-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Çalışılan ürün</span>
+        <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
+          {formatProductDisplayLine(productName, productModel)}
+        </span>
+        {productMetaSource === "hedef" ? (
+          <span className="ml-auto rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-800 dark:bg-teal-950/50 dark:text-teal-300">
+            Hedef Takip
+          </span>
+        ) : (
+          <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">Excel / manuel</span>
+        )}
+      </div>
 
       <WorkerForm onSubmit={handleAddWorker} />
 
@@ -1698,8 +1638,9 @@ export default function HomePage() {
       )}
 
       {loading ? (
-        <div className="surface-card flex items-center justify-center py-12 text-sm font-medium text-slate-500 dark:text-slate-400">
-          Yükleniyor…
+        <div className="surface-card flex flex-col items-center justify-center gap-3 py-16">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-teal-500 dark:border-slate-700 dark:border-t-teal-400" />
+          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Veriler yükleniyor…</span>
         </div>
       ) : (
         <ProductionTable
