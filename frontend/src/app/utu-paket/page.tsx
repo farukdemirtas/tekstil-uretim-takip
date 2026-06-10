@@ -269,10 +269,12 @@ export default function UtuPaketPage() {
     const fromStatus = normalizeTakipsanPackages(takipsanStatus?.lastPackages);
     const dayHasDates = fromDay.some((row) => row.createdAt);
     const statusHasDates = fromStatus.some((row) => row.createdAt);
-    if (dayHasDates) return fromDay;
-    if (statusHasDates) return fromStatus;
-    if (fromDay.length > 0) return fromDay;
-    return fromStatus;
+    let rows: typeof fromDay;
+    if (dayHasDates) rows = fromDay;
+    else if (statusHasDates) rows = fromStatus;
+    else if (fromDay.length > 0) rows = fromDay;
+    else rows = fromStatus;
+    return [...rows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [data.takipsan?.packages, takipsanStatus?.lastPackages]);
   const paketReadCount = data.takipsan?.readCount ?? stageTotals.paketleme;
   const paketPackageCount = Math.max(
