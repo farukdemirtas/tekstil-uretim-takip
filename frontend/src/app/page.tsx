@@ -11,6 +11,7 @@ import WorkerForm from "@/components/WorkerForm";
 import {
   addWorker,
   getDayProductMeta,
+  getEkran1GenelIlerleme,
   getHedefTakipStageTotals,
   getProsesVeriRowsFromServer,
   getProduction,
@@ -139,6 +140,12 @@ export default function HomePage() {
     dailySummaryStages: [],
   });
   const [hedefStageError, setHedefStageError] = useState<string | null>(null);
+  const [ekran1Summary, setEkran1Summary] = useState<{
+    totalCompleted: number;
+    todayProduced: number;
+    stages: import("@/lib/api").HedefStageLineDto[];
+    dailySummaryStages: import("@/lib/api").HedefStageLineDto[];
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [productName, setProductName] = useState("");
@@ -248,6 +255,7 @@ export default function HomePage() {
       const settled = await Promise.allSettled([
         getProduction(date),
         getHedefTakipStageTotals(date, date, mid ?? undefined),
+        getEkran1GenelIlerleme(date, mid ?? undefined),
       ]);
 
       if (settled[0].status === "fulfilled") {
@@ -272,6 +280,13 @@ export default function HomePage() {
             ? settled[1].reason.message
             : "Günlük Özet verisi alınamadı"
         );
+      }
+
+      if (settled[2].status === "fulfilled") {
+        const s = settled[2].value;
+        setEkran1Summary({ totalCompleted: s.totalCompleted, todayProduced: s.todayProduced, stages: s.stages, dailySummaryStages: s.dailySummaryStages });
+      } else {
+        setEkran1Summary(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu");
@@ -383,9 +398,13 @@ export default function HomePage() {
     const dateStr = selectedDateRef.current;
     const mid = activeModelIdRef.current;
     try {
-      const ht = await getHedefTakipStageTotals(dateStr, dateStr, mid ?? undefined);
+      const [ht, ekran1] = await Promise.all([
+        getHedefTakipStageTotals(dateStr, dateStr, mid ?? undefined),
+        getEkran1GenelIlerleme(dateStr, mid ?? undefined).catch(() => null),
+      ]);
       setHedefStageTotals(ht);
       setHedefStageError(null);
+      if (ekran1) setEkran1Summary({ totalCompleted: ekran1.totalCompleted, todayProduced: ekran1.todayProduced, stages: ekran1.stages, dailySummaryStages: ekran1.dailySummaryStages });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Günlük özet yenilenemedi";
       setHedefStageError(msg);
@@ -1675,7 +1694,15 @@ export default function HomePage() {
         />
       ) : null}
 
-      <AdminPanel workerCount={rows.length} stageTotals={hedefStageTotals} stageError={hedefStageError} />
+      <AdminPanel
+        workerCount={rows.length}
+        stageTotals={hedefStageTotals}
+        stageError={hedefStageError}
+        ekran1TotalCompleted={ekran1Summary?.totalCompleted ?? null}
+        ekran1TodayProduced={ekran1Summary?.todayProduced ?? null}
+        ekran1Stages={ekran1Summary?.stages ?? null}
+        ekran1DailySummaryStages={ekran1Summary?.dailySummaryStages ?? null}
+      />
     </main>
   );
 }

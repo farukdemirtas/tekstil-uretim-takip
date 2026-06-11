@@ -1325,6 +1325,7 @@ export type Ekran1GenelIlerleme = {
   todayProduced: number;
   dataStartDate: string | null;
   stages: HedefStageLineDto[];
+  dailySummaryStages: HedefStageLineDto[];
   todayStages: HedefStageLineDto[];
   affectingStage: {
     sortOrder: number;
@@ -1349,6 +1350,9 @@ export async function getEkran1GenelIlerleme(
   }
   const raw = (await res.json()) as Record<string, unknown>;
   const stages = parseHedefStageTotalsPayload({ stages: raw.stages }).stages;
+  const dailySummaryStages = parseHedefStageTotalsPayload({
+    stages: raw.dailySummaryStages ?? raw.daily_summary_stages,
+  }).stages;
   const todayStages = parseHedefStageTotalsPayload({
     stages: raw.todayStages ?? raw.today_stages,
   }).stages;
@@ -1361,6 +1365,7 @@ export async function getEkran1GenelIlerleme(
     todayProduced: num(raw.todayProduced),
     dataStartDate: raw.dataStartDate != null ? String(raw.dataStartDate) : null,
     stages,
+    dailySummaryStages,
     todayStages,
     affectingStage:
       raw.affectingStage && typeof raw.affectingStage === "object"

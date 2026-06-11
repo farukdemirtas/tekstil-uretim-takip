@@ -1238,6 +1238,7 @@ export async function getEkran1GenelIlerleme(date, modelId) {
     dataStartDate: rangeStart,
     /** Alt proses barları: kümülatif (biten) + bugünkü üretim */
     stages: cStages,
+    dailySummaryStages: cumulative.dailySummaryStages ?? [],
     todayStages: tStages,
     affectingStage: aff
       ? {
