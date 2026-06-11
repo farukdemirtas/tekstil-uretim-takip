@@ -584,128 +584,146 @@ export default function UtuPaketPage() {
         <div className="surface-card flex justify-center py-16 text-sm text-slate-500">Yükleniyor…</div>
       ) : activeStage === "paketleme" ? (
         <section className="surface-card dark:text-slate-100">
-          <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* ── Başlık ── */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15">
+                <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z" />
+                  <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M12 12h.01" />
+                </svg>
+              </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Paketleme</h2>
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Veriler otomatik güncellenir (~30 sn).
-                </p>
-              </div>
-              <div className="text-right text-xs text-slate-500 dark:text-slate-400">
-                {takipsanSyncing ? (
-                  <span className="font-medium text-teal-600 dark:text-teal-400">Güncelleniyor…</span>
-                ) : data.takipsan?.syncedAt ? (
-                  <span>
-                    Son senkron:{" "}
-                    {new Date(data.takipsan.syncedAt).toLocaleString("tr-TR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    })}
-                  </span>
-                ) : (
-                  <span>Senkron bekleniyor</span>
-                )}
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">Paketleme</h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Takipsan · otomatik (~1 dk)</p>
               </div>
             </div>
-            {takipsanStatus?.lastError ? (
-              <p className="mt-3 rounded-xl border border-red-300/80 bg-red-50 px-4 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
-                Veri hatası: {takipsanStatus.lastError}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="grid gap-3 border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80 sm:grid-cols-2">
-            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 px-4 py-4 dark:border-emerald-900/50 dark:bg-emerald-950/25">
-              <p className="text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
-                {gunPaketLabel}
-              </p>
-              <p className="mt-2 text-3xl font-black tabular-nums text-emerald-900 dark:text-emerald-100">
-                {gunPaketOzeti.adet.toLocaleString("tr-TR")}
-              </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Adet</p>
-            </div>
-            <div className="rounded-2xl border border-teal-200/80 bg-teal-50/70 px-4 py-4 dark:border-teal-900/50 dark:bg-teal-950/25">
-              <p className="text-xs font-bold uppercase tracking-wide text-teal-800 dark:text-teal-300">
-                {selectedDate === todayIsoTurkey() ? "Bugün oluşturulan" : "Gün paket sayısı"}
-              </p>
-              <p className="mt-2 text-3xl font-black tabular-nums text-teal-900 dark:text-teal-100">
-                {gunPaketOzeti.paket.toLocaleString("tr-TR")}
-              </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Paket</p>
+            <div className="flex items-center gap-2">
+              {data.takipsan?.orderCode && (
+                <span className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {data.takipsan.orderCode}
+                </span>
+              )}
+              {takipsanSyncing ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700 ring-1 ring-teal-200 dark:bg-teal-950/30 dark:text-teal-300 dark:ring-teal-800">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-500" />
+                  Güncelleniyor
+                </span>
+              ) : data.takipsan?.syncedAt ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  {new Date(data.takipsan.syncedAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  Bekleniyor
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                label: "Sipariş sayısı",
-                sub: "Paketlenmesi gereken",
-                value: paketOrderQty,
-                accent: "border-amber-200 bg-amber-50/80 dark:border-amber-900/40 dark:bg-amber-950/30",
-              },
-              {
-                label: "Okunan sayısı",
-                sub: "Paketlenen ürün",
-                value: paketReadCount,
-                accent: "border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/30",
-              },
-              {
-                label: "Paket sayısı",
-                sub: "Oluşturulan paket",
-                value: paketPackageCount,
-                accent: "border-sky-200 bg-sky-50/80 dark:border-sky-900/40 dark:bg-sky-950/30",
-              },
-              {
-                label: "Beden toplamı",
-                sub: "Paket içi adet",
-                value: bedenTotal,
-                accent: "border-violet-200 bg-violet-50/80 dark:border-violet-900/40 dark:bg-violet-950/30",
-              },
-            ].map((card) => (
-              <div
-                key={card.label}
-                className={`rounded-2xl border p-4 ${card.accent}`}
-              >
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{card.label}</p>
-                <p className="text-[11px] text-slate-500">{card.sub}</p>
-                <p className="mt-2 text-3xl font-black tabular-nums text-slate-900 dark:text-white">
-                  {card.value.toLocaleString("tr-TR")}
-                </p>
+          {takipsanStatus?.lastError && (
+            <div className="mx-5 mt-4 flex items-start gap-2.5 rounded-xl border border-red-200/80 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-300">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>{takipsanStatus.lastError}</span>
+            </div>
+          )}
+
+          {/* ── Hero: bugün paketlenen + ilerleme ── */}
+          {(() => {
+            const pct = paketOrderQty > 0 ? Math.min(100, Math.round((paketReadCount / paketOrderQty) * 100)) : 0;
+            const remaining = Math.max(0, paketOrderQty - paketReadCount);
+            return (
+              <div className="border-b border-slate-200/80 px-5 py-5 dark:border-slate-700/80">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {/* Sol: bugün paketlenen — ön planda */}
+                  <div className="rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/5 p-5 ring-1 ring-emerald-200/60 dark:from-emerald-500/10 dark:to-teal-500/5 dark:ring-emerald-800/40">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
+                      {gunPaketLabel}
+                    </p>
+                    <div className="mt-1 flex items-end gap-3">
+                      <p className="text-5xl font-black tabular-nums leading-none text-emerald-900 dark:text-emerald-100">
+                        {gunPaketOzeti.adet.toLocaleString("tr-TR")}
+                      </p>
+                      <p className="mb-1 text-sm text-slate-500 dark:text-slate-400">adet</p>
+                    </div>
+                    <div className="mt-3 flex items-center gap-3 border-t border-emerald-200/50 pt-3 dark:border-emerald-800/30">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-500">Paket</p>
+                        <p className="text-lg font-black tabular-nums text-emerald-800 dark:text-emerald-200">
+                          {gunPaketOzeti.paket.toLocaleString("tr-TR")}
+                        </p>
+                      </div>
+                      <div className="h-8 w-px bg-emerald-200/60 dark:bg-emerald-800/40" />
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Toplam okunan</p>
+                        <p className="text-lg font-black tabular-nums text-slate-700 dark:text-slate-200">
+                          {paketReadCount.toLocaleString("tr-TR")}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Sağ: sipariş ilerleme */}
+                  <div className="rounded-2xl bg-slate-50/80 p-5 ring-1 ring-slate-200/60 dark:bg-slate-800/40 dark:ring-slate-700/50">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        Sipariş ilerlemesi
+                      </p>
+                      <span className={`text-sm font-black tabular-nums ${pct >= 100 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-700 dark:text-slate-200"}`}>
+                        %{pct}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-end gap-2">
+                      <p className="text-3xl font-black tabular-nums leading-none text-slate-800 dark:text-slate-100">
+                        {paketReadCount.toLocaleString("tr-TR")}
+                      </p>
+                      <p className="mb-0.5 text-sm text-slate-400">/ {paketOrderQty.toLocaleString("tr-TR")}</p>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${pct >= 100 ? "bg-emerald-500" : "bg-teal-500"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {remaining > 0 ? `${remaining.toLocaleString("tr-TR")} adet kaldı` : "Sipariş tamamlandı ✓"}
+                      </p>
+                      <p className="text-xs text-slate-400">{paketPackageCount.toLocaleString("tr-TR")} paket</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })()}
 
-          {data.takipsan?.orderCode ? (
-            <p className="px-5 pb-2 text-sm text-slate-600 dark:text-slate-400">
-              Sipariş kodu: <strong>{data.takipsan.orderCode}</strong>
-            </p>
-          ) : null}
-
-          <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Beden dağılımı</h3>
-            <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {/* ── Beden dağılımı ── */}
+          <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+            <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100">Beden dağılımı</h3>
+            <div className="grid gap-2 sm:grid-cols-5">
               {UTU_PAKET_SIZE_CODES.map((code) => {
                 const count = data.beden[code] || 0;
                 const pct = bedenTotal > 0 ? Math.round((count / bedenTotal) * 100) : 0;
                 return (
                   <div
                     key={code}
-                    className="rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-emerald-50/80 to-white p-4 dark:border-emerald-900/40 dark:from-emerald-950/30 dark:to-slate-900/50"
+                    className="rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200 dark:bg-slate-800/50 dark:ring-slate-700"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-lg font-black text-emerald-800 dark:text-emerald-300">{code}</span>
-                      {bedenTotal > 0 ? (
-                        <span className="text-xs font-semibold text-slate-500">%{pct}</span>
-                      ) : null}
+                      <span className="text-base font-black text-slate-700 dark:text-slate-200">{code}</span>
+                      {pct > 0 && (
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">%{pct}</span>
+                      )}
                     </div>
-                    <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
+                    <p className="mt-1 text-2xl font-black tabular-nums text-slate-900 dark:text-white">
                       {count.toLocaleString("tr-TR")}
                     </p>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                       <div
-                        className="h-full rounded-full bg-emerald-500 transition-all"
+                        className="h-full rounded-full bg-emerald-400 transition-all"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
