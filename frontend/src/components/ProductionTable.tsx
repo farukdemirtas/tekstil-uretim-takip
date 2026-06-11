@@ -334,89 +334,49 @@ export default function ProductionTable({
   return (
     <div className="flex flex-col gap-3">
       {rows.length > 0 ? (
-        <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-teal-50/40 shadow-surface-sm ring-1 ring-slate-900/[0.03] dark:border-slate-700/80 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-teal-950/25 dark:ring-white/[0.04]">
-          <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-4">
-            <label
-              htmlFor="production-name-search"
-              className="flex min-w-0 cursor-text items-center gap-3 sm:w-[11.5rem] sm:shrink-0"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-sm shadow-teal-500/20 dark:from-teal-600 dark:to-emerald-700 dark:shadow-teal-900/40">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path
-                    d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                  <path d="M16 16l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <div className="flex items-center gap-2">
+          {/* Arama kutusu */}
+          <div className="relative min-w-0 flex-1">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z" stroke="currentColor" strokeWidth="1.75" />
+                <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+              </svg>
+            </span>
+            <input
+              id="production-name-search"
+              type="search"
+              value={nameSearch}
+              onChange={(e) => setNameSearch(e.target.value)}
+              placeholder="Personel ara…"
+              autoComplete="off"
+              className="w-full rounded-xl border border-slate-200/90 bg-white py-2.5 pl-9 pr-9 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600/90 dark:bg-slate-800/90 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-teal-500 dark:focus:ring-teal-400/25"
+            />
+            {nameSearch.trim() ? (
+              <button
+                type="button"
+                onClick={() => setNameSearch("")}
+                className="absolute inset-y-0 right-1.5 my-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                aria-label="Aramayı temizle"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold tracking-tight text-slate-900 dark:text-white">
-                  Personel ara
-                </span>
-                <span className="block text-[11px] text-slate-500 dark:text-slate-400">Tabloda hızlı filtre</span>
-              </span>
-            </label>
-
-            <div className="relative min-w-0 flex-1">
-              <label htmlFor="production-name-search" className="block cursor-text">
-                <span className="pointer-events-none absolute inset-y-0 left-3 z-[1] flex items-center text-slate-400 dark:text-slate-500">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path
-                      d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z"
-                      stroke="currentColor"
-                      strokeWidth="1.75"
-                    />
-                    <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-                  </svg>
-                </span>
-                <input
-                  id="production-name-search"
-                  type="search"
-                  value={nameSearch}
-                  onChange={(e) => setNameSearch(e.target.value)}
-                  placeholder="Ad veya soyada göre yazın…"
-                  autoComplete="off"
-                  className="relative z-0 w-full rounded-xl border border-slate-200/90 bg-white/90 py-2.5 pl-10 pr-10 text-sm text-slate-900 shadow-inner shadow-slate-900/[0.02] outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600/90 dark:bg-slate-800/90 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-teal-500 dark:focus:bg-slate-800 dark:focus:ring-teal-400/25"
-                />
-              </label>
-              {nameSearch.trim() ? (
-                <button
-                  type="button"
-                  onClick={() => setNameSearch("")}
-                  className="absolute inset-y-0 right-1.5 z-[2] my-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-                  aria-label="Aramayı temizle"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </button>
-              ) : null}
-            </div>
-
-            <div
-              className={`flex shrink-0 items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold tabular-nums transition ${
-                nameSearch.trim()
-                  ? "border border-teal-200/80 bg-teal-50 text-teal-900 dark:border-teal-800/60 dark:bg-teal-950/50 dark:text-teal-100"
-                  : "border border-slate-200/80 bg-slate-50 text-slate-600 dark:border-slate-600/80 dark:bg-slate-800/80 dark:text-slate-300"
-              }`}
-            >
-              {nameSearch.trim() ? (
-                <>
-                  <span className="text-teal-700 dark:text-teal-300">{displayRows.length}</span>
-                  <span className="mx-1 text-slate-400 dark:text-slate-500">/</span>
-                  <span>{rows.length}</span>
-                  <span className="ml-1.5 font-medium">personel</span>
-                </>
-              ) : (
-                <span>{rows.length} personel</span>
-              )}
-            </div>
+              </button>
+            ) : null}
           </div>
+          {/* Personel sayısı rozeti */}
+          <span className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold tabular-nums ${
+            nameSearch.trim()
+              ? "bg-teal-50 text-teal-700 ring-1 ring-teal-200/80 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-800/50"
+              : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+          }`}>
+            {nameSearch.trim() ? `${displayRows.length} / ${rows.length}` : `${rows.length} kişi`}
+          </span>
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100 dark:shadow-none">
+      <div className="text-slate-900 dark:text-slate-100">
       {openMenuId !== null && (
         <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
       )}
@@ -497,7 +457,7 @@ export default function ProductionTable({
         </div>
       )}
 
-      <div className="hidden overflow-auto md:block">
+      <div className="hidden overflow-auto rounded-2xl border border-slate-200/90 shadow-sm dark:border-slate-700/80 md:block">
         <table className={`w-full border-collapse text-sm ${timeColCount > 4 ? "min-w-[1280px]" : "min-w-[960px]"}`}>
           <colgroup>
             <col className="w-8" />
@@ -511,33 +471,33 @@ export default function ProductionTable({
             <col className="w-[4.5rem]" />
             <col className="w-12" />
           </colgroup>
-          <thead className="bg-slate-800 text-white">
-            <tr>
-              <th className="px-2 py-2.5 text-center text-sm font-bold">No</th>
-              <th className="px-3 py-2.5 text-left text-sm font-bold" title="Yanında anlık verimlilik oranı gösterilir">
-                Ad Soyad · verim
-              </th>
+          <thead>
+            <tr className="bg-slate-900 text-white dark:bg-slate-950">
+              <th className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">No</th>
+              <th className="px-3 py-3 text-left text-xs font-bold">Ad Soyad · verim</th>
               {timeFields.map((f) => (
                 <th
                   key={f.key}
-                  className={`px-1 py-2.5 text-center font-bold ${timeColCount > 4 ? "text-[11px] leading-tight" : "text-sm"}`}
+                  className={`px-1 py-3 text-center font-bold ${timeColCount > 4 ? "text-[11px] leading-tight" : "text-xs"}`}
                 >
                   {f.label}
                 </th>
               ))}
-              <th className="px-1 py-2.5 text-center text-sm font-bold">Toplam</th>
-              <th className="px-1 py-2.5 text-center text-[11px] font-semibold text-amber-300/90" title="Proses Veri Sayfasından dakikalık adet">Dk</th>
-              <th className="px-1 py-2.5 text-center text-[11px] font-semibold text-sky-300/90" title="Saatlik adet = dakikalık × 60">Saat</th>
-              <th className="px-1 py-2.5 text-center text-[11px] font-semibold text-emerald-300/90" title="Günlük adet = saatlik × 9">Günlük</th>
-              <th className="px-2 py-2.5 text-center text-sm font-bold">İşlem</th>
+              <th className="px-1 py-3 text-center text-xs font-bold">Toplam</th>
+              <th className="px-1 py-3 text-center text-[11px] font-semibold text-amber-400" title="Proses Veri Sayfasından dakikalık adet">Dk</th>
+              <th className="px-1 py-3 text-center text-[11px] font-semibold text-sky-400" title="Saatlik adet = dakikalık × 60">Saat</th>
+              <th className="px-1 py-3 text-center text-[11px] font-semibold text-emerald-400" title="Günlük adet = saatlik × 9">Günlük</th>
+              <th className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">İşlem</th>
             </tr>
           </thead>
           <tbody>
             {sections.map(({ team, teamRows, startNo }) => (
               <Fragment key={team}>
-                <tr className="bg-slate-200 dark:bg-slate-700">
-                  <td colSpan={tableColSpan} className="px-3 py-2 text-left text-sm font-semibold">
-                    {teamLabel(team)}
+                <tr className="bg-slate-200 dark:bg-slate-700/60">
+                  <td colSpan={tableColSpan} className="px-3 py-1.5">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                      {teamLabel(team)}
+                    </span>
                   </td>
                 </tr>
                 {teamRows.map((row, index) => {
@@ -549,10 +509,10 @@ export default function ProductionTable({
                   return (
                     <tr
                       key={`${team}-${row.workerId}-${index}`}
-                      className={`border-b border-slate-200 align-middle dark:border-slate-700 ${
+                      className={`border-b border-slate-100 align-middle transition-colors dark:border-slate-700/60 ${
                         absent
-                          ? "bg-slate-100/80 text-slate-500 dark:bg-slate-800/50 dark:text-slate-400"
-                          : "hover:bg-slate-50 dark:hover:bg-slate-600"
+                          ? "bg-slate-50/80 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500"
+                          : "bg-white hover:bg-slate-50/80 dark:bg-transparent dark:hover:bg-slate-800/40"
                       }`}
                     >
                       <td className="px-2 py-2 text-center tabular-nums text-slate-600 dark:text-slate-400">{startNo + index}</td>
@@ -642,10 +602,10 @@ export default function ProductionTable({
                             title={absent ? "Sahada yok — önce Bugün var ile açın" : undefined}
                             value={cellInputValue(row[key as keyof ProductionRow] as number)}
                             onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
-                            className={`w-full rounded border px-1 py-2 text-center text-[15px] font-medium tabular-nums outline-none dark:text-slate-100 ${
+                            className={`w-full rounded px-1 py-1.5 text-center text-[14px] font-semibold tabular-nums outline-none transition ${
                               absent
-                                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500"
-                                : "border-slate-300 bg-white focus:border-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:focus:border-blue-300"
+                                ? "cursor-not-allowed border-0 bg-transparent text-slate-300 dark:text-slate-600"
+                                : "border border-slate-200 bg-white focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-teal-500"
                             }`}
                           />
                         </td>
@@ -785,8 +745,10 @@ export default function ProductionTable({
       <div className="divide-y divide-slate-200 dark:divide-slate-700 md:hidden">
         {sections.map(({ team, teamRows, startNo }) => (
           <div key={team}>
-            <div className="bg-slate-200 px-4 py-2 text-sm font-semibold dark:bg-slate-700">
-              {teamLabel(team)}
+            <div className="bg-slate-200 px-4 py-1.5 dark:bg-slate-700/60">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                {teamLabel(team)}
+              </span>
             </div>
 
             {teamRows.map((row, index) => {

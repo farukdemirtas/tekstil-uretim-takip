@@ -948,21 +948,19 @@ export default function HomePage() {
         <div className="h-1 w-full bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-400" />
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md">
-              <img
-                src="/logo.png"
-                alt="Yeşil İmaj Tekstil Logo"
-                width={32}
-                height={32}
-                className="h-8 w-8 object-contain"
-                onError={(e) => {
-                  const el = e.currentTarget;
-                  if (el.dataset.fallback === "1") return;
-                  el.dataset.fallback = "1";
-                  el.src = "/logo.svg";
-                }}
-              />
-            </div>
+            <img
+              src="/logo.png"
+              alt="Yeşil İmaj Tekstil Logo"
+              width={44}
+              height={44}
+              className="h-11 w-11 shrink-0 object-contain"
+              onError={(e) => {
+                const el = e.currentTarget;
+                if (el.dataset.fallback === "1") return;
+                el.dataset.fallback = "1";
+                el.src = "/logo.svg";
+              }}
+            />
             <div>
               <h1 className="text-base font-extrabold tracking-tight text-slate-900 sm:text-lg dark:text-white">
                 Yeşil İmaj Tekstil
@@ -1128,34 +1126,7 @@ export default function HomePage() {
       {!loading && rows.length > 0 ? (
         <>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {hasPermission("topluListeKaldir") || role === "admin" ? (
-              <>
-                {hasPermission("topluListeKaldir") ? (
-                  <button
-                    type="button"
-                    disabled={clearingAllWorkers}
-                    onClick={() => setBulkRemoveOpen(true)}
-                    className="rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/40"
-                  >
-                    {clearingAllWorkers
-                      ? "Siliniyor…"
-                      : selectedDate === todayWeekdayIso()
-                        ? "Tüm personeli sil… (bugün)"
-                        : "Tüm personeli sil… (seçili gün)"}
-                  </button>
-                ) : null}
-                {role === "admin" ? (
-                  <button
-                    type="button"
-                    disabled={copyRosterBusy}
-                    onClick={() => openCopyRosterModal()}
-                    className="rounded-xl border border-teal-200 bg-white px-3.5 py-2 text-sm font-medium text-teal-800 shadow-sm transition hover:bg-teal-50 disabled:opacity-50 dark:border-teal-800/50 dark:bg-slate-900 dark:text-teal-200 dark:hover:bg-teal-950/40"
-                  >
-                    {copyRosterBusy ? "Aktarılıyor…" : "Tüm personeli diğer günlere aktar"}
-                  </button>
-                ) : null}
-              </>
-            ) : null}
+            {/* Ek sayım toggle */}
             <button
               type="button"
               onClick={() => {
@@ -1165,30 +1136,52 @@ export default function HomePage() {
                   return opening;
                 });
               }}
-              className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border text-slate-600 shadow-sm transition dark:text-slate-300 ${
+              className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium shadow-sm transition ${
                 ekSayimOpen
-                  ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200"
-                  : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
               }`}
               title="Ek giriş (günlük özete yansır; saat toplamına eklenmez)"
               aria-label="Ek giriş: personel ve adet"
               aria-expanded={ekSayimOpen}
             >
-              <svg
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M8.25 6.75h12M8.25 12h12M8.25 17.25h12" />
                 <path d="M3.75 6.75h.01v.01H3.75V6.75zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0zM3.75 12h.01v.01H3.75V12zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0zM3.75 17.25h.01v.01H3.75v-.01zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0z" />
               </svg>
+              Ek giriş
             </button>
+
+            {/* Diğer günlere aktar */}
+            {role === "admin" ? (
+              <button
+                type="button"
+                disabled={copyRosterBusy}
+                onClick={() => openCopyRosterModal()}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3" />
+                  <path d="M12 3v12m-4-4l4 4 4-4" />
+                </svg>
+                {copyRosterBusy ? "Aktarılıyor…" : "Diğer günlere aktar"}
+              </button>
+            ) : null}
+
+            {/* Tüm personeli sil */}
+            {hasPermission("topluListeKaldir") ? (
+              <button
+                type="button"
+                disabled={clearingAllWorkers}
+                onClick={() => setBulkRemoveOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-red-200/80 bg-white px-3 text-xs font-medium text-red-600 shadow-sm transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/30"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+                </svg>
+                {clearingAllWorkers ? "Siliniyor…" : "Tüm personeli sil"}
+              </button>
+            ) : null}
           </div>
           {ekSayimOpen ? (
             <div className="mt-3 space-y-3 rounded-xl border border-slate-200/90 bg-slate-50/40 p-4 dark:border-slate-600/50 dark:bg-slate-800/20">
