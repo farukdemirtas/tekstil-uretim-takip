@@ -10,7 +10,6 @@ export type HedefStageLine = {
   total: number;
 };
 
-/** `/api/production/hedef-stage-totals` — çalışılacak bölüm + günlük özet prosesleri */
 export type HedefStageTotals = {
   stages: HedefStageLine[];
   dailySummaryStages: HedefStageLine[];
@@ -32,91 +31,102 @@ function genelTamamlananFromStages(stages: HedefStageLine[]): number {
 }
 
 function stageLabel(s: HedefStageLine): string {
-  const shortProcess =
-    s.processName.length > 18 ? `${s.processName.slice(0, 16)}…` : s.processName;
-  return s.processName ? `${s.teamLabel} · ${shortProcess}` : s.teamLabel;
+  const p = s.processName.length > 20 ? `${s.processName.slice(0, 18)}…` : s.processName;
+  return p ? `${s.teamLabel} · ${p}` : s.teamLabel;
 }
 
-export default function AdminPanel({
-  workerCount,
-  stageTotals,
-  stageError,
-}: AdminPanelProps) {
+export default function AdminPanel({ workerCount, stageTotals, stageError }: AdminPanelProps) {
   const stages = stageTotals.stages ?? [];
-  const dailySummaryStages = stageTotals.dailySummaryStages ?? [];
+  const daily = stageTotals.dailySummaryStages ?? [];
   const genelTamamlanan = useMemo(() => genelTamamlananFromStages(stages), [stages]);
 
-  const boxNeutral =
-    "border-teal-200 bg-teal-50/50 shadow-sm dark:border-teal-800/50 dark:bg-teal-950/25 dark:shadow-none";
-  const boxHighlight =
-    "border-emerald-200 bg-emerald-50/90 shadow-md ring-1 ring-emerald-100 dark:border-emerald-800/60 dark:bg-emerald-950/35 dark:ring-emerald-900/40";
-  const boxWorker =
-    "border-slate-200 bg-white shadow-sm dark:border-slate-600 dark:bg-slate-800/90 dark:shadow-none";
-  const boxDailySummary =
-    "border-violet-200 bg-violet-50/70 shadow-sm dark:border-violet-800/50 dark:bg-violet-950/30 dark:shadow-none";
-
-  const numNeutral = "text-teal-800 dark:text-teal-200";
-  const numHighlight = "text-emerald-700 dark:text-emerald-300";
-  const numWorker = "text-slate-800 dark:text-slate-100";
-  const numDailySummary = "text-violet-800 dark:text-violet-200";
-
-  const baselineTiles = stages.map((s, i) => ({
-    key: `stage-${s.sortOrder}-${i}`,
-    label: stageLabel(s),
-    value: safeNum(s.total),
-    valueClass: numNeutral,
-    boxClass: boxNeutral,
-  }));
-
-  const dailyTiles = dailySummaryStages.map((s, i) => ({
-    key: `daily-${s.sortOrder}-${i}`,
-    label: stageLabel(s),
-    value: safeNum(s.total),
-    valueClass: numDailySummary,
-    boxClass: boxDailySummary,
-  }));
-
-  const tiles: Array<{ key: string; label: string; value: number; valueClass: string; boxClass: string }> = [
-    { key: "calisan", label: "Çalışan", value: safeNum(workerCount), valueClass: numWorker, boxClass: boxWorker },
-    {
-      key: "genel",
-      label: "Genel tamamlanan",
-      value: genelTamamlanan,
-      valueClass: numHighlight,
-      boxClass: boxHighlight,
-    },
-    ...baselineTiles,
-    ...dailyTiles,
-  ];
-
   return (
-    <div className="surface-card">
-      <div className="mb-4">
-        <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 md:text-base">Günlük Özet</h2>
-        <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
-          <span className="font-medium text-teal-700 dark:text-teal-300">Teal kutular</span> çalışılacak bölüm
-          aşamalarıdır;{" "}
-          <span className="font-medium text-violet-700 dark:text-violet-300">mor kutular</span> yalnızca sayı
-          toplamı için seçilen günlük özet prosesleridir.
-        </p>
+    <div className="surface-card overflow-hidden">
+
+      {/* Başlık */}
+      <div className="flex items-center justify-between px-5 py-4">
+        <h2 className="text-sm font-extrabold tracking-tight text-slate-800 dark:text-slate-100">
+          Günlük Özet
+        </h2>
+        {stageError && (
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+            ⚠ Veri hatası
+          </span>
+        )}
       </div>
-      {stageError && (
-        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-          ⚠ {stageError}
-        </p>
-      )}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {tiles.map(({ key, label, value, valueClass, boxClass }) => (
-          <div
-            key={key}
-            className={`flex min-h-[5.5rem] flex-col items-center justify-center rounded-2xl border-2 px-2 py-3 text-center sm:min-h-[6rem] ${boxClass}`}
-          >
-            <span className="line-clamp-2 text-[10px] font-semibold uppercase leading-tight tracking-wide text-slate-500 dark:text-slate-400 sm:text-xs">
-              {label}
-            </span>
-            <span className={`mt-1.5 text-xl font-bold tabular-nums sm:text-2xl ${valueClass}`}>{value}</span>
+
+      <div className="px-5 pb-5 space-y-4">
+
+        {/* Hero: Çalışan + Genel tamamlanan */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+              Çalışan
+            </p>
+            <p className="mt-1 text-3xl font-black tabular-nums text-slate-700 dark:text-slate-200">
+              {safeNum(workerCount)}
+            </p>
           </div>
-        ))}
+          <div className="rounded-2xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200 dark:bg-emerald-950/30 dark:ring-emerald-800/50">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-500">
+              Genel tamamlanan
+            </p>
+            <p className="mt-1 text-3xl font-black tabular-nums text-emerald-700 dark:text-emerald-300">
+              {genelTamamlanan.toLocaleString("tr-TR")}
+            </p>
+          </div>
+        </div>
+
+        {/* Tüm aşama kartları yan yana */}
+        {(stages.length > 0 || daily.length > 0) && (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {stages.map((s, i) => (
+              <div
+                key={`stage-${s.sortOrder}-${i}`}
+                className="relative rounded-xl bg-teal-50/60 px-3 py-3 shadow-sm ring-1 ring-teal-200/70 dark:bg-teal-950/20 dark:ring-teal-800/50"
+              >
+                <div className="absolute inset-y-0 left-0 w-[3px] rounded-l-xl bg-teal-400 dark:bg-teal-500" />
+                <p className="line-clamp-2 text-xs font-bold leading-snug text-slate-700 dark:text-slate-200">
+                  {stageLabel(s)}
+                </p>
+                <p className="mt-1.5 text-2xl font-black tabular-nums text-teal-600 dark:text-teal-300">
+                  {safeNum(s.total).toLocaleString("tr-TR")}
+                </p>
+              </div>
+            ))}
+            {daily.map((s, i) => (
+              <div
+                key={`daily-${s.sortOrder}-${i}`}
+                className="relative rounded-xl bg-violet-50/60 px-3 py-3 shadow-sm ring-1 ring-violet-200/70 dark:bg-violet-950/20 dark:ring-violet-800/50"
+              >
+                <div className="absolute inset-y-0 left-0 w-[3px] rounded-l-xl bg-violet-400 dark:bg-violet-500" />
+                <p className="line-clamp-2 text-xs font-bold leading-snug text-slate-700 dark:text-slate-200">
+                  {stageLabel(s)}
+                </p>
+                <p className="mt-1.5 text-2xl font-black tabular-nums text-violet-600 dark:text-violet-300">
+                  {safeNum(s.total).toLocaleString("tr-TR")}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {stages.length === 0 && daily.length === 0 && (
+          <p className="py-2 text-center text-xs text-slate-400 dark:text-slate-500">Veri bekleniyor…</p>
+        )}
+
+        {/* Renk açıklaması */}
+        {(stages.length > 0 || daily.length > 0) && (
+          <div className="flex items-center gap-4 pt-1">
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+              <span className="h-2 w-2 rounded-full bg-teal-400" /> Bölüm aşaması
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+              <span className="h-2 w-2 rounded-full bg-violet-400" /> Özet proses
+            </span>
+          </div>
+        )}
+
       </div>
     </div>
   );
