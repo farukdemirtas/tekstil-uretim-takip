@@ -81,7 +81,7 @@ function formatClock() {
 // ─── Stat kutu — büyük, belirgin rakam ──────────────────────────────────────
 function StatBox({ label, value, style }: { label: string; value: string; style: BoxStyle }) {
   return (
-    <div className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 px-2 shadow-md ${style.box}`}>
+    <div className={`flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 px-2 shadow-md ${style.box}`}>
       <p
         className={`shrink-0 font-black uppercase tracking-[0.12em] ${style.label}`}
         style={{ fontSize: "clamp(0.7rem, 1.4vw, 1.1rem)" }}
@@ -151,8 +151,8 @@ function SlidePanel({
         </div>
       </div>
 
-      {/* 4 metrik kutu — flex-1 ile kalan alanı doldurur, sayılar büyük */}
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 md:gap-4">
+      {/* 4 metrik kutu — kalan alanın tamamını doldurur */}
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2.5 [grid-auto-rows:minmax(0,1fr)] sm:grid-cols-4 sm:gap-3 md:gap-4">
         <StatBox label="Hedef"  value={target > 0 ? target.toLocaleString("tr-TR") : "—"}            style={m.targetStyle} />
         <StatBox label="Toplam" value={total.toLocaleString("tr-TR")}                                 style={m.totalStyle}  />
         <StatBox label="Bugün"  value={todayCount.toLocaleString("tr-TR")}                            style={m.todayStyle}  />
