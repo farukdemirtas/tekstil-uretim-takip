@@ -173,8 +173,9 @@ export default function Ekran4IcerikPage() {
         getDayProductMeta(prev).catch(() => null),
         getWorkerHourlyBreakdownsForDate(day).catch(() => []),
       ]);
-      const modelIdToday = metaToday?.modelId ?? null;
-      const modelIdPrev = metaPrev?.modelId ?? null;
+      // localStorage'daki modelId'yi meta yoksa fallback olarak kullan
+      const modelIdToday = metaToday?.modelId ?? mid ?? null;
+      const modelIdPrev  = metaPrev?.modelId  ?? mid ?? null;
 
       const w7 = lastNWorkdaysAscending(day, 7);
 
@@ -480,7 +481,7 @@ export default function Ekran4IcerikPage() {
       ref={containerRef}
       className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200/80 text-slate-900 [color-scheme:light]"
     >
-      <div className="mx-auto flex min-h-0 w-full max-w-none flex-1 flex-col gap-2 overflow-hidden p-2 min-[2560px]:gap-2.5 min-[2560px]:p-4 min-[3840px]:gap-3 min-[3840px]:p-5 sm:gap-3 sm:p-3 md:gap-3 md:p-4">
+      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-2 overflow-hidden p-2 min-[2560px]:max-w-7xl min-[2560px]:gap-2.5 min-[2560px]:p-4 min-[3840px]:gap-3 min-[3840px]:p-5 sm:gap-3 sm:p-3 md:gap-3 md:p-4">
         <header className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-[0_4px_24px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:px-5 min-[1920px]:px-6">
           <div>
             <div className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-600 px-3 py-1.5 text-xs font-black uppercase tracking-widest text-white shadow-md">
