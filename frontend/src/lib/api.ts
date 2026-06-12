@@ -696,6 +696,7 @@ export type ProductModelListItem = {
   takipsanOrderCode?: string;
   targetQuantity?: number;
   sessionStartDate?: string | null;
+  secondaryConsignmentId?: string | null;
   isTakipsanLinked?: boolean;
 };
 

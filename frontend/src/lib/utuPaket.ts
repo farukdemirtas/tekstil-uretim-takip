@@ -53,6 +53,7 @@ export type TakipsanPackageRow = {
 export type TakipsanStatus = {
   configured: boolean;
   consignmentId: string | null;
+  secondaryConsignmentId: string | null;
   syncIntervalMs: number;
   enabled: boolean;
   lastSyncAt: string | null;

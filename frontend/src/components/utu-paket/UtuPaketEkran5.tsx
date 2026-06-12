@@ -19,12 +19,35 @@ import {
 const AUTO_REFRESH_MS = 30_000;
 const SLIDE_DURATION_MS = 30_000;
 const SLIDE_COUNT = 3;
+const HEDEF_STORAGE_KEY = "ekran5_hedef_v1";
 
 const SLIDES = ["paketleme", "optik", "utu"] as const;
 type SlideKey = (typeof SLIDES)[number];
 
-type BoxStyle = { box: string; label: string; value: string };
+// ─── Manuel hedef localStorage yardımcıları ──────────────────────────────────
+function readManualTarget(modelId: number | null): number | null {
+  if (!modelId) return null;
+  try {
+    const raw = window.localStorage.getItem(HEDEF_STORAGE_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, number>;
+    const v = map[String(modelId)];
+    return v != null && Number.isFinite(v) ? v : null;
+  } catch { return null; }
+}
+function writeManualTarget(modelId: number | null, value: number | null) {
+  if (!modelId) return;
+  try {
+    const raw = window.localStorage.getItem(HEDEF_STORAGE_KEY);
+    const map: Record<string, number> = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    if (value == null) { delete map[String(modelId)]; }
+    else { map[String(modelId)] = value; }
+    window.localStorage.setItem(HEDEF_STORAGE_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
 
+// ─── Renk / stil tanımları ───────────────────────────────────────────────────
+type BoxStyle = { box: string; label: string; value: string };
 type SlideMeta = {
   label: string;
   badgeCls: string;
@@ -78,27 +101,23 @@ function formatClock() {
   return new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 }
 
-// ─── Stat kutu — büyük, belirgin rakam ──────────────────────────────────────
+// ─── Stat kutu ───────────────────────────────────────────────────────────────
 function StatBox({ label, value, style }: { label: string; value: string; style: BoxStyle }) {
   return (
     <div className={`flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 px-2 shadow-md ${style.box}`}>
-      <p
-        className={`shrink-0 font-black uppercase tracking-[0.12em] ${style.label}`}
-        style={{ fontSize: "clamp(0.7rem, 1.4vw, 1.1rem)" }}
-      >
+      <p className={`shrink-0 font-black uppercase tracking-[0.12em] ${style.label}`}
+        style={{ fontSize: "clamp(0.7rem, 1.4vw, 1.1rem)" }}>
         {label}
       </p>
-      <p
-        className={`w-full text-center font-black tabular-nums leading-none [text-shadow:0_1px_3px_rgba(0,0,0,0.15)] ${style.value}`}
-        style={{ fontSize: "clamp(2rem, 5vw, 5rem)" }}
-      >
+      <p className={`w-full text-center font-black tabular-nums leading-none [text-shadow:0_1px_3px_rgba(0,0,0,0.15)] ${style.value}`}
+        style={{ fontSize: "clamp(2rem, 5vw, 5rem)" }}>
         {value}
       </p>
     </div>
   );
 }
 
-// ─── Slayt paneli — flex-1 ile ekranı doldurur ───────────────────────────────
+// ─── Slayt paneli ────────────────────────────────────────────────────────────
 function SlidePanel({
   slideKey, total, todayCount, target,
 }: { slideKey: SlideKey; total: number; todayCount: number; target: number }) {
@@ -108,55 +127,140 @@ function SlidePanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 md:gap-4">
-      {/* Başlık badge */}
       <div className="flex shrink-0 justify-center">
         <h2
           className={`rounded-2xl bg-gradient-to-r ${m.badgeCls} px-6 py-2.5 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-10 min-[1920px]:py-3`}
-          style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}
-        >
+          style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}>
           {m.label}
         </h2>
       </div>
 
-      {/* Progress bar + Oran kutusu */}
       <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 md:gap-6">
         <div
           className="relative h-14 flex-1 overflow-hidden rounded-2xl bg-gradient-to-b from-slate-100 to-slate-200/90 p-[3px] shadow-[inset_0_2px_8px_rgba(15,23,42,0.08)] ring-1 ring-slate-300/90 sm:h-16 md:h-[4.25rem] md:rounded-3xl md:p-1"
-          role="progressbar"
-          aria-valuenow={Math.round(pct)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        >
+          role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
           <div className="relative h-full overflow-hidden rounded-[0.75rem] bg-slate-300/50 md:rounded-[1.2rem]">
             <div
               className={`absolute inset-y-0 left-0 rounded-[0.65rem] bg-gradient-to-r ${m.barGradient} ${m.barGlow} transition-[width] duration-1000 ease-out md:rounded-[1.1rem]`}
-              style={{ width: `${pct}%` }}
-            >
+              style={{ width: `${pct}%` }}>
               <div className="absolute inset-x-0 top-0 h-2/5 bg-gradient-to-b from-white/30 to-transparent" />
             </div>
           </div>
         </div>
-
-        {/* Oran kutusu */}
         <div className="flex shrink-0 justify-center sm:justify-end">
           <div className="flex min-w-[5.5rem] flex-col items-center rounded-2xl border-2 border-slate-800 bg-slate-900 px-4 py-2.5 shadow-lg ring-1 ring-slate-950/20 sm:min-w-[7.5rem] sm:px-6 sm:py-3 md:min-w-[9rem]">
             <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-300">Oran</span>
-            <span
-              className="font-black tabular-nums leading-none text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.4)]"
-              style={{ fontSize: "clamp(2rem, 6vw, 4.25rem)" }}
-            >
+            <span className="font-black tabular-nums leading-none text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.4)]"
+              style={{ fontSize: "clamp(2rem, 6vw, 4.25rem)" }}>
               %{pct.toFixed(0)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* 4 metrik kutu — kalan alanın tamamını doldurur */}
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-2.5 [grid-auto-rows:minmax(0,1fr)] sm:grid-cols-4 sm:gap-3 md:gap-4">
-        <StatBox label="Hedef"  value={target > 0 ? target.toLocaleString("tr-TR") : "—"}            style={m.targetStyle} />
-        <StatBox label="Toplam" value={total.toLocaleString("tr-TR")}                                 style={m.totalStyle}  />
-        <StatBox label="Bugün"  value={todayCount.toLocaleString("tr-TR")}                            style={m.todayStyle}  />
-        <StatBox label="Kalan"  value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"}          style={m.remainStyle} />
+        <StatBox label="Hedef"  value={target > 0 ? target.toLocaleString("tr-TR") : "—"}             style={m.targetStyle} />
+        <StatBox label="Toplam" value={total.toLocaleString("tr-TR")}                                  style={m.totalStyle}  />
+        <StatBox label="Bugün"  value={todayCount.toLocaleString("tr-TR")}                             style={m.todayStyle}  />
+        <StatBox label="Kalan"  value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"}           style={m.remainStyle} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Hedef düzenleme modalı ──────────────────────────────────────────────────
+function HedefModal({
+  takipsanTarget,
+  manualTarget,
+  productLabel,
+  onSave,
+  onClear,
+  onClose,
+}: {
+  takipsanTarget: number;
+  manualTarget: number | null;
+  productLabel: string;
+  onSave: (v: number) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const [input, setInput] = useState(
+    manualTarget != null ? String(manualTarget) : takipsanTarget > 0 ? String(takipsanTarget) : ""
+  );
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  function handleSave() {
+    const v = parseInt(input.replace(/\D/g, ""), 10);
+    if (!Number.isFinite(v) || v <= 0) return;
+    onSave(v);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-2xl">
+        {/* Başlık */}
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-black text-slate-900">Hedef Ayarla</h3>
+          <button type="button" onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Model bilgisi */}
+        {productLabel ? (
+          <p className="mb-3 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+            {productLabel}
+          </p>
+        ) : null}
+
+        {/* Kaynak göstergesi */}
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+          <span className={`h-2 w-2 rounded-full ${manualTarget != null ? "bg-amber-400" : "bg-emerald-400"}`} />
+          <span className="font-semibold text-slate-600">
+            {manualTarget != null
+              ? `El ile: ${manualTarget.toLocaleString("tr-TR")}`
+              : takipsanTarget > 0
+                ? `Takipsan: ${takipsanTarget.toLocaleString("tr-TR")}`
+                : "Takipsan: veri yok"}
+          </span>
+        </div>
+
+        {/* Input */}
+        <div className="mb-4">
+          <label className="mb-1.5 block text-xs font-bold text-slate-700">El ile hedef (adet)</label>
+          <input
+            ref={inputRef}
+            type="number"
+            min={1}
+            step={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") onClose(); }}
+            className="w-full rounded-xl border-2 border-slate-300 px-4 py-2.5 text-center text-xl font-black tabular-nums text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-400/30"
+            placeholder="Örn: 23500"
+          />
+        </div>
+
+        {/* Butonlar */}
+        <div className="flex flex-col gap-2">
+          <button type="button" onClick={handleSave}
+            className="rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-teal-700">
+            Kaydet
+          </button>
+          <button type="button" onClick={onClear}
+            className="rounded-xl border-2 border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100">
+            Takipsandan al {takipsanTarget > 0 ? `(${takipsanTarget.toLocaleString("tr-TR")})` : ""}
+          </button>
+          <button type="button" onClick={onClose}
+            className="rounded-xl border-2 border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+            İptal
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -169,13 +273,23 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hasToken, setHasToken]           = useState(false);
   const [displayDate, setDisplayDate]     = useState(dateIso || todayWeekdayIso());
+
   const [optikCount, setOptikCount]       = useState(0);
   const [optikTotal, setOptikTotal]       = useState(0);
   const [utuCount, setUtuCount]           = useState(0);
   const [utuTotal, setUtuTotal]           = useState(0);
   const [paketCount, setPaketCount]       = useState(0);
-  const [gunPaketlenen, setGunPaketlenen] = useState(0);
-  const [target, setTarget]               = useState(0);
+  const [gunPaketlenen, setGunPaketlened] = useState(0);
+
+  /** Takipsan'dan gelen ham hedef */
+  const [takipsanTarget, setTakipsanTarget] = useState(0);
+  /** Aktif model ID — localStorage anahtarı */
+  const [modelId, setModelId]             = useState<number | null>(null);
+  /** El ile set edilen hedef (null = Takipsan'ı kullan) */
+  const [manualTarget, setManualTarget]   = useState<number | null>(null);
+  /** Etkin hedef = manualTarget ?? takipsanTarget */
+  const target = manualTarget ?? takipsanTarget;
+
   const [productLabel, setProductLabel]   = useState("");
   const [lastUpdated, setLastUpdated]     = useState("");
   const [loading, setLoading]             = useState(true);
@@ -184,6 +298,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [slide, setSlide]                 = useState(0);
   const [slideProgress, setSlideProgress] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
+  const [hedefOpen, setHedefOpen]         = useState(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -212,8 +327,18 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       setOptikCount(todayOptik);
       setUtuCount(todayUtu);
       setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
-      setGunPaketlenen(sumGunPaketlenen(data.takipsan?.packages, date).adet);
-      setTarget(data.takipsan?.orderQuantity ?? data.packagingTarget);
+      setGunPaketlened(sumGunPaketlenen(data.takipsan?.packages, date).adet);
+
+      const rawTarget = data.takipsan?.orderQuantity ?? data.packagingTarget;
+      setTakipsanTarget(rawTarget);
+
+      // Model değişince localStorage'daki el ile hedefi yükle
+      const mid = meta?.modelId ?? null;
+      if (mid !== modelId) {
+        setModelId(mid);
+        setManualTarget(readManualTarget(mid));
+      }
+
       setProductLabel([meta?.productName, meta?.productModel].filter(Boolean).join(" · "));
 
       const startDate = genelOzet?.dataStartDate ?? date;
@@ -231,7 +356,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [hasToken, dateIso]);
+  }, [hasToken, dateIso, modelId]);
 
   useEffect(() => {
     if (!hasToken) return;
@@ -240,7 +365,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     return () => clearInterval(id);
   }, [hasToken, load]);
 
-  // Slayt döngüsü — 30 sn
+  // Slayt döngüsü
   useEffect(() => {
     setSlideProgress(0);
     let elapsed = 0;
@@ -264,6 +389,17 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   // unused suppressor
   const _pct = useMemo(() => calcUtuPaketPercent(paketCount, target), [paketCount, target]);
   void _pct;
+
+  function handleHedefSave(v: number) {
+    writeManualTarget(modelId, v);
+    setManualTarget(v);
+    setHedefOpen(false);
+  }
+  function handleHedefClear() {
+    writeManualTarget(modelId, null);
+    setManualTarget(null);
+    setHedefOpen(false);
+  }
 
   function toggleFullscreen() {
     if (document.fullscreenElement) void document.exitFullscreen();
@@ -293,10 +429,8 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
           : "fixed inset-0 flex flex-col overflow-hidden bg-slate-100"
       }`}
     >
-      {/* Arka plan */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
 
-      {/* Tüm içerik — flex sütun, ekranı tam doldurur, scroll yok */}
       <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-[min(100%,120rem)] flex-1 flex-col gap-2 px-3 py-2 sm:gap-3 sm:px-5 sm:py-3 md:gap-4 md:px-8 md:py-4 min-[1920px]:gap-4 min-[1920px]:px-10 min-[1920px]:py-5">
 
         {/* ── HEADER ── */}
@@ -307,14 +441,20 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
             </span>
             <div>
               <div className="flex flex-wrap items-baseline gap-2">
-                <p className="text-base font-extrabold text-neutral-950 md:text-lg">
-                  {formatDateTr(displayDate)}
-                </p>
+                <p className="text-base font-extrabold text-neutral-950 md:text-lg">{formatDateTr(displayDate)}</p>
                 {productLabel ? (
                   <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 ring-1 ring-slate-300 md:text-sm">
                     {productLabel}
                   </span>
                 ) : null}
+                {/* Hedef kaynağı göstergesi */}
+                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                  manualTarget != null
+                    ? "bg-amber-50 text-amber-700 ring-amber-300"
+                    : "bg-emerald-50 text-emerald-700 ring-emerald-300"
+                }`}>
+                  {manualTarget != null ? "El ile hedef" : "Takipsan hedefi"}
+                </span>
               </div>
               {lastUpdated ? (
                 <p className="text-[11px] font-semibold text-slate-700">
@@ -324,6 +464,14 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
+            {/* Hedef düzenle butonu */}
+            <button type="button" onClick={() => setHedefOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl border-2 border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-100">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+              </svg>
+              Hedef
+            </button>
             {embedded ? (
               <button type="button" onClick={openTvWindow}
                 className="rounded-xl border-2 border-slate-300 bg-slate-100 px-3 py-2 text-xs font-bold text-slate-900 hover:bg-slate-200 sm:text-sm">
@@ -348,7 +496,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
           </div>
         ) : null}
 
-        {/* ── SLAYT — flex-1 ile kalan yüksekliği doldurur ── */}
+        {/* ── SLAYT ── */}
         <div className={`flex min-h-0 flex-1 transition-opacity duration-300 ${transitioning ? "opacity-0" : "opacity-100"}`}>
           {slideKey === "paketleme" && (
             <SlidePanel slideKey="paketleme" total={paketCount}  todayCount={gunPaketlenen} target={target} />
@@ -364,21 +512,16 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         {/* ── SLAYT GÖSTERGESİ ── */}
         <div className="shrink-0 pb-1">
           <div className="mx-auto mb-2 h-1 w-full max-w-sm overflow-hidden rounded-full bg-slate-200">
-            <div
-              className="h-full rounded-full bg-teal-500"
-              style={{ width: `${slideProgress}%`, transition: "width 100ms linear" }}
-            />
+            <div className="h-full rounded-full bg-teal-500"
+              style={{ width: `${slideProgress}%`, transition: "width 100ms linear" }} />
           </div>
           <div className="flex items-center justify-center gap-3">
             {SLIDES.map((key, i) => (
-              <button
-                key={key}
-                type="button"
+              <button key={key} type="button"
                 onClick={() => { setSlide(i); setSlideProgress(0); }}
                 className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all duration-300 sm:text-xs ${
                   i === slide ? "bg-slate-900 text-white shadow-md" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
-                }`}
-              >
+                }`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${i === slide ? "bg-teal-400" : "bg-slate-400"}`} />
                 {SLIDE_META[key].label}
               </button>
@@ -386,6 +529,18 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
           </div>
         </div>
       </div>
+
+      {/* ── HEDEF MODALIN ── */}
+      {hedefOpen && (
+        <HedefModal
+          takipsanTarget={takipsanTarget}
+          manualTarget={manualTarget}
+          productLabel={productLabel}
+          onSave={handleHedefSave}
+          onClear={handleHedefClear}
+          onClose={() => setHedefOpen(false)}
+        />
+      )}
     </div>
   );
 }

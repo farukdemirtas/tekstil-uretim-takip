@@ -1316,7 +1316,8 @@ export function listProductModels() {
               takipsan_product_label AS takipsanProductLabel,
               takipsan_order_code AS takipsanOrderCode,
               target_quantity AS targetQuantity,
-              session_start_date AS sessionStartDate
+              session_start_date AS sessionStartDate,
+              secondary_consignment_id AS secondaryConsignmentId
        FROM product_models ORDER BY model_code COLLATE NOCASE`,
       [],
       (err, rows) => {
@@ -1342,7 +1343,8 @@ export function getProductModelWithBaselines(id) {
               takipsan_product_label AS takipsanProductLabel,
               takipsan_order_code AS takipsanOrderCode,
               target_quantity AS targetQuantity,
-              session_start_date AS sessionStartDate
+              session_start_date AS sessionStartDate,
+              secondary_consignment_id AS secondaryConsignmentId
        FROM product_models WHERE id = ?`,
       [id],
       (err, row) => {
@@ -1577,6 +1579,13 @@ export async function updateProductModel(id, payload, teamCodes) {
         : null
       : existing.sessionStartDate ?? null;
 
+  const secondaryConsignmentId =
+    payload?.secondaryConsignmentId !== undefined
+      ? payload.secondaryConsignmentId
+        ? String(payload.secondaryConsignmentId).trim()
+        : null
+      : existing.secondaryConsignmentId ?? null;
+
   validateBaselineRows(teamCodes, payload?.baselines);
   validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
   const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
@@ -1584,8 +1593,8 @@ export async function updateProductModel(id, payload, teamCodes) {
 
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE product_models SET model_code = ?, product_name = ?, session_start_date = ? WHERE id = ?`,
-      [code, pname, sessionStart, id],
+      `UPDATE product_models SET model_code = ?, product_name = ?, session_start_date = ?, secondary_consignment_id = ? WHERE id = ?`,
+      [code, pname, sessionStart, secondaryConsignmentId, id],
       function onUp(err) {
         if (err) return reject(err);
         if (this.changes === 0) return reject(new Error("Kayıt bulunamadı"));
@@ -1603,7 +1612,7 @@ export async function updateProductModel(id, payload, teamCodes) {
             if (fe) return reject(fe);
             try {
               await insertDailySummaryRows(id, dailyRows);
-              resolve({ id, modelCode: code, productName: pname, sessionStartDate: sessionStart });
+              resolve({ id, modelCode: code, productName: pname, sessionStartDate: sessionStart, secondaryConsignmentId });
             } catch (e) {
               reject(e);
             }

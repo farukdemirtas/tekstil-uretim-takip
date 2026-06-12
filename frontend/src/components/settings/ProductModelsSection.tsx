@@ -63,6 +63,7 @@ export default function ProductModelsSection() {
   const [takipsanProductLabel, setTakipsanProductLabel] = useState("");
   const [takipsanOrderCode, setTakipsanOrderCode] = useState("");
   const [targetQuantity, setTargetQuantity] = useState(0);
+  const [secondaryConsignmentId, setSecondaryConsignmentId] = useState("");
   const [isTakipsanLinkedEdit, setIsTakipsanLinkedEdit] = useState(false);
   const [takipsanBusy, setTakipsanBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -131,6 +132,7 @@ export default function ProductModelsSection() {
     setTakipsanProductLabel("");
     setTakipsanOrderCode("");
     setTargetQuantity(0);
+    setSecondaryConsignmentId("");
     setIsTakipsanLinkedEdit(false);
     setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
     setError(null);
@@ -183,6 +185,7 @@ export default function ProductModelsSection() {
       setTakipsanProductLabel(d.takipsanProductLabel || "");
       setTakipsanOrderCode(d.takipsanOrderCode || "");
       setTargetQuantity(d.targetQuantity ?? 0);
+      setSecondaryConsignmentId(d.secondaryConsignmentId ?? "");
       setSessionStartDate(
         d.sessionStartDate ? clampToWeekdayIso(String(d.sessionStartDate)) : clampToWeekdayIso(todayWeekdayIso())
       );
@@ -264,6 +267,7 @@ export default function ProductModelsSection() {
           arkaHalf: b.arkaHalf ? 1 : 0,
         })),
       sessionStartDate: sessionStartDate || null,
+      secondaryConsignmentId: secondaryConsignmentId.trim() || null,
       ...(editingId === "new" && fromTakipsan
         ? {
             fromTakipsan: true,
@@ -472,31 +476,66 @@ export default function ProductModelsSection() {
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                 {takipsanProductLabel || formatProductDisplayLine(productName, modelCode)}
               </p>
-              <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
-                Hedef adet (sipariş sayısı):{" "}
-                <strong className="text-slate-800 dark:text-slate-100">
-                  {targetQuantity > 0 ? targetQuantity.toLocaleString("tr-TR") : "—"}
-                </strong>
-              </p>
-              {typeof editingId === "number" ? (
-                <button
-                  type="button"
-                  disabled={takipsanBusy}
-                  onClick={() => {
-                    setTakipsanBusy(true);
-                    void refreshProductModelTarget(editingId)
-                      .then((r) => {
-                        setTargetQuantity(r.targetQuantity);
-                        if (r.productLabel) setTakipsanProductLabel(r.productLabel);
-                      })
-                      .catch((e) => setError(e instanceof Error ? e.message : "Güncellenemedi"))
-                      .finally(() => setTakipsanBusy(false));
-                  }}
-                  className="mt-2 rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-slate-900 dark:text-sky-200"
-                >
-                  {takipsanBusy ? "Yenileniyor…" : "Takipsan'dan hedefi yenile"}
-                </button>
-              ) : null}
+              {/* El ile düzenlenebilir hedef adet */}
+              <div className="mt-3">
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Hedef adet (sipariş sayısı)
+                </label>
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={targetQuantity || ""}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      setTargetQuantity(Number.isFinite(v) && v >= 0 ? v : 0);
+                    }}
+                    className="w-36 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-semibold tabular-nums text-slate-900 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="Örn. 23500"
+                  />
+                  {typeof editingId === "number" ? (
+                    <button
+                      type="button"
+                      disabled={takipsanBusy}
+                      onClick={() => {
+                        setTakipsanBusy(true);
+                        void refreshProductModelTarget(editingId)
+                          .then((r) => {
+                            setTargetQuantity(r.targetQuantity);
+                            if (r.productLabel) setTakipsanProductLabel(r.productLabel);
+                          })
+                          .catch((e) => setError(e instanceof Error ? e.message : "Güncellenemedi"))
+                          .finally(() => setTakipsanBusy(false));
+                      }}
+                      className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-slate-900 dark:text-sky-200"
+                    >
+                      {takipsanBusy ? "Yenileniyor…" : "Takipsandan al"}
+                    </button>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  El ile değiştirebilirsiniz veya &quot;Takipsandan al&quot; ile otomatik doldurun.
+                </p>
+              </div>
+
+              {/* İkincil sevkiyat birleştirme */}
+              <div className="mt-3 rounded-xl border border-violet-200/70 bg-violet-50/40 px-4 py-3 dark:border-violet-800/40 dark:bg-violet-950/20">
+                <label className="text-xs font-semibold text-violet-800 dark:text-violet-300">
+                  İkincil Takipsan sevkiyat ID (birleştirme)
+                </label>
+                <input
+                  type="text"
+                  value={secondaryConsignmentId}
+                  onChange={(e) => setSecondaryConsignmentId(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-violet-300 bg-white px-3 py-1.5 text-sm font-mono tabular-nums text-slate-900 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-400/30 dark:border-violet-700 dark:bg-slate-900 dark:text-slate-100"
+                  placeholder="Örn. 258500 — boş bırakırsanız tek sipariş"
+                />
+                <p className="mt-1.5 text-[11px] text-violet-700 dark:text-violet-400">
+                  Takipsan'daki iki farklı PO aynı üretim ise buraya ikincisinin sevkiyat ID'sini girin.
+                  Okutulan paket ve sipariş adedi otomatik toplanır.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -770,6 +809,11 @@ export default function ProductModelsSection() {
                   {m.targetQuantity != null && m.targetQuantity > 0 ? (
                     <span className="ml-2 text-xs text-teal-700 dark:text-teal-300">
                       {m.targetQuantity.toLocaleString("tr-TR")} adet
+                    </span>
+                  ) : null}
+                  {m.secondaryConsignmentId ? (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">
+                      2 PO birleşik
                     </span>
                   ) : null}
                 </div>

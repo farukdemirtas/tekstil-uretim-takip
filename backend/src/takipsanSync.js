@@ -5,6 +5,7 @@ import {
   getUtuPaketDay,
   saveUtuPaketDay,
   refreshProductModelTargetsFromTakipsan,
+  listProductModels,
 } from "./queries.js";
 import { TakipsanClient, isTakipsanConfigured } from "./takipsanClient.js";
 import { splitTakipsanProductLabel, buildTakipsanProductLabel } from "./takipsanProduct.js";
@@ -64,6 +65,30 @@ function bedenFromTakipsan(fromPackages) {
   return out;
 }
 
+/** İki sevkiyat verisini birleştirir (adet + beden + paketler toplanır). */
+function mergeConsignmentData(primary, secondary) {
+  const mergedBeden = { ...(primary.bedenFromPackages || {}) };
+  for (const [code, count] of Object.entries(secondary.bedenFromPackages || {})) {
+    mergedBeden[code] = (mergedBeden[code] || 0) + (Number(count) || 0);
+  }
+
+  return {
+    ...primary,
+    orderQuantity: (Number(primary.orderQuantity) || 0) + (Number(secondary.orderQuantity) || 0),
+    readCount: (Number(primary.readCount) || 0) + (Number(secondary.readCount) || 0),
+    packageCount: (Number(primary.packageCount) || 0) + (Number(secondary.packageCount) || 0),
+    packageCountFromHtml:
+      primary.packageCountFromHtml != null || secondary.packageCountFromHtml != null
+        ? (Number(primary.packageCountFromHtml) || 0) +
+          (Number(secondary.packageCountFromHtml) || 0)
+        : null,
+    packages: [...(primary.packages || []), ...(secondary.packages || [])],
+    bedenFromPackages: mergedBeden,
+    // Sipariş kodları: "BIRINCI + İKİNCİ"
+    orderCode: [primary.orderCode, secondary.orderCode].filter(Boolean).join(" + "),
+  };
+}
+
 let syncInFlight = null;
 
 // Singleton client — oturum cookielerini senkronlar arasında korur
@@ -113,7 +138,48 @@ export async function syncTakipsanToUtuPaket(options = {}) {
 
     try {
       const client = getTakipsanClient();
-      const data = await client.fetchConsignmentReadData(consignmentId);
+      let data = await client.fetchConsignmentReadData(consignmentId);
+
+      // İkincil sevkiyat ID'sini belirle: önce .env, sonra DB'deki modelden oku
+      let secondaryConsignmentId = String(process.env.TAKIPSAN_SECONDARY_CONSIGNMENT_ID || "").trim();
+      if (!secondaryConsignmentId) {
+        try {
+          const models = await listProductModels();
+          const withSecondary = models.filter((m) => m.secondaryConsignmentId);
+
+          if (withSecondary.length === 1) {
+            // Yalnızca bir model ikincil sevkiyat tanımlıysa doğrudan kullan
+            secondaryConsignmentId = String(withSecondary[0].secondaryConsignmentId).trim();
+          } else if (withSecondary.length > 1 && data.orderCode) {
+            // Birden fazla model varsa sipariş kodu ile eşleştir
+            const dataOc = String(data.orderCode).trim().toLowerCase();
+            const matched = withSecondary.find((m) => {
+              const oc = String(m.takipsanOrderCode || "").trim().toLowerCase();
+              return oc && (dataOc.startsWith(oc) || oc.startsWith(dataOc));
+            });
+            if (matched?.secondaryConsignmentId) {
+              secondaryConsignmentId = String(matched.secondaryConsignmentId).trim();
+            }
+          }
+        } catch {
+          // DB okuma başarısız — devam et
+        }
+      }
+
+      // İkincil sevkiyat varsa verileri birleştir
+      if (secondaryConsignmentId) {
+        try {
+          const secondary = await client.fetchConsignmentReadData(secondaryConsignmentId);
+          data = mergeConsignmentData(data, secondary);
+          console.log(`[TakipsanSync] İki sevkiyat birleştirildi: ${consignmentId} + ${secondaryConsignmentId} → toplam ${data.orderQuantity} adet / ${data.readCount} okunan`);
+        } catch (secondaryErr) {
+          console.warn(
+            `[TakipsanSync] İkincil sevkiyat (${secondaryConsignmentId}) alınamadı, yalnızca birincil kullanılıyor:`,
+            String(secondaryErr?.message ?? secondaryErr)
+          );
+        }
+      }
+
       const slotKey = getCurrentUtuPaketSlotKey();
       const existing = await getUtuPaketDay(date);
 

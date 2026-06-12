@@ -1467,9 +1467,11 @@ app.get("/api/takipsan/status", requirePermission("utuPaket"), async (_req, res)
       // Bellekteki durum yeterli
     }
   }
+  const secondaryId = String(process.env.TAKIPSAN_SECONDARY_CONSIGNMENT_ID || "").trim();
   return res.json({
     configured: isTakipsanConfigured(),
     consignmentId: process.env.TAKIPSAN_CONSIGNMENT_ID || null,
+    secondaryConsignmentId: secondaryId || null,
     syncIntervalMs: Number(process.env.TAKIPSAN_SYNC_INTERVAL_MS) || 30_000,
     ...takipsanSyncState,
     lastPackages,
