@@ -279,7 +279,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [utuCount, setUtuCount]           = useState(0);
   const [utuTotal, setUtuTotal]           = useState(0);
   const [paketCount, setPaketCount]       = useState(0);
-  const [gunPaketlenen, setGunPaketlened] = useState(0);
+  const [gunPaketlenen, setGunPaketlenen] = useState(0);
 
   /** Takipsan'dan gelen ham hedef */
   const [takipsanTarget, setTakipsanTarget] = useState(0);
@@ -327,7 +327,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       setOptikCount(todayOptik);
       setUtuCount(todayUtu);
       setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
-      setGunPaketlened(sumGunPaketlenen(data.takipsan?.packages, date).adet);
+      setGunPaketlenen(sumGunPaketlenen(data.takipsan?.packages, date).adet);
 
       const rawTarget = data.takipsan?.orderQuantity ?? data.packagingTarget;
       setTakipsanTarget(rawTarget);
