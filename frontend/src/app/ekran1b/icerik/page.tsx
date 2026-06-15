@@ -11,6 +11,7 @@ import {
   getSecondaryDayMeta,
   getSecondarySimpleTotals,
   getEkran5Target,
+  getEkranRefreshSignal,
   setAuthToken,
   type SecondaryDayMeta,
 } from "@/lib/api";
@@ -107,6 +108,21 @@ export default function Ekran1BIcerikPage() {
     if (!hasToken) return;
     void load(false);
     const id = setInterval(() => void load(true), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [hasToken, load]);
+
+  // Uzaktan yenileme sinyali
+  useEffect(() => {
+    if (!hasToken) return;
+    let lastSignal = "";
+    const checkSignal = async () => {
+      const sig = await getEkranRefreshSignal().catch(() => "");
+      if (!sig || sig === "0") return;
+      if (lastSignal === "") { lastSignal = sig; return; }
+      if (sig !== lastSignal) { lastSignal = sig; void load(true); }
+    };
+    void checkSignal();
+    const id = setInterval(() => void checkSignal(), 6_000);
     return () => clearInterval(id);
   }, [hasToken, load]);
 

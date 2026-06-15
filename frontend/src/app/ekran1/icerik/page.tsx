@@ -13,6 +13,7 @@ import {
   getPersonnelBirthdaysToday,
   getDayProductMeta,
   getEkran1GenelIlerleme,
+  getEkranRefreshSignal,
   setAuthToken,
   type HedefAlertEvalPayload,
   type HedefStageLineDto,
@@ -745,6 +746,21 @@ export default function Ekran1IcerikPage() {
   useEffect(() => {
     if (!hasToken) return;
     const id = setInterval(() => void fetchData(true), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [hasToken, fetchData]);
+
+  /** Uzaktan yenileme sinyali — hedef veya model değişince sessiz yenileme */
+  useEffect(() => {
+    if (!hasToken) return;
+    let lastSignal = "";
+    const checkSignal = async () => {
+      const sig = await getEkranRefreshSignal().catch(() => "");
+      if (!sig || sig === "0") return;
+      if (lastSignal === "") { lastSignal = sig; return; }
+      if (sig !== lastSignal) { lastSignal = sig; void fetchData(true); }
+    };
+    void checkSignal();
+    const id = setInterval(() => void checkSignal(), 6_000);
     return () => clearInterval(id);
   }, [hasToken, fetchData]);
 

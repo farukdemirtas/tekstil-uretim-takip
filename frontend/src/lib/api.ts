@@ -900,6 +900,18 @@ export async function deleteProductModel(id: number): Promise<void> {
 }
 
 /** Ekran5 paylaşımlı manuel hedef — okuma */
+/** TV ekranları için yenileme sinyali — auth gerekmez */
+export async function getEkranRefreshSignal(): Promise<string> {
+  try {
+    const res = await fetch(`${apiBase()}/ekran-refresh-signal`, { cache: "no-store" });
+    if (!res.ok) return "0";
+    const data = await res.json() as { signal: string };
+    return data.signal ?? "0";
+  } catch {
+    return "0";
+  }
+}
+
 export async function getEkran5Target(modelId: number): Promise<{ ekran5Target: number | null; targetQuantity: number | null }> {
   const res = await apiFetch(`${apiBase()}/product-models/${modelId}/ekran5-target`, {
     cache: "no-store",

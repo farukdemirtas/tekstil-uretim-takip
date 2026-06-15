@@ -65,6 +65,8 @@ import {
   deleteProductModel,
   getEkran5Target,
   setEkran5Target,
+  bumpEkranRefreshSignal,
+  getEkranRefreshSignal,
   applyHedefSessionToDailyMeta,
   getRepairEntries,
   upsertRepairEntries,
@@ -169,6 +171,16 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ message: "Yetkisiz istek" });
   }
 }
+
+/** TV ekranları yenileme sinyali — auth gerekmez, sadece timestamp döner */
+app.get("/api/ekran-refresh-signal", async (_req, res) => {
+  try {
+    const result = await getEkranRefreshSignal();
+    res.json(result);
+  } catch {
+    res.json({ signal: "0" });
+  }
+});
 
 app.use(requireAuth);
 
@@ -612,6 +624,7 @@ app.put("/api/product-models/:id", requirePermission("ayarlar"), async (req, res
     const teamCodes = await listTeamCodes();
     const updated = await updateProductModel(id, req.body || {}, teamCodes);
     logActivity(req, "urun_model_guncelle", "product_models", { id, modelCode: updated.modelCode });
+    void bumpEkranRefreshSignal().catch(() => {});
     res.json(updated);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
@@ -651,6 +664,7 @@ app.put("/api/product-models/:id/ekran5-target", requireAuth, async (req, res) =
   try {
     const result = await setEkran5Target(id, value);
     logActivity(req, "ekran5_hedef_guncelle", "product_models", { id, ekran5Target: result.ekran5Target });
+    void bumpEkranRefreshSignal().catch(() => {});
     res.json(result);
   } catch (e) {
     res.status(500).json({ message: String(e.message || e) });
@@ -709,6 +723,7 @@ app.post("/api/hedef/apply-session", requirePermission("hedefTakip"), async (req
       productModel: pmd,
     });
     logActivity(req, "hedef_oturum_uygula", "hedef", JSON.stringify({ modelId: mid, startDate, endDate, dates: result.datesUpdated }));
+    void bumpEkranRefreshSignal().catch(() => {});
     res.json(result);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });

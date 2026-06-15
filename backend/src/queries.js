@@ -3361,6 +3361,27 @@ async function aggregateGenelForRangeCombined(startDate, endDate, modelIdRaw) {
   return { genelTamamlanan, weekdaysUsed: weekdays.length };
 }
 
+/** Ekran yenileme sinyali — hedef veya model değişince bump edilir */
+export function bumpEkranRefreshSignal() {
+  const ts = String(Date.now());
+  return new Promise((resolve, reject) => {
+    db.run(
+      "INSERT INTO app_kv (k, v) VALUES ('ekran_refresh_ts', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+      [ts],
+      (err) => (err ? reject(err) : resolve(ts))
+    );
+  });
+}
+
+export function getEkranRefreshSignal() {
+  return new Promise((resolve, reject) => {
+    db.get("SELECT v FROM app_kv WHERE k = 'ekran_refresh_ts'", [], (err, row) => {
+      if (err) return reject(err);
+      resolve({ signal: row?.v ?? "0" });
+    });
+  });
+}
+
 export function getAppKv(key) {
   const k = String(key || "").trim() || "?";
   return new Promise((resolve, reject) => {
