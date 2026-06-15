@@ -287,6 +287,7 @@ export function initDb() {
         ["target_quantity", "INTEGER NOT NULL DEFAULT 0"],
         ["session_start_date", "TEXT"],
         ["secondary_consignment_id", "TEXT"],
+        ["ekran5_target", "INTEGER"],
       ]) {
         if (!names.has(col[0])) {
           db.run(`ALTER TABLE product_models ADD COLUMN ${col[0]} ${col[1]}`, (e) => {

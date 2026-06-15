@@ -1623,6 +1623,37 @@ export async function updateProductModel(id, payload, teamCodes) {
   });
 }
 
+export function getEkran5Target(id) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      "SELECT ekran5_target AS ekran5Target FROM product_models WHERE id = ?",
+      [id],
+      (err, row) => {
+        if (err) return reject(err);
+        if (!row) return resolve({ ekran5Target: null });
+        const v = row.ekran5Target;
+        resolve({ ekran5Target: v != null && Number.isFinite(Number(v)) ? Number(v) : null });
+      }
+    );
+  });
+}
+
+export function setEkran5Target(id, value) {
+  const val = value != null && Number.isFinite(Number(value)) && Number(value) > 0
+    ? Math.floor(Number(value))
+    : null;
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE product_models SET ekran5_target = ? WHERE id = ?",
+      [val, id],
+      function onUp(err) {
+        if (err) return reject(err);
+        resolve({ id, ekran5Target: val });
+      }
+    );
+  });
+}
+
 export function deleteProductModel(id) {
   return new Promise((resolve, reject) => {
     db.run("DELETE FROM product_models WHERE id = ?", [id], function onDel(err) {

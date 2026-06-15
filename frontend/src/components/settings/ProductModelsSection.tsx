@@ -66,6 +66,7 @@ export default function ProductModelsSection() {
   const [secondaryConsignmentId, setSecondaryConsignmentId] = useState("");
   const [isTakipsanLinkedEdit, setIsTakipsanLinkedEdit] = useState(false);
   const [takipsanBusy, setTakipsanBusy] = useState(false);
+  const [takipsanInputId, setTakipsanInputId] = useState("");
   const [saving, setSaving] = useState(false);
   const [hedefApplyModelId, setHedefApplyModelId] = useState<number | "">("");
   const [hedefApplyStart, setHedefApplyStart] = useState(() => clampToWeekdayIso(todayWeekdayIso()));
@@ -97,9 +98,7 @@ export default function ProductModelsSection() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+  useEffect(() => { void loadAll(); }, [loadAll]);
 
   useEffect(() => {
     if (!list.length) return;
@@ -107,19 +106,13 @@ export default function ProductModelsSection() {
     try {
       const raw = window.localStorage.getItem(HEDEF_TAKIP_SETTINGS_KEY);
       const saved = raw ? (JSON.parse(raw) as { modelId?: number | null }) : {};
-      if (
-        saved.modelId != null &&
-        Number.isFinite(Number(saved.modelId)) &&
-        list.some((x) => x.id === Number(saved.modelId))
-      ) {
+      if (saved.modelId != null && Number.isFinite(Number(saved.modelId)) && list.some((x) => x.id === Number(saved.modelId))) {
         setHedefApplyModelId(Number(saved.modelId));
       } else if (list.length === 1) {
         setHedefApplyModelId(list[0].id);
         persistHedefSettingsModelId(list[0].id);
       }
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, [list]);
 
   async function startNew() {
@@ -136,19 +129,18 @@ export default function ProductModelsSection() {
     setIsTakipsanLinkedEdit(false);
     setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
     setError(null);
-    try {
-      await loadTeamsAndProcesses();
-    } catch (e) {
+    try { await loadTeamsAndProcesses(); } catch (e) {
       setError(e instanceof Error ? e.message : "Bölüm ve proses listesi alınamadı");
     }
   }
 
-  async function startNewFromTakipsan() {
+  async function startNewFromTakipsan(overrideId?: string) {
     setTakipsanBusy(true);
     setError(null);
     try {
       await loadTeamsAndProcesses();
-      const info = await getTakipsanConsignmentInfo();
+      const id = overrideId?.trim() || takipsanInputId.trim() || undefined;
+      const info = await getTakipsanConsignmentInfo(id);
       setEditingId("new");
       setFromTakipsan(true);
       setIsTakipsanLinkedEdit(true);
@@ -157,6 +149,7 @@ export default function ProductModelsSection() {
       setTakipsanProductLabel(info.productRef || info.productLabel);
       setTakipsanOrderCode(info.orderCode);
       setTargetQuantity(info.orderQuantity);
+      setSecondaryConsignmentId("");
       setBaselines([emptyRow()]);
       setDailySummaryRows([]);
       setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
@@ -169,9 +162,7 @@ export default function ProductModelsSection() {
 
   async function startEdit(id: number) {
     setError(null);
-    try {
-      await loadTeamsAndProcesses();
-    } catch (e) {
+    try { await loadTeamsAndProcesses(); } catch (e) {
       setError(e instanceof Error ? e.message : "Bölüm ve proses listesi alınamadı");
       return;
     }
@@ -186,66 +177,35 @@ export default function ProductModelsSection() {
       setTakipsanOrderCode(d.takipsanOrderCode || "");
       setTargetQuantity(d.targetQuantity ?? 0);
       setSecondaryConsignmentId(d.secondaryConsignmentId ?? "");
-      setSessionStartDate(
-        d.sessionStartDate ? clampToWeekdayIso(String(d.sessionStartDate)) : clampToWeekdayIso(todayWeekdayIso())
-      );
-      const rows = (d.baselines || [])
-        .slice()
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((row) => ({
-          teamCode: row.teamCode,
-          processName: row.processName,
-          arkaHalf: row.arkaHalf ? 1 : 0,
-        }));
+      const ssd = d.sessionStartDate ? clampToWeekdayIso(String(d.sessionStartDate)) : clampToWeekdayIso(todayWeekdayIso());
+      setSessionStartDate(ssd);
+      // Formun içindeki "Günlere uygula" alanını mevcut model ve tarihle hazırla
+      setHedefApplyModelId(id);
+      setHedefApplyStart(ssd);
+      setHedefApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
+      setHedefApplyMsg(null);
+      setHedefApplyErr(null);
+      const rows = (d.baselines || []).slice().sort((a, b) => a.sortOrder - b.sortOrder).map((row) => ({ teamCode: row.teamCode, processName: row.processName, arkaHalf: row.arkaHalf ? 1 : 0 }));
       setBaselines(rows.length ? rows : [emptyRow()]);
-      const dailyRows = (d.dailySummaryProcesses || [])
-        .slice()
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((row) => ({
-          teamCode: row.teamCode,
-          processName: row.processName,
-          arkaHalf: row.arkaHalf ? 1 : 0,
-        }));
+      const dailyRows = (d.dailySummaryProcesses || []).slice().sort((a, b) => a.sortOrder - b.sortOrder).map((row) => ({ teamCode: row.teamCode, processName: row.processName, arkaHalf: row.arkaHalf ? 1 : 0 }));
       setDailySummaryRows(dailyRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Model yüklenemedi");
     }
   }
 
-  function cancelEdit() {
-    setEditingId(null);
-    setError(null);
-  }
+  function cancelEdit() { setEditingId(null); setError(null); }
 
   function setRow(index: number, field: keyof BaselineRow, value: string | number) {
-    setBaselines((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, [field]: value } : row))
-    );
+    setBaselines((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
   }
-
   function setDailyRow(index: number, field: keyof DailySummaryRow, value: string | number) {
-    setDailySummaryRows((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, [field]: value } : row))
-    );
+    setDailySummaryRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
   }
-
-  function addRow() {
-    setBaselines((prev) => (prev.length >= MAX_BASELINE_ROWS ? prev : [...prev, emptyRow()]));
-  }
-
-  function removeRow(index: number) {
-    setBaselines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
-  }
-
-  function addDailyRow() {
-    setDailySummaryRows((prev) =>
-      prev.length >= MAX_DAILY_SUMMARY_ROWS ? prev : [...prev, emptyDailyRow()]
-    );
-  }
-
-  function removeDailyRow(index: number) {
-    setDailySummaryRows((prev) => prev.filter((_, i) => i !== index));
-  }
+  function addRow() { setBaselines((prev) => (prev.length >= MAX_BASELINE_ROWS ? prev : [...prev, emptyRow()])); }
+  function removeRow(index: number) { setBaselines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index))); }
+  function addDailyRow() { setDailySummaryRows((prev) => prev.length >= MAX_DAILY_SUMMARY_ROWS ? prev : [...prev, emptyDailyRow()]); }
+  function removeDailyRow(index: number) { setDailySummaryRows((prev) => prev.filter((_, i) => i !== index)); }
 
   async function handleSave() {
     if (editingId === null) return;
@@ -254,35 +214,14 @@ export default function ProductModelsSection() {
     const payload = {
       modelCode,
       productName,
-      baselines: baselines.map((b) => ({
-        teamCode: b.teamCode,
-        processName: b.processName,
-        arkaHalf: b.arkaHalf ? 1 : 0,
-      })),
-      dailySummaryProcesses: dailySummaryRows
-        .filter((b) => b.teamCode.trim() && b.processName.trim())
-        .map((b) => ({
-          teamCode: b.teamCode,
-          processName: b.processName,
-          arkaHalf: b.arkaHalf ? 1 : 0,
-        })),
+      baselines: baselines.map((b) => ({ teamCode: b.teamCode, processName: b.processName, arkaHalf: b.arkaHalf ? 1 : 0 })),
+      dailySummaryProcesses: dailySummaryRows.filter((b) => b.teamCode.trim() && b.processName.trim()).map((b) => ({ teamCode: b.teamCode, processName: b.processName, arkaHalf: b.arkaHalf ? 1 : 0 })),
       sessionStartDate: sessionStartDate || null,
       secondaryConsignmentId: secondaryConsignmentId.trim() || null,
-      ...(editingId === "new" && fromTakipsan
-        ? {
-            fromTakipsan: true,
-            takipsanProductLabel,
-            takipsanOrderCode,
-            targetQuantity,
-          }
-        : {}),
+      ...(editingId === "new" && fromTakipsan ? { fromTakipsan: true, takipsanProductLabel, takipsanOrderCode, targetQuantity } : {}),
     };
     try {
-      if (editingId === "new") {
-        await createProductModel(payload);
-      } else {
-        await updateProductModel(editingId, payload);
-      }
+      if (editingId === "new") { await createProductModel(payload); } else { await updateProductModel(editingId, payload); }
       await loadAll();
       setEditingId(null);
     } catch (e) {
@@ -307,11 +246,7 @@ export default function ProductModelsSection() {
   function handleHedefApplyModelPick(value: string) {
     setHedefApplyMsg(null);
     setHedefApplyErr(null);
-    if (value === "") {
-      setHedefApplyModelId("");
-      persistHedefSettingsModelId(null);
-      return;
-    }
+    if (value === "") { setHedefApplyModelId(""); persistHedefSettingsModelId(null); return; }
     const num = Number(value);
     setHedefApplyModelId(num);
     persistHedefSettingsModelId(num);
@@ -320,31 +255,15 @@ export default function ProductModelsSection() {
   async function handleHedefApplyToProduction() {
     setHedefApplyMsg(null);
     setHedefApplyErr(null);
-    if (hedefApplyModelId === "") {
-      setHedefApplyErr("Önce bir ürün modeli seçin.");
-      return;
-    }
+    if (hedefApplyModelId === "") { setHedefApplyErr("Önce bir ürün modeli seçin."); return; }
     const start = clampToWeekdayIso(hedefApplyStart);
     const end = clampToWeekdayIso(hedefApplyEnd);
-    if (!start || !end || start > end) {
-      setHedefApplyErr("Geçerli bir hafta içi tarih aralığı seçin.");
-      return;
-    }
+    if (!start || !end || start > end) { setHedefApplyErr("Geçerli bir hafta içi tarih aralığı seçin."); return; }
     setHedefApplyBusy(true);
     try {
       const m = await getProductModel(Number(hedefApplyModelId));
-      const { datesUpdated } = await applyHedefSession({
-        modelId: Number(hedefApplyModelId),
-        startDate: start,
-        endDate: end,
-        productName: m.productName,
-        productModel: m.modelCode,
-      });
-      setHedefApplyMsg(
-        datesUpdated > 0
-          ? `${datesUpdated} iş gününe ürün adı ve model kodu yazıldı. Ana üretim ekranında ilgili tarihlerde «Çalışılacak ürün» güncellenir.`
-          : "Aralıkta güncellenecek iş günü bulunamadı."
-      );
+      const { datesUpdated } = await applyHedefSession({ modelId: Number(hedefApplyModelId), startDate: start, endDate: end, productName: m.productName, productModel: m.modelCode });
+      setHedefApplyMsg(datesUpdated > 0 ? `${datesUpdated} iş gününe ürün adı ve model kodu yazıldı.` : "Aralıkta güncellenecek iş günü bulunamadı.");
     } catch (e) {
       setHedefApplyErr(e instanceof Error ? e.message : "Uygulanamadı");
     } finally {
@@ -352,492 +271,411 @@ export default function ProductModelsSection() {
     }
   }
 
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Ürün modelleri (hedef bazı)</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Takipsan sevkiyatından ürün adı ve hedef adet otomatik gelir.{" "}
-            <strong className="font-medium text-teal-800 dark:text-teal-300">Çalışılacak bölüm</strong> hedef ve
-            darboğaz içindir;{" "}
-            <strong className="font-medium text-violet-800 dark:text-violet-300">günlük özet prosesleri</strong> yalnızca
-            ana ekrandaki sayı toplamı kutuları içindir. Takip başlangıç tarihini de siz belirlersiniz.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+  // ── Ortak satır editörü bileşeni ─────────────────────────────────────────
+  function RowEditor({ rows, color, onTeam, onProcess, onHalf, onRemove, onAdd, max, addLabel, canRemove = true }: {
+    rows: BaselineRow[];
+    color: "teal" | "violet";
+    onTeam: (i: number, v: string) => void;
+    onProcess: (i: number, v: string) => void;
+    onHalf: (i: number, v: number) => void;
+    onRemove: (i: number) => void;
+    onAdd: () => void;
+    max: number;
+    addLabel: string;
+    canRemove?: boolean;
+  }) {
+    const borderCls = color === "teal" ? "border-teal-200/70 dark:border-teal-800/50" : "border-violet-200/70 dark:border-violet-800/50";
+    const selCls   = color === "teal" ? "border-teal-200 focus:border-teal-500 dark:border-teal-700" : "border-violet-200 focus:border-violet-500 dark:border-violet-700";
+    const addCls   = color === "teal"
+      ? "border-teal-400 text-teal-700 hover:bg-teal-50 dark:border-teal-700 dark:text-teal-300"
+      : "border-violet-400 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300";
+
+    if (rows.length === 0 && color === "violet") {
+      return (
+        <button type="button" onClick={onAdd} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${addCls}`}>
+          <span className="text-base leading-none">+</span> {addLabel}
+        </button>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        {rows.map((row, i) => (
+          <div key={i} className={`flex flex-wrap items-center gap-2 rounded-xl border bg-white px-3 py-2 dark:bg-slate-900 ${borderCls}`}>
+            <span className="w-5 shrink-0 text-center text-[10px] font-bold text-slate-400">{i + 1}</span>
+            <select
+              value={row.teamCode}
+              onChange={(e) => onTeam(i, e.target.value)}
+              className={`min-w-0 flex-1 rounded-lg border bg-white px-2 py-1.5 text-xs outline-none focus:ring-1 dark:bg-slate-800 dark:text-slate-100 ${selCls}`}
+            >
+              <option value="">Bölüm seçin…</option>
+              {teams.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
+            </select>
+            <select
+              value={row.processName}
+              onChange={(e) => onProcess(i, e.target.value)}
+              className={`min-w-0 flex-1 rounded-lg border bg-white px-2 py-1.5 text-xs outline-none focus:ring-1 dark:bg-slate-800 dark:text-slate-100 ${selCls}`}
+            >
+              <option value="">Proses seçin…</option>
+              {processNames.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <label className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+              <input type="checkbox" checked={row.arkaHalf === 1} onChange={(e) => onHalf(i, e.target.checked ? 1 : 0)} className="rounded" />
+              <span>× ½</span>
+            </label>
+            <button
+              type="button"
+              disabled={!canRemove && rows.length <= 1}
+              onClick={() => onRemove(i)}
+              className="shrink-0 rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+            >✕</button>
+          </div>
+        ))}
         <button
           type="button"
-          onClick={() => void startNewFromTakipsan()}
-          disabled={takipsanBusy}
-          className="shrink-0 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+          onClick={onAdd}
+          disabled={rows.length >= max}
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${addCls}`}
         >
-          {takipsanBusy ? "Takipsan…" : "Takipsan'dan ürün ekle"}
+          <span className="text-base leading-none">+</span> {addLabel}
         </button>
-        <button
-          type="button"
-          onClick={() => startNew()}
-          className="shrink-0 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-        >
-          Manuel model
-        </button>
-        </div>
       </div>
+    );
+  }
 
-      {hasPermission("hedefTakip") ? (
-        <div className="mt-4 rounded-xl border border-teal-200 bg-teal-50/50 p-4 dark:border-teal-900/40 dark:bg-teal-950/20">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                Hedef Takip: üretim günlerine model uygula
-              </h3>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                Seçilen hafta içi günlere ürün adı ve model kodu yazılır; ana üretim ekranında «Çalışılacak ürün» alanı
-                bu kaynaktan güncellenir.
-              </p>
-            </div>
-            <Link
-              href="/hedef-takip"
-              className="shrink-0 text-xs font-medium text-teal-700 underline-offset-2 hover:underline dark:text-teal-400"
-            >
-              Hedef Takip
-            </Link>
-          </div>
-          <label className="mt-3 block text-xs font-medium text-slate-600 dark:text-slate-300">Ürün modeli</label>
-          <select
-            value={hedefApplyModelId === "" ? "" : String(hedefApplyModelId)}
-            onChange={(e) => handleHedefApplyModelPick(e.target.value)}
-            className="mt-1 w-full max-w-xl rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-          >
-            <option value="">Model seçin…</option>
-            {list.map((m) => (
-              <option key={m.id} value={m.id}>
-                {formatModelPickerLabel(m.productName, m.modelCode, m.targetQuantity)}
-              </option>
-            ))}
-          </select>
-          {list.length === 0 ? (
-            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Önce yukarıdan model ekleyin.</p>
-          ) : null}
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-            <WeekdayDatePicker
-              label="Başlangıç"
-              value={hedefApplyStart}
-              onChange={(v) => setHedefApplyStart(coerceWeekdayPickerValue(v))}
-              className="min-w-[12rem] flex-1"
-            />
-            <WeekdayDatePicker
-              label="Bitiş"
-              value={hedefApplyEnd}
-              onChange={(v) => setHedefApplyEnd(coerceWeekdayPickerValue(v))}
-              className="min-w-[12rem] flex-1"
-            />
-            <button
-              type="button"
-              disabled={hedefApplyBusy || hedefApplyModelId === ""}
-              onClick={() => void handleHedefApplyToProduction()}
-              className="rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500"
-            >
-              {hedefApplyBusy ? "Uygulanıyor…" : "Üretim ekranına uygula"}
-            </button>
-          </div>
-          {hedefApplyMsg ? (
-            <p className="mt-3 rounded-md border border-teal-200 bg-teal-50/80 px-3 py-2 text-xs text-teal-900 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">
-              {hedefApplyMsg}
-            </p>
-          ) : null}
-          {hedefApplyErr ? (
-            <p className="mt-2 text-xs text-red-600 dark:text-red-400">{hedefApplyErr}</p>
-          ) : null}
-        </div>
-      ) : null}
+  return (
+    <section className="space-y-4">
 
-      {loading && list.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500">Liste yükleniyor…</p>
-      ) : null}
-
+      {/* Hata */}
       {error ? (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
-          {error}
+        <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+          <span className="shrink-0">⚠</span>
+          <span>{error}</span>
         </div>
       ) : null}
 
-      {editingId !== null ? (
-        <div className="mt-6 space-y-4 border-t border-slate-200 pt-6 dark:border-slate-600">
-          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-            {editingId === "new" ? (fromTakipsan ? "Takipsan ürünü" : "Yeni model") : "Modeli düzenle"}
-          </h3>
+      {/* ══ MODEL LİSTESİ ═════════════════════════════════════════════════════ */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
 
-          {isTakipsanLinkedEdit ? (
-            <div className="rounded-lg border border-sky-200 bg-sky-50/80 p-4 dark:border-sky-900/40 dark:bg-sky-950/20">
-              <p className="text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
-                Takipsan ürünü
-              </p>
-              <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                {takipsanProductLabel || formatProductDisplayLine(productName, modelCode)}
-              </p>
-              {/* El ile düzenlenebilir hedef adet */}
-              <div className="mt-3">
-                <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                  Hedef adet (sipariş sayısı)
-                </label>
-                <div className="mt-1 flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={targetQuantity || ""}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      setTargetQuantity(Number.isFinite(v) && v >= 0 ? v : 0);
-                    }}
-                    className="w-36 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-semibold tabular-nums text-slate-900 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                    placeholder="Örn. 23500"
-                  />
-                  {typeof editingId === "number" ? (
-                    <button
-                      type="button"
-                      disabled={takipsanBusy}
-                      onClick={() => {
-                        setTakipsanBusy(true);
-                        void refreshProductModelTarget(editingId)
-                          .then((r) => {
-                            setTargetQuantity(r.targetQuantity);
-                            if (r.productLabel) setTakipsanProductLabel(r.productLabel);
-                          })
-                          .catch((e) => setError(e instanceof Error ? e.message : "Güncellenemedi"))
-                          .finally(() => setTakipsanBusy(false));
-                      }}
-                      className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-slate-900 dark:text-sky-200"
-                    >
-                      {takipsanBusy ? "Yenileniyor…" : "Takipsandan al"}
-                    </button>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  El ile değiştirebilirsiniz veya &quot;Takipsandan al&quot; ile otomatik doldurun.
-                </p>
-              </div>
-
-              {/* İkincil sevkiyat birleştirme */}
-              <div className="mt-3 rounded-xl border border-violet-200/70 bg-violet-50/40 px-4 py-3 dark:border-violet-800/40 dark:bg-violet-950/20">
-                <label className="text-xs font-semibold text-violet-800 dark:text-violet-300">
-                  İkincil Takipsan sevkiyat ID (birleştirme)
-                </label>
-                <input
-                  type="text"
-                  value={secondaryConsignmentId}
-                  onChange={(e) => setSecondaryConsignmentId(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-violet-300 bg-white px-3 py-1.5 text-sm font-mono tabular-nums text-slate-900 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-400/30 dark:border-violet-700 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="Örn. 258500 — boş bırakırsanız tek sipariş"
-                />
-                <p className="mt-1.5 text-[11px] text-violet-700 dark:text-violet-400">
-                  Takipsan'daki iki farklı PO aynı üretim ise buraya ikincisinin sevkiyat ID'sini girin.
-                  Okutulan paket ve sipariş adedi otomatik toplanır.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Model kodu</label>
-                <input
-                  value={modelCode}
-                  onChange={(e) => setModelCode(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="Örn. YM-2026-04"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Ürün adı</label>
-                <input
-                  value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                  placeholder="Örn. Polo tişört"
-                />
-              </div>
-            </div>
-          )}
-
-          <WeekdayDatePicker
-            label="Takip başlangıç tarihi"
-            value={sessionStartDate}
-            onChange={(v) => setSessionStartDate(coerceWeekdayPickerValue(v))}
-            className="max-w-xs"
-          />
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            Ekran 1 ve hedef özette «Biten» toplamı bu tarihten itibaren sayılır.
-          </p>
-
-          {teams.length === 0 || processes.length === 0 ? (
-            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
-              {teams.length === 0 && processes.length === 0
-                ? "Henüz bölüm ve proses tanımı yok. Ayarlar’da «Proses ve bölüm» sekmesinden önce liste oluşturun."
-                : teams.length === 0
-                  ? "Henüz bölüm yok. Ayarlar’da «Proses ve bölüm» sekmesinden ekleyin."
-                  : "Henüz proses yok. Ayarlar’da «Proses ve bölüm» sekmesinden ekleyin."}
-            </p>
-          ) : null}
-
-          <div className="overflow-x-auto rounded-xl border-2 border-teal-200 bg-teal-50/30 p-3 dark:border-teal-800/50 dark:bg-teal-950/15">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-teal-800 dark:text-teal-300">
-              Çalışılacak bölüm (hedef / darboğaz)
-            </p>
-            <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
-              Hedef Takip, Ekran 1 ve «Genel tamamlanan» bu satırlardan hesaplanır.
-            </p>
-            <table className="w-full min-w-[720px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-teal-200/80 bg-teal-100/50 text-left text-xs font-semibold uppercase text-teal-900 dark:border-teal-800/40 dark:bg-teal-950/40 dark:text-teal-200">
-                  <th className="w-10 py-2 pr-1">#</th>
-                  <th className="py-2 pr-2">Çalışılacak bölüm</th>
-                  <th className="py-2 pr-2">Baz alınacak proses</th>
-                  <th className="py-2">İsteğe bağlı 0.5 çarpan</th>
-                  <th className="w-14 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {baselines.map((row, index) => (
-                  <tr key={index} className="border-b border-teal-100/80 dark:border-teal-900/30">
-                    <td className="py-2 pr-1 text-center text-xs font-medium text-slate-500 dark:text-slate-400">
-                      {index + 1}
-                    </td>
-                    <td className="py-2 pr-2">
-                      <select
-                        value={row.teamCode}
-                        onChange={(e) => setRow(index, "teamCode", e.target.value)}
-                        className="w-full min-w-[10rem] rounded border border-teal-200 bg-white px-2 py-1.5 text-xs dark:border-teal-800 dark:bg-slate-900 dark:text-slate-100"
-                      >
-                        <option value="">Bölüm seçin…</option>
-                        {teams.map((t) => (
-                          <option key={t.code} value={t.code}>
-                            {t.label} ({t.code})
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2 pr-2">
-                      <select
-                        value={row.processName}
-                        onChange={(e) => setRow(index, "processName", e.target.value)}
-                        className="w-full min-w-[10rem] rounded border border-teal-200 bg-white px-2 py-1.5 text-xs dark:border-teal-800 dark:bg-slate-900 dark:text-slate-100"
-                      >
-                        <option value="">Proses seçin…</option>
-                        {processNames.map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2 text-center">
-                      <label className="inline-flex cursor-pointer items-center justify-center gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={row.arkaHalf === 1}
-                          onChange={(e) => setRow(index, "arkaHalf", e.target.checked ? 1 : 0)}
-                        />
-                        <span className="text-slate-600 dark:text-slate-400">Girilen × ½</span>
-                      </label>
-                    </td>
-                    <td className="py-2 text-center">
-                      <button
-                        type="button"
-                        disabled={baselines.length <= 1}
-                        onClick={() => removeRow(index)}
-                        className="rounded border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-                        title="Satırı kaldır"
-                      >
-                        Sil
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+        {/* Başlık + Ekle butonları */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-700">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Ürün Modelleri</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Hedef, bölüm ve proses tanımları</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Takipsan'dan ekle — isteğe bağlı sevkiyat ID */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 dark:border-sky-800/50 dark:bg-sky-950/30">
+              <svg className="h-3.5 w-3.5 shrink-0 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
+              <input
+                type="text"
+                value={takipsanInputId}
+                onChange={(e) => setTakipsanInputId(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !takipsanBusy) void startNewFromTakipsan(); }}
+                placeholder="Sevkiyat ID (opsiyonel)"
+                className="w-36 bg-transparent text-xs font-medium text-slate-700 placeholder-slate-400 outline-none dark:text-slate-200 sm:w-44"
+              />
               <button
                 type="button"
-                onClick={addRow}
-                disabled={baselines.length >= MAX_BASELINE_ROWS}
-                className="rounded-lg border border-teal-600 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 hover:bg-teal-100 disabled:opacity-50 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/60"
+                onClick={() => void startNewFromTakipsan()}
+                disabled={takipsanBusy}
+                className="flex shrink-0 items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
               >
-                + Bölüm satırı ekle
+                {takipsanBusy
+                  ? <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                  : null}
+                {takipsanBusy ? "Yükleniyor…" : "Çek"}
               </button>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                En az 1, en çok {MAX_BASELINE_ROWS} satır
-              </span>
             </div>
-          </div>
-
-          <div className="overflow-x-auto rounded-xl border-2 border-violet-200 bg-violet-50/40 p-3 dark:border-violet-800/50 dark:bg-violet-950/15">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-300">
-              Günlük özet prosesleri (yalnızca sayı toplamı)
-            </p>
-            <p className="mb-3 text-[11px] text-slate-600 dark:text-slate-400">
-              Ana üretim ekranındaki Günlük Özet’te mor kutularda gösterilir; hedef ve genel tamamlanana dahil
-              edilmez.
-            </p>
-            {dailySummaryRows.length === 0 ? (
-              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-                İsteğe bağlı — eklemek için aşağıdaki düğmeyi kullanın.
-              </p>
-            ) : null}
-            {dailySummaryRows.length > 0 ? (
-              <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-violet-200/80 bg-violet-100/50 text-left text-xs font-semibold uppercase text-violet-900 dark:border-violet-800/40 dark:bg-violet-950/40 dark:text-violet-200">
-                    <th className="w-10 py-2 pr-1">#</th>
-                    <th className="py-2 pr-2">Bölüm</th>
-                    <th className="py-2 pr-2">Proses</th>
-                    <th className="py-2">İsteğe bağlı 0.5 çarpan</th>
-                    <th className="w-14 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {dailySummaryRows.map((row, index) => (
-                    <tr key={index} className="border-b border-violet-100/80 dark:border-violet-900/30">
-                      <td className="py-2 pr-1 text-center text-xs font-medium text-slate-500 dark:text-slate-400">
-                        {index + 1}
-                      </td>
-                      <td className="py-2 pr-2">
-                        <select
-                          value={row.teamCode}
-                          onChange={(e) => setDailyRow(index, "teamCode", e.target.value)}
-                          className="w-full min-w-[10rem] rounded border border-violet-200 bg-white px-2 py-1.5 text-xs dark:border-violet-800 dark:bg-slate-900 dark:text-slate-100"
-                        >
-                          <option value="">Bölüm seçin…</option>
-                          {teams.map((t) => (
-                            <option key={t.code} value={t.code}>
-                              {t.label} ({t.code})
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-2 pr-2">
-                        <select
-                          value={row.processName}
-                          onChange={(e) => setDailyRow(index, "processName", e.target.value)}
-                          className="w-full min-w-[10rem] rounded border border-violet-200 bg-white px-2 py-1.5 text-xs dark:border-violet-800 dark:bg-slate-900 dark:text-slate-100"
-                        >
-                          <option value="">Proses seçin…</option>
-                          {processNames.map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-2 text-center">
-                        <label className="inline-flex cursor-pointer items-center justify-center gap-2 text-xs">
-                          <input
-                            type="checkbox"
-                            checked={row.arkaHalf === 1}
-                            onChange={(e) => setDailyRow(index, "arkaHalf", e.target.checked ? 1 : 0)}
-                          />
-                          <span className="text-slate-600 dark:text-slate-400">Girilen × ½</span>
-                        </label>
-                      </td>
-                      <td className="py-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => removeDailyRow(index)}
-                          className="rounded border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-                          title="Satırı kaldır"
-                        >
-                          Sil
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={addDailyRow}
-                disabled={dailySummaryRows.length >= MAX_DAILY_SUMMARY_ROWS}
-                className="rounded-lg border border-violet-600 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-950/60"
-              >
-                + Günlük özet prosesi ekle
-              </button>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                En çok {MAX_DAILY_SUMMARY_ROWS} satır (isteğe bağlı)
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={saving}
-              onClick={() => void handleSave()}
-              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+              onClick={() => void startNew()}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
             >
-              {saving ? "Kaydediliyor…" : "Kaydet"}
-            </button>
-            <button
-              type="button"
-              onClick={cancelEdit}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-600 dark:text-slate-200"
-            >
-              İptal
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+              Manuel ekle
             </button>
           </div>
         </div>
-      ) : null}
 
-      <div className="mt-6">
-        <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Kayıtlı modeller</h3>
-        {list.length === 0 ? (
-          <p className="text-sm text-slate-500">Henüz model yok. Yukarıdan ekleyin.</p>
+        {/* Model listesi */}
+        {loading && list.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
+            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+            Yükleniyor…
+          </div>
+        ) : list.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-sm text-slate-400">Henüz model yok.</p>
+            <p className="mt-1 text-xs text-slate-400">Takipsan&apos;dan veya manuel olarak ekleyin.</p>
+          </div>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-700">
             {list.map((m) => (
-              <li
-                key={m.id}
-                className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
-              >
-                <div>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+              <li key={m.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+                <div className="flex min-w-0 items-start gap-3">
+                  {/* İkon */}
+                  <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${m.isTakipsanLinked ? "bg-sky-500" : "bg-slate-400"} text-white`}>
                     {m.isTakipsanLinked
-                      ? m.takipsanProductLabel || formatModelPickerLabel(m.productName, m.modelCode)
-                      : `${m.modelCode} — ${m.productName || "—"}`}
-                  </span>
-                  {m.targetQuantity != null && m.targetQuantity > 0 ? (
-                    <span className="ml-2 text-xs text-teal-700 dark:text-teal-300">
-                      {m.targetQuantity.toLocaleString("tr-TR")} adet
-                    </span>
-                  ) : null}
-                  {m.secondaryConsignmentId ? (
-                    <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">
-                      2 PO birleşik
-                    </span>
-                  ) : null}
+                      ? <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
+                      : <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg>
+                    }
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {m.isTakipsanLinked
+                        ? m.takipsanProductLabel || formatModelPickerLabel(m.productName, m.modelCode)
+                        : `${m.modelCode}${m.productName ? ` — ${m.productName}` : ""}`}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {m.targetQuantity != null && m.targetQuantity > 0 ? (
+                        <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700 ring-1 ring-teal-200/80 dark:bg-teal-950/30 dark:text-teal-300 dark:ring-teal-800/50">
+                          Hedef {m.targetQuantity.toLocaleString("tr-TR")} adet
+                        </span>
+                      ) : null}
+                      {m.secondaryConsignmentId ? (
+                        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700 ring-1 ring-violet-200/80 dark:bg-violet-950/30 dark:text-violet-300 dark:ring-violet-800/50">
+                          2 PO birleşik
+                        </span>
+                      ) : null}
+                      {m.isTakipsanLinked ? (
+                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600 dark:bg-sky-950/30 dark:text-sky-400">Takipsan</span>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex shrink-0 gap-1.5">
                   <button
                     type="button"
                     onClick={() => void startEdit(m.id)}
-                    className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
-                  >
-                    Düzenle
-                  </button>
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >Düzenle</button>
                   <button
                     type="button"
                     onClick={() => void handleDelete(m.id)}
-                    className="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-950/40"
-                  >
-                    Sil
-                  </button>
+                    className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/30"
+                  >Sil</button>
                 </div>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      {/* ══ DÜZENLEME FORMU ══════════════════════════════════════════════════ */}
+      {editingId !== null ? (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+
+          {/* Form başlığı */}
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-700">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500/10 dark:bg-teal-500/20">
+                <svg className="h-4 w-4 text-teal-600 dark:text-teal-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {editingId === "new" ? (fromTakipsan ? "Takipsan'dan Yeni Model" : "Manuel Yeni Model") : "Modeli Düzenle"}
+              </h3>
+            </div>
+            <button type="button" onClick={cancelEdit} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            </button>
+          </div>
+
+          <div className="divide-y divide-slate-100 dark:divide-slate-700">
+
+            {/* ── Ürün Bilgileri ── */}
+            <div className="px-5 py-4">
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Ürün Bilgileri</p>
+              {isTakipsanLinkedEdit ? (
+                <div className="flex items-center gap-3 rounded-xl bg-sky-50/70 px-4 py-3 ring-1 ring-sky-200/80 dark:bg-sky-950/20 dark:ring-sky-800/50">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-sky-500 text-white">
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600 dark:text-sky-400">Takipsan ürünü</p>
+                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {takipsanProductLabel || formatProductDisplayLine(productName, modelCode)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Model kodu</label>
+                    <input value={modelCode} onChange={(e) => setModelCode(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="Örn. YM-2026-04" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Ürün adı</label>
+                    <input value={productName} onChange={(e) => setProductName(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="Örn. Polo tişört" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Hedef & Sipariş (sadece Takipsan) ── */}
+            {isTakipsanLinkedEdit ? (
+              <div className="px-5 py-4">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Hedef & Sipariş</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Hedef adet</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number" min={0} step={1}
+                        value={targetQuantity || ""}
+                        onChange={(e) => { const v = parseInt(e.target.value, 10); setTargetQuantity(Number.isFinite(v) && v >= 0 ? v : 0); }}
+                        className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold tabular-nums outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="23500"
+                      />
+                      {typeof editingId === "number" ? (
+                        <button type="button" disabled={takipsanBusy}
+                          onClick={() => {
+                            setTakipsanBusy(true);
+                            void refreshProductModelTarget(editingId)
+                              .then((r) => { setTargetQuantity(r.targetQuantity); if (r.productLabel) setTakipsanProductLabel(r.productLabel); })
+                              .catch((e) => setError(e instanceof Error ? e.message : "Güncellenemedi"))
+                              .finally(() => setTakipsanBusy(false));
+                          }}
+                          className="flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/20 dark:text-sky-300"
+                        >
+                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
+                          {takipsanBusy ? "…" : "Takipsan'dan al"}
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-400">El ile girin ya da Takipsan&apos;dan güncel değeri çekin.</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      İkincil sevkiyat ID
+                      <span className="ml-1.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-600 dark:bg-violet-900/40 dark:text-violet-300">opsiyonel</span>
+                    </label>
+                    <input
+                      type="text" value={secondaryConsignmentId}
+                      onChange={(e) => setSecondaryConsignmentId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="Örn. 261962"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-400">İki PO aynı üretimse birleştir — paket + sipariş adedi toplanır.</p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ── Üretim günlerine uygula (takip başlangıcı + model ata) ── */}
+            {hasPermission("hedefTakip") ? (
+              <div className="px-5 py-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-teal-700 dark:text-teal-400">Üretim Günlerine Uygula</p>
+                    <p className="text-[11px] text-slate-400">Seçili hafta içi günlere bu modeli ata; Ekran 1 «Biten» de bu tarihten sayılır.</p>
+                  </div>
+                  <Link href="/hedef-takip" className="rounded-lg border border-teal-200 px-2.5 py-1 text-[10px] font-semibold text-teal-700 hover:bg-teal-50 dark:border-teal-800 dark:text-teal-300 dark:hover:bg-teal-950/30">
+                    Hedef Takip →
+                  </Link>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <WeekdayDatePicker label="Başlangıç" value={hedefApplyStart} onChange={(v) => { setHedefApplyStart(coerceWeekdayPickerValue(v)); setSessionStartDate(coerceWeekdayPickerValue(v)); }} className="min-w-[10rem] flex-1" />
+                  <WeekdayDatePicker label="Bitiş" value={hedefApplyEnd} onChange={(v) => setHedefApplyEnd(coerceWeekdayPickerValue(v))} className="min-w-[10rem] flex-1" />
+                  {typeof editingId === "number" ? (
+                    <button
+                      type="button"
+                      disabled={hedefApplyBusy}
+                      onClick={() => {
+                        void handleHedefApplyToProduction();
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-teal-400 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 disabled:opacity-50 dark:border-teal-700 dark:text-teal-300 dark:hover:bg-teal-950/30"
+                    >
+                      {hedefApplyBusy
+                        ? <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                        : null}
+                      {hedefApplyBusy ? "Uygulanıyor…" : "Günlere uygula"}
+                    </button>
+                  ) : null}
+                </div>
+                {hedefApplyMsg ? (
+                  <p className="mt-2.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">✓ {hedefApplyMsg}</p>
+                ) : null}
+                {hedefApplyErr ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {hedefApplyErr}</p> : null}
+              </div>
+            ) : (
+              <div className="px-5 py-4">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Takip Başlangıcı</p>
+                <WeekdayDatePicker label="Başlangıç tarihi" value={sessionStartDate} onChange={(v) => setSessionStartDate(coerceWeekdayPickerValue(v))} className="max-w-xs" />
+                <p className="mt-1.5 text-[11px] text-slate-400">Ekran 1 ve hedef özette «Biten» bu tarihten itibaren sayılır.</p>
+              </div>
+            )}
+
+            {/* ── Çalışılacak bölümler ── */}
+            <div className="px-5 py-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-teal-700 dark:text-teal-400">Çalışılacak Bölümler</p>
+                  <p className="text-[11px] text-slate-400">Hedef Takip ve Ekran 1 «Biten» bu satırlardan hesaplanır.</p>
+                </div>
+                <span className="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-bold text-teal-700 ring-1 ring-teal-200 dark:bg-teal-950/30 dark:text-teal-300 dark:ring-teal-800">
+                  {baselines.length}
+                </span>
+              </div>
+              {teams.length === 0 || processes.length === 0 ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                  {teams.length === 0 ? "Önce Ayarlar'da bölüm tanımlayın." : "Önce Ayarlar'da proses tanımlayın."}
+                </p>
+              ) : (
+                <RowEditor rows={baselines} color="teal"
+                  onTeam={(i, v) => setRow(i, "teamCode", v)}
+                  onProcess={(i, v) => setRow(i, "processName", v)}
+                  onHalf={(i, v) => setRow(i, "arkaHalf", v)}
+                  onRemove={removeRow} onAdd={addRow}
+                  max={MAX_BASELINE_ROWS} addLabel="Bölüm satırı ekle" canRemove />
+              )}
+            </div>
+
+            {/* ── Günlük özet prosesleri ── */}
+            <div className="px-5 py-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700 dark:text-violet-400">Günlük Özet Prosesleri</p>
+                  <p className="text-[11px] text-slate-400">Ana ekrandaki mor kutularda gösterilir. İsteğe bağlı.</p>
+                </div>
+                {dailySummaryRows.length > 0 && (
+                  <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-bold text-violet-700 ring-1 ring-violet-200 dark:bg-violet-950/30 dark:text-violet-300 dark:ring-violet-800">
+                    {dailySummaryRows.length}
+                  </span>
+                )}
+              </div>
+              <RowEditor rows={dailySummaryRows} color="violet"
+                onTeam={(i, v) => setDailyRow(i, "teamCode", v)}
+                onProcess={(i, v) => setDailyRow(i, "processName", v)}
+                onHalf={(i, v) => setDailyRow(i, "arkaHalf", v)}
+                onRemove={removeDailyRow} onAdd={addDailyRow}
+                max={MAX_DAILY_SUMMARY_ROWS} addLabel="Özet prosesi ekle" canRemove={false} />
+            </div>
+          </div>
+
+          {/* Form footer */}
+          <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4 dark:border-slate-700">
+            <button type="button" onClick={cancelEdit}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+              İptal
+            </button>
+            <button type="button" disabled={saving} onClick={() => void handleSave()}
+              className="flex items-center gap-2 rounded-lg bg-teal-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50">
+              {saving
+                ? <><svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>Kaydediliyor…</>
+                : "Kaydet"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+
     </section>
   );
 }

@@ -1064,11 +1064,11 @@ export default function Ekran1IcerikPage() {
           )}
 
           {/* Genel ilerleme — kompakt; TV’de başlık her zaman okunur */}
-          <section className="flex shrink-0 flex-col gap-3 md:gap-4">
+          <section className="flex shrink-0 flex-col gap-2 md:gap-3">
             <div className="flex justify-center px-2">
               <h1
-                className="rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 px-6 py-2.5 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/25 ring-2 ring-slate-700/50 min-[1920px]:px-10 min-[1920px]:py-3"
-                style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}
+                className="rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/25 ring-2 ring-slate-700/50"
+                style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)", padding: "clamp(0.4rem, 1vh, 0.75rem) clamp(1rem, 3vw, 2.5rem)" }}
               >
                 Genel İlerleme
               </h1>
@@ -1082,7 +1082,8 @@ export default function Ekran1IcerikPage() {
                 aria-label="Genel ilerleme özeti"
               >
                 <div
-                  className="relative h-14 overflow-hidden rounded-2xl bg-gradient-to-b from-slate-100 to-slate-200/90 p-[3px] shadow-[inset_0_2px_8px_rgba(15,23,42,0.08)] ring-1 ring-slate-300/90 sm:h-16 md:h-[4.25rem] md:rounded-3xl md:p-1"
+                  className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-slate-100 to-slate-200/90 shadow-[inset_0_2px_8px_rgba(15,23,42,0.08)] ring-1 ring-slate-300/90 md:rounded-3xl"
+                  style={{ height: "clamp(3rem, 7vh, 5.5rem)", padding: "clamp(2px, 0.3vh, 6px)" }}
                   role="progressbar"
                   aria-valuenow={Math.round(genelPercent)}
                   aria-valuemin={0}
@@ -1110,53 +1111,52 @@ export default function Ekran1IcerikPage() {
                 </div>
               </div>
 
-              {/* Hedef / BİTEN / Bugün üretilen / Kalan */}
-              <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 md:mt-3 md:gap-4">
+              {/* Hedef / BİTEN / Bugün üretilen / Kalan — viewport yüksekliğine göre ölçeklenir */}
+              <div
+                className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 md:mt-3 md:gap-4"
+                style={{ height: "clamp(9rem, 22vh, 26rem)", minHeight: 0 }}
+              >
                 {/* Hedef */}
-                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-slate-300 bg-white px-2 py-3 shadow-md ring-1 ring-slate-200/80 sm:min-h-[8.5rem] sm:py-4 md:min-h-[10rem] md:py-5">
-                  <p className="text-xs font-black uppercase tracking-[0.15em] text-slate-500 sm:text-sm md:text-base">
+                <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-slate-300 bg-white px-1 shadow-md ring-1 ring-slate-200/80">
+                  <p className="shrink-0 font-black uppercase tracking-[0.12em] text-slate-500"
+                    style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>
                     Hedef
                   </p>
-                  <p
-                    className="w-full text-center font-black tabular-nums leading-none text-slate-900"
-                    style={{ fontSize: "clamp(1.4rem, 3.5vw, 3.5rem)" }}
-                  >
+                  <p className="w-full text-center font-black tabular-nums leading-none text-slate-900 [text-shadow:0_1px_3px_rgba(0,0,0,0.1)]"
+                    style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
                     {genelHedef.toLocaleString("tr-TR")}
                   </p>
                 </div>
                 {/* BİTEN */}
-                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-emerald-400 bg-emerald-50 px-2 py-3 shadow-md ring-1 ring-emerald-200/90 sm:min-h-[8.5rem] sm:py-4 md:min-h-[10rem] md:py-5">
-                  <p className="text-xs font-black uppercase tracking-[0.15em] text-emerald-700 sm:text-sm md:text-base">
+                <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-emerald-400 bg-emerald-50 px-1 shadow-md ring-1 ring-emerald-200/90">
+                  <p className="shrink-0 font-black uppercase tracking-[0.12em] text-emerald-700"
+                    style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>
                     BİTEN
                   </p>
-                  <p
-                    className="w-full text-center font-black tabular-nums leading-none text-emerald-800"
-                    style={{ fontSize: "clamp(1.4rem, 3.5vw, 3.5rem)" }}
-                  >
+                  <p className="w-full text-center font-black tabular-nums leading-none text-emerald-800 [text-shadow:0_1px_3px_rgba(0,0,0,0.1)]"
+                    style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
                     {genelTamamlanan.toLocaleString("tr-TR")}
                   </p>
                 </div>
                 {/* Bugün üretilen */}
-                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-teal-400 bg-teal-50 px-2 py-3 shadow-md ring-1 ring-teal-200/90 sm:min-h-[8.5rem] sm:py-4 md:min-h-[10rem] md:py-5">
-                  <p className="w-full text-center text-xs font-black uppercase tracking-[0.1em] text-teal-700 sm:text-sm md:text-base">
+                <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-teal-400 bg-teal-50 px-1 shadow-md ring-1 ring-teal-200/90">
+                  <p className="shrink-0 font-black uppercase tracking-[0.12em] text-teal-700"
+                    style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>
                     Bugün
                   </p>
-                  <p
-                    className="w-full text-center font-black tabular-nums leading-none text-teal-800"
-                    style={{ fontSize: "clamp(1.4rem, 3.5vw, 3.5rem)" }}
-                  >
+                  <p className="w-full text-center font-black tabular-nums leading-none text-teal-800 [text-shadow:0_1px_3px_rgba(0,0,0,0.1)]"
+                    style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
                     {bugunUretilen.toLocaleString("tr-TR")}
                   </p>
                 </div>
                 {/* Kalan */}
-                <div className="flex min-h-[7rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-amber-400 bg-amber-50 px-2 py-3 shadow-md ring-1 ring-amber-200/90 sm:min-h-[8.5rem] sm:py-4 md:min-h-[10rem] md:py-5">
-                  <p className="text-xs font-black uppercase tracking-[0.15em] text-amber-700 sm:text-sm md:text-base">
+                <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-amber-400 bg-amber-50 px-1 shadow-md ring-1 ring-amber-200/90">
+                  <p className="shrink-0 font-black uppercase tracking-[0.12em] text-amber-700"
+                    style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>
                     Kalan
                   </p>
-                  <p
-                    className="w-full text-center font-black tabular-nums leading-none text-amber-900"
-                    style={{ fontSize: "clamp(1.4rem, 3.5vw, 3.5rem)" }}
-                  >
+                  <p className="w-full text-center font-black tabular-nums leading-none text-amber-900 [text-shadow:0_1px_3px_rgba(0,0,0,0.1)]"
+                    style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
                     {Math.max(0, genelHedef - genelTamamlanan).toLocaleString("tr-TR")}
                   </p>
                 </div>
@@ -1249,22 +1249,30 @@ export default function Ekran1IcerikPage() {
                 {stageRows.map((row, idx) => (
                   <div
                     key={`${row.label}-${idx}`}
-                    className="relative overflow-hidden rounded-2xl border-2 border-slate-300 bg-white p-3 shadow-md md:p-3.5 dark:border-slate-600 dark:bg-slate-900"
+                    className="relative overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-md dark:border-slate-600 dark:bg-slate-900"
+                    style={{ padding: "clamp(0.5rem, 1.2vw, 1rem)" }}
                   >
                     {/* Üst renk şeridi */}
                     <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${row.gradient}`} />
 
                     <div className="flex items-start justify-between gap-2 pt-1.5">
-                      <span className="min-w-0 text-left text-[11px] font-bold leading-snug text-slate-950 sm:text-xs md:text-sm dark:text-slate-100">
+                      <span
+                        className="min-w-0 text-left font-bold leading-snug text-slate-950 dark:text-slate-100"
+                        style={{ fontSize: "clamp(0.65rem, 1.15vw, 0.95rem)" }}
+                      >
                         {row.label}
                       </span>
-                      <span className={`shrink-0 text-base font-black tabular-nums sm:text-lg md:text-xl ${row.textColor} dark:opacity-95`}>
+                      <span
+                        className={`shrink-0 font-black tabular-nums ${row.textColor} dark:opacity-95`}
+                        style={{ fontSize: "clamp(1rem, 2.2vw, 1.75rem)" }}
+                      >
                         {row.pct.toFixed(0)}%
                       </span>
                     </div>
 
                     {/* Progress bar */}
-                    <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200 md:h-3 dark:bg-slate-700">
+                    <div className="mt-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+                      style={{ height: "clamp(0.5rem, 0.9vw, 0.875rem)" }}>
                       <div
                         className={`h-full rounded-full bg-gradient-to-r ${row.gradient} transition-[width] duration-1000 ease-out`}
                         style={{ width: `${row.pct}%` }}
@@ -1273,18 +1281,30 @@ export default function Ekran1IcerikPage() {
 
                     <div className="mt-2 grid grid-cols-2 gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-700">
                       <div className="min-w-0 text-center">
-                        <p className="text-[8px] font-black uppercase tracking-wide text-emerald-600 sm:text-[9px]">
+                        <p
+                          className="font-black uppercase tracking-wide text-emerald-600"
+                          style={{ fontSize: "clamp(0.55rem, 0.85vw, 0.75rem)" }}
+                        >
                           Biten
                         </p>
-                        <p className="text-sm font-black tabular-nums text-emerald-800 sm:text-base dark:text-emerald-300">
+                        <p
+                          className="font-black tabular-nums text-emerald-800 dark:text-emerald-300"
+                          style={{ fontSize: "clamp(0.8rem, 1.7vw, 1.25rem)" }}
+                        >
                           {row.biten.toLocaleString("tr-TR")}
                         </p>
                       </div>
                       <div className="min-w-0 text-center">
-                        <p className="text-[8px] font-black uppercase tracking-wide text-teal-600 sm:text-[9px]">
+                        <p
+                          className="font-black uppercase tracking-wide text-teal-600"
+                          style={{ fontSize: "clamp(0.55rem, 0.85vw, 0.75rem)" }}
+                        >
                           Bugün
                         </p>
-                        <p className="text-sm font-black tabular-nums text-teal-800 sm:text-base dark:text-teal-300">
+                        <p
+                          className="font-black tabular-nums text-teal-800 dark:text-teal-300"
+                          style={{ fontSize: "clamp(0.8rem, 1.7vw, 1.25rem)" }}
+                        >
                           +{row.bugun.toLocaleString("tr-TR")}
                         </p>
                       </div>

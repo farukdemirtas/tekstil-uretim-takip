@@ -785,6 +785,26 @@ export async function deleteProductModel(id: number): Promise<void> {
   if (!res.ok) throw new Error("Model silinemedi");
 }
 
+/** Ekran5 paylaşımlı manuel hedef — okuma */
+export async function getEkran5Target(modelId: number): Promise<{ ekran5Target: number | null }> {
+  const res = await apiFetch(`${apiBase()}/product-models/${modelId}/ekran5-target`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) return { ekran5Target: null };
+  return res.json() as Promise<{ ekran5Target: number | null }>;
+}
+
+/** Ekran5 paylaşımlı manuel hedef — kaydetme (value=null → temizle) */
+export async function setEkran5Target(modelId: number, value: number | null): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/product-models/${modelId}/ekran5-target`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  if (!res.ok) throw new Error("Hedef kaydedilemedi");
+}
+
 export async function applyHedefSession(payload: {
   modelId: number;
   startDate: string;
@@ -1083,54 +1103,6 @@ export async function getPeriodComparison(params: {
   return res.json();
 }
 
-export type DecisionSupportHedefAlertSettings = {
-  enabled: boolean;
-  modelId: number | null;
-  targetQty: number;
-  thresholdDailyPct: number;
-  thresholdWeeklyPct: number;
-  weeklyTargetAdet: number | null;
-};
-
-export type DecisionSupportWeeklyReportSettings = {
-  enabled: boolean;
-  recipientsCsv: string;
-  sendHourTurkey: number;
-  sendMinuteTurkey?: number;
-  sendWeekday: number;
-  lastSentPeriodLabel?: string | null;
-  lastError?: string | null;
-  lastSentAt?: string | null;
-};
-
-export type DecisionSupportSettings = {
-  hedefAlert: DecisionSupportHedefAlertSettings;
-  weeklyReport: DecisionSupportWeeklyReportSettings;
-};
-
-export async function getDecisionSupportSettings(): Promise<DecisionSupportSettings> {
-  const res = await apiFetch(`${apiBase()}/decision-support/settings`, {
-    cache: "no-store",
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error("Karar destegi ayarlari alinamadi");
-  return res.json();
-}
-
-export async function saveDecisionSupportSettings(
-  patch: Partial<DecisionSupportSettings>
-): Promise<DecisionSupportSettings> {
-  const res = await apiFetch(`${apiBase()}/decision-support/settings`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(patch || {}),
-  });
-  if (!res.ok) {
-    const d = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(d.message ?? "Kaydedilemedi");
-  }
-  return res.json();
-}
 
 export type HedefAlertEvalPayload = {
   hedefAlertEnabled: boolean;
@@ -1169,17 +1141,7 @@ export async function evaluateHedefAlertEval(dateIso?: string): Promise<HedefAle
   return res.json();
 }
 
-export async function sendWeeklyDecisionReportNow(): Promise<{ ok: boolean }> {
-  const res = await apiFetch(`${apiBase()}/decision-support/weekly-report/send-now`, {
-    method: "POST",
-    headers: authHeaders(),
-  });
-  if (!res.ok) {
-    const d = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(d.message ?? "E-posta gonderilemedi");
-  }
-  return res.json();
-}
+
 export type ActivityLogRow = {
   id: number;
   created_at: string;
@@ -1391,8 +1353,11 @@ export type TakipsanConsignmentInfo = {
   readCount: number;
 };
 
-export async function getTakipsanConsignmentInfo(): Promise<TakipsanConsignmentInfo> {
-  const res = await apiFetch(`${apiBase()}/takipsan/consignment-info`, {
+export async function getTakipsanConsignmentInfo(consignmentId?: string): Promise<TakipsanConsignmentInfo> {
+  const url = consignmentId
+    ? `${apiBase()}/takipsan/consignment-info?id=${encodeURIComponent(consignmentId)}`
+    : `${apiBase()}/takipsan/consignment-info`;
+  const res = await apiFetch(url, {
     cache: "no-store",
     headers: authHeaders(),
   });

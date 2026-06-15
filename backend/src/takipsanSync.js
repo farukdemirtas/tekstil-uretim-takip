@@ -266,14 +266,20 @@ export function refreshTakipsanEnabledFlag() {
   return takipsanSyncState.enabled;
 }
 
-/** Ayarlar / Hedef Takip: sevkiyattan ürün adı ve hedef adet önizlemesi */
-export async function fetchTakipsanConsignmentProductInfo() {
+/**
+ * Ayarlar / Hedef Takip: sevkiyattan ürün adı ve hedef adet önizlemesi.
+ * @param {string} [overrideId] - Belirtilirse bu sevkiyat ID'si kullanılır; yoksa env'den alınır.
+ */
+export async function fetchTakipsanConsignmentProductInfo(overrideId) {
   if (!isTakipsanConfigured()) {
     throw new Error(
       "Takipsan entegrasyonu yapılandırılmamış (TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID)"
     );
   }
-  const consignmentId = String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
+  const consignmentId = overrideId
+    ? String(overrideId).trim()
+    : String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
+  if (!consignmentId) throw new Error("Sevkiyat ID bulunamadı");
   const client = getTakipsanClient();
   const data = await client.fetchConsignmentReadData(consignmentId);
   const productRef = String(data.productRef || data.productLabel || "").trim();

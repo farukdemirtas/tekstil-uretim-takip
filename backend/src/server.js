@@ -63,6 +63,8 @@ import {
   createProductModel,
   updateProductModel,
   deleteProductModel,
+  getEkran5Target,
+  setEkran5Target,
   applyHedefSessionToDailyMeta,
   getRepairEntries,
   upsertRepairEntries,
@@ -85,15 +87,11 @@ import {
   updatePersonnelBirthday,
   deletePersonnelBirthday,
   bulkInsertPersonnelBirthdays,
-  getDecisionSupportMerged,
-  saveDecisionSupportMerged,
   evaluateHedefAlertStatus,
   getTeamComparisonData,
   getDualRangeFactoryTotals,
-  gatherWeeklyBriefingPayload,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
-import { scheduleWeeklyBriefingCron, sendWeeklyReportForCurrentTurkeyBusinessWeek } from "./weeklyReportJob.js";
 import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
 import { syncTakipsanToUtuPaket, takipsanSyncState, todayTurkeyIso, fetchTakipsanConsignmentProductInfo } from "./takipsanSync.js";
 import { isTakipsanConfigured } from "./takipsanClient.js";
@@ -618,6 +616,32 @@ app.delete("/api/product-models/:id", requirePermission("ayarlar"), async (req, 
     if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
     logActivity(req, "urun_model_sil", "product_models", { id });
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+/** Ekran5 paylaşımlı manuel hedef — okuma */
+app.get("/api/product-models/:id/ekran5-target", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const result = await getEkran5Target(id);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+/** Ekran5 paylaşımlı manuel hedef — kaydetme / temizleme */
+app.put("/api/product-models/:id/ekran5-target", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  const value = req.body?.value != null ? Number(req.body.value) : null;
+  try {
+    const result = await setEkran5Target(id, value);
+    logActivity(req, "ekran5_hedef_guncelle", "product_models", { id, ekran5Target: result.ekran5Target });
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: String(e.message || e) });
   }
@@ -1441,9 +1465,11 @@ app.delete("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => 
 
 // ─── Takipsan Plus → Ütü–Paket paketleme köprüsü ───────────────────────────
 
-app.get("/api/takipsan/consignment-info", requireAnyPermission(["ayarlar", "hedefTakip", "utuPaket"]), async (_req, res) => {
+app.get("/api/takipsan/consignment-info", requireAnyPermission(["ayarlar", "hedefTakip", "utuPaket"]), async (req, res) => {
   try {
-    const info = await fetchTakipsanConsignmentProductInfo();
+    // İsteğe bağlı ?id=<sevkiyatId> — belirtilmezse env'den alınır
+    const overrideId = String(req.query.id || "").trim() || undefined;
+    const info = await fetchTakipsanConsignmentProductInfo(overrideId);
     return res.json(info);
   } catch (err) {
     return res.status(500).json({
@@ -1571,24 +1597,6 @@ app.put("/api/proses-veri/:modelCode", requirePermission("veriSayfasi"), async (
   }
 });
 
-app.get("/api/decision-support/settings", requirePermission("ayarlar"), async (_req, res) => {
-  try {
-    const s = await getDecisionSupportMerged();
-    return res.json(s);
-  } catch (e) {
-    return res.status(500).json({ message: String(e?.message ?? e) });
-  }
-});
-
-app.put("/api/decision-support/settings", requirePermission("ayarlar"), async (req, res) => {
-  try {
-    const next = await saveDecisionSupportMerged(req.body || {});
-    logActivity(req, "decision_support_kayit", "app_kv", {});
-    return res.json(next);
-  } catch (e) {
-    return res.status(500).json({ message: String(e?.message ?? e) });
-  }
-});
 
 app.get("/api/decision-support/hedef-alert-eval", requireAnyPermission(["ekran1", "hedefTakip"]), async (req, res) => {
   const ref = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : "";
@@ -1600,29 +1608,6 @@ app.get("/api/decision-support/hedef-alert-eval", requireAnyPermission(["ekran1"
   }
 });
 
-app.get("/api/decision-support/weekly-briefing-preview", requirePermission("ayarlar"), async (req, res) => {
-  const startDate = String(req.query.startDate ?? "").trim();
-  const endDate = String(req.query.endDate ?? "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-    return res.status(400).json({ message: "startDate ve endDate YYYY-MM-DD" });
-  }
-  try {
-    const data = await gatherWeeklyBriefingPayload(startDate, endDate);
-    return res.json(data);
-  } catch (e) {
-    return res.status(500).json({ message: String(e?.message ?? e) });
-  }
-});
-
-app.post("/api/decision-support/weekly-report/send-now", requirePermission("ayarlar"), async (_req, res) => {
-  try {
-    const out = await sendWeeklyReportForCurrentTurkeyBusinessWeek();
-    logActivity(req, "haftalik_rapor_gonderildi", "email", {});
-    return res.json(out);
-  } catch (e) {
-    return res.status(500).json({ message: String(e?.message ?? e) });
-  }
-});
 
 app.get("/api/analytics/team-comparison", requirePermission("karsilastirma"), async (req, res) => {
   const team1 = String(req.query.team1 ?? "").trim();
@@ -1661,6 +1646,5 @@ app.get("/api/analytics/period-comparison", requirePermission("karsilastirma"), 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Backend running on http://localhost:${PORT}`);
-  scheduleWeeklyBriefingCron();
   scheduleTakipsanSyncJob();
 });

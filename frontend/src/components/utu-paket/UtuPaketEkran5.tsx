@@ -1,14 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   getDayProductMeta,
   getEkran1GenelIlerleme,
+  getEkran5Target,
+  getPersonnelBirthdaysToday,
   getUtuPaket,
   getUtuPaketAnalytics,
   setAuthToken,
+  setEkran5Target,
+  type PersonnelBirthdayRow,
 } from "@/lib/api";
-import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { todayIsoTurkey, todayWeekdayIso } from "@/lib/businessCalendar";
 import {
   calcUtuPaketPercent,
   normalizeUtuPaketPayload,
@@ -19,32 +23,8 @@ import {
 const AUTO_REFRESH_MS = 30_000;
 const SLIDE_DURATION_MS = 30_000;
 const SLIDE_COUNT = 3;
-const HEDEF_STORAGE_KEY = "ekran5_hedef_v1";
-
 const SLIDES = ["paketleme", "optik", "utu"] as const;
 type SlideKey = (typeof SLIDES)[number];
-
-// ─── Manuel hedef localStorage yardımcıları ──────────────────────────────────
-function readManualTarget(modelId: number | null): number | null {
-  if (!modelId) return null;
-  try {
-    const raw = window.localStorage.getItem(HEDEF_STORAGE_KEY);
-    if (!raw) return null;
-    const map = JSON.parse(raw) as Record<string, number>;
-    const v = map[String(modelId)];
-    return v != null && Number.isFinite(v) ? v : null;
-  } catch { return null; }
-}
-function writeManualTarget(modelId: number | null, value: number | null) {
-  if (!modelId) return;
-  try {
-    const raw = window.localStorage.getItem(HEDEF_STORAGE_KEY);
-    const map: Record<string, number> = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-    if (value == null) { delete map[String(modelId)]; }
-    else { map[String(modelId)] = value; }
-    window.localStorage.setItem(HEDEF_STORAGE_KEY, JSON.stringify(map));
-  } catch { /* ignore */ }
-}
 
 // ─── Renk / stil tanımları ───────────────────────────────────────────────────
 type BoxStyle = { box: string; label: string; value: string };
@@ -91,6 +71,106 @@ const SLIDE_META: Record<SlideKey, SlideMeta> = {
     remainStyle: { box: "border-red-400 bg-red-50 ring-1 ring-red-200/90",             label: "text-red-700",      value: "text-red-900"     },
   },
 };
+
+// ─── Doğum günü sabitleri ────────────────────────────────────────────────────
+const BDAY_OVERLAY_VISIBLE_MS  = 10_000;
+const BDAY_OVERLAY_CYCLE_MS    = 60_000;
+const BDAY_FETCH_INTERVAL_MS   = 60_000;
+const BDAY_MULTI_SLIDE_MS      = 4_800;
+const BDAY_MULTI_CAP_VISIBLE_MS = 48_000;
+
+function birthdayOverlayDurationMs(n: number): number {
+  if (n <= 1) return BDAY_OVERLAY_VISIBLE_MS;
+  return Math.min(BDAY_MULTI_CAP_VISIBLE_MS, Math.max(BDAY_OVERLAY_VISIBLE_MS, BDAY_MULTI_SLIDE_MS * n));
+}
+
+function completedAgeAtReference(birthDateIso: string, referenceIso: string): number {
+  const p = birthDateIso.split("-").map(Number);
+  const r = referenceIso.split("-").map(Number);
+  if (p.length < 3 || r.length < 3) return 0;
+  const [by, bm, bd] = p, [ry, rm, rd] = r;
+  let age = ry - by;
+  if (rm < bm || (rm === bm && rd < bd)) age -= 1;
+  return Math.max(0, age);
+}
+
+const BDAY_CONFETTI_SPECS: { left: string; drift: string; delay: string; dur: string; w: number; h: number; bg: string }[] = [
+  { left: "2%",  drift: "-32px", delay: "0s",    dur: "2.65s", w: 10, h: 14, bg: "#ec4899" },
+  { left: "6%",  drift: "22px",  delay: "0.35s", dur: "3.1s",  w: 11, h: 11, bg: "#fbbf24" },
+  { left: "10%", drift: "-18px", delay: "0.1s",  dur: "2.85s", w: 9,  h: 13, bg: "#a78bfa" },
+  { left: "14%", drift: "40px",  delay: "0.7s",  dur: "3.35s", w: 12, h: 10, bg: "#34d399" },
+  { left: "18%", drift: "-25px", delay: "0.2s",  dur: "2.95s", w: 10, h: 12, bg: "#f472b6" },
+  { left: "22%", drift: "15px",  delay: "0.5s",  dur: "3.05s", w: 13, h: 9,  bg: "#60a5fa" },
+  { left: "26%", drift: "-38px", delay: "0.85s", dur: "3.2s",  w: 11, h: 13, bg: "#facc15" },
+  { left: "30%", drift: "28px",  delay: "0.15s", dur: "2.75s", w: 9,  h: 11, bg: "#fb7185" },
+  { left: "34%", drift: "-42px", delay: "1s",    dur: "3.4s",  w: 12, h: 12, bg: "#4ade80" },
+  { left: "38%", drift: "33px",  delay: "0.45s", dur: "2.9s",  w: 10, h: 10, bg: "#c084fc" },
+  { left: "42%", drift: "-20px", delay: "0.25s", dur: "3.15s", w: 11, h: 14, bg: "#f97316" },
+  { left: "46%", drift: "45px",  delay: "1.15s", dur: "2.8s",  w: 10, h: 11, bg: "#22d3ee" },
+  { left: "50%", drift: "-30px", delay: "0.55s", dur: "3.25s", w: 12, h: 10, bg: "#e879f9" },
+  { left: "54%", drift: "18px",  delay: "0.05s", dur: "2.7s",  w: 9,  h: 14, bg: "#ef4444" },
+  { left: "58%", drift: "-48px", delay: "0.95s", dur: "3.3s",  w: 11, h: 11, bg: "#14b8a6" },
+  { left: "62%", drift: "36px",  delay: "0.3s",  dur: "2.88s", w: 10, h: 12, bg: "#eab308" },
+  { left: "66%", drift: "-22px", delay: "1.25s", dur: "3.45s", w: 13, h: 9,  bg: "#8b5cf6" },
+  { left: "70%", drift: "12px",  delay: "0.6s",  dur: "2.72s", w: 9,  h: 13, bg: "#f43f5e" },
+  { left: "74%", drift: "-35px", delay: "0.12s", dur: "3.08s", w: 12, h: 11, bg: "#06b6d4" },
+  { left: "78%", drift: "41px",  delay: "0.8s",  dur: "3.18s", w: 10, h: 10, bg: "#84cc16" },
+  { left: "82%", drift: "-16px", delay: "0.4s",  dur: "2.92s", w: 11, h: 13, bg: "#d946ef" },
+  { left: "86%", drift: "26px",  delay: "1.05s", dur: "3.38s", w: 10, h: 12, bg: "#fb923c" },
+  { left: "90%", drift: "-44px", delay: "0.22s", dur: "2.78s", w: 9,  h: 11, bg: "#2dd4bf" },
+  { left: "94%", drift: "19px",  delay: "0.65s", dur: "3.12s", w: 12, h: 10, bg: "#e11d48" },
+  { left: "97%", drift: "-10px", delay: "0.18s", dur: "3.22s", w: 11, h: 14, bg: "#a3e635" },
+  { left: "1%",  drift: "30px",  delay: "1.35s", dur: "2.98s", w: 8,  h: 12, bg: "#fde047" },
+  { left: "52%", drift: "-50px", delay: "1.5s",  dur: "3.5s",  w: 11, h: 9,  bg: "#38bdf8" },
+  { left: "76%", drift: "48px",  delay: "0.75s", dur: "2.68s", w: 10, h: 13, bg: "#f472b6" },
+  { left: "44%", drift: "-8px",  delay: "1.4s",  dur: "3.28s", w: 9,  h: 10, bg: "#fcd34d" },
+  { left: "68%", drift: "8px",   delay: "0.28s", dur: "3.02s", w: 12, h: 12, bg: "#c026d3" },
+];
+
+function BirthdayCake({ className, age }: { className?: string; age?: number | null }) {
+  const showAge = age != null && age >= 0 && age < 130;
+  const ageFont = showAge && age! > 99 ? 15 : showAge && age! > 9 ? 21 : 27;
+  return (
+    <svg className={className} viewBox="0 0 200 128" width={200} height={128} preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <defs>
+        <linearGradient id="e5-bday-plate"  x1="100" y1="108" x2="100" y2="124" gradientUnits="userSpaceOnUse"><stop stopColor="#f1f5f9" /><stop offset="1" stopColor="#cbd5e1" /></linearGradient>
+        <linearGradient id="e5-bday-tier3"  x1="40"  y1="72"  x2="160" y2="72"  gradientUnits="userSpaceOnUse"><stop stopColor="#fda4af" /><stop offset="0.5" stopColor="#fb7185" /><stop offset="1" stopColor="#f43f5e" /></linearGradient>
+        <linearGradient id="e5-bday-tier2"  x1="52"  y1="48"  x2="148" y2="48"  gradientUnits="userSpaceOnUse"><stop stopColor="#fef9c3" /><stop offset="0.5" stopColor="#fde047" /><stop offset="1" stopColor="#eab308" /></linearGradient>
+        <linearGradient id="e5-bday-tier1"  x1="68"  y1="28"  x2="132" y2="28"  gradientUnits="userSpaceOnUse"><stop stopColor="#e9d5ff" /><stop offset="0.5" stopColor="#c084fc" /><stop offset="1" stopColor="#a855f7" /></linearGradient>
+        <linearGradient id="e5-bday-icing"  x1="100" y1="18"  x2="100" y2="32"  gradientUnits="userSpaceOnUse"><stop stopColor="#fffdfb" /><stop offset="1" stopColor="#fce7f3" /></linearGradient>
+        <linearGradient id="e5-bday-flame"  x1="100" y1="0"   x2="100" y2="14"  gradientUnits="userSpaceOnUse"><stop stopColor="#fef08a" /><stop offset="0.45" stopColor="#fb923c" /><stop offset="1" stopColor="#ea580c" /></linearGradient>
+      </defs>
+      <ellipse cx="100" cy="118" rx="72" ry="10" fill="url(#e5-bday-plate)" opacity="0.92" />
+      <ellipse cx="100" cy="116" rx="68" ry="7"  fill="#e2e8f0" opacity="0.55" />
+      <path d="M38 76c0-5 4.5-9 10-9h104c5.5 0 10 4 10 9v28c0 6-5.5 11-12 11H50c-6.5 0-12-5-12-11V76z" fill="url(#e5-bday-tier3)" />
+      <path d="M42 76c0-3 3-6 8-6h100c5 0 8 3 8 6" stroke="white" strokeOpacity="0.35" strokeWidth="2" strokeLinecap="round" />
+      <path d="M50 52c0-4.5 3.8-8 9-8h82c5.2 0 9 3.5 9 8v26c0 5-4.3 9-9.5 9H59.5c-5.2 0-9.5-4-9.5-9V52z" fill="url(#e5-bday-tier2)" />
+      <path d="M54 52c0-2.5 2.2-5 6-5h80c3.8 0 6 2.5 6 5" stroke="white" strokeOpacity="0.4" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M64 32c0-3.5 2.8-6 7-6h58c4.2 0 7 2.5 7 6v22c0 4-3.5 7-7.5 7h-57c-4 0-7.5-3-7.5-7V32z" fill="url(#e5-bday-tier1)" />
+      <ellipse cx="100" cy="30" rx="34" ry="7" fill="url(#e5-bday-icing)" />
+      <path d="M74 30c4 5 8 4 12 0s8-5 12-1 8 4 12 0 8-5 12-1" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+      <circle cx="52" cy="88" r="3" fill="#fff" fillOpacity="0.55" />
+      <circle cx="148" cy="92" r="2.5" fill="#fff" fillOpacity="0.5" />
+      <circle cx="92" cy="62" r="2.5" fill="#fff" fillOpacity="0.45" />
+      <circle cx="118" cy="58" r="2" fill="#fff" fillOpacity="0.5" />
+      <circle cx="78" cy="42" r="2" fill="#fff" fillOpacity="0.4" />
+      <line x1="82" y1="30" x2="82" y2="12" stroke="#f1f5f9" strokeWidth="4" strokeLinecap="round" />
+      <line x1="100" y1="30" x2="100" y2="10" stroke="#f1f5f9" strokeWidth="4" strokeLinecap="round" />
+      <line x1="118" y1="30" x2="118" y2="12" stroke="#f1f5f9" strokeWidth="4" strokeLinecap="round" />
+      <ellipse cx="82"  cy="8" rx="5"   ry="7"   fill="url(#e5-bday-flame)" opacity="0.95" />
+      <ellipse cx="100" cy="6" rx="5.5" ry="8"   fill="url(#e5-bday-flame)" />
+      <ellipse cx="118" cy="8" rx="5"   ry="7"   fill="url(#e5-bday-flame)" opacity="0.95" />
+      <ellipse cx="82"  cy="9" rx="2"   ry="3"   fill="#fef9c3" opacity="0.9" />
+      <ellipse cx="100" cy="7" rx="2.2" ry="3.2" fill="#fef9c3" />
+      <ellipse cx="118" cy="9" rx="2"   ry="3"   fill="#fef9c3" opacity="0.9" />
+      {showAge && (
+        <text x="100" y="58" textAnchor="middle" dominantBaseline="middle" fill="#5b21b6" fontSize={ageFont} fontWeight="800" stroke="#fff" strokeWidth="1.4" paintOrder="stroke fill" style={{ fontFamily: "system-ui, Segoe UI, sans-serif" }}>
+          {age}
+        </text>
+      )}
+    </svg>
+  );
+}
 
 function formatDateTr(iso: string): string {
   const [y, m, d] = iso.split("-");
@@ -180,8 +260,8 @@ function HedefModal({
   takipsanTarget: number;
   manualTarget: number | null;
   productLabel: string;
-  onSave: (v: number) => void;
-  onClear: () => void;
+  onSave: (v: number) => void | Promise<void>;
+  onClear: () => void | Promise<void>;
   onClose: () => void;
 }) {
   const [input, setInput] = useState(
@@ -300,6 +380,11 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [transitioning, setTransitioning] = useState(false);
   const [hedefOpen, setHedefOpen]         = useState(false);
 
+  // ── Doğum günü ──────────────────────────────────────────────────────────────
+  const [birthdayToday, setBirthdayToday]               = useState<PersonnelBirthdayRow[]>([]);
+  const [birthdayOverlayVisible, setBirthdayOverlayVisible] = useState(false);
+  const [birthdaySlideIndex, setBirthdaySlideIndex]     = useState(0);
+
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
     if (!token) { setHasToken(false); return; }
@@ -332,11 +417,14 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       const rawTarget = data.takipsan?.orderQuantity ?? data.packagingTarget;
       setTakipsanTarget(rawTarget);
 
-      // Model değişince localStorage'daki el ile hedefi yükle
+      // DB'deki paylaşımlı hedefi her yüklemede çek (model değişse de değişmese de)
       const mid = meta?.modelId ?? null;
-      if (mid !== modelId) {
-        setModelId(mid);
-        setManualTarget(readManualTarget(mid));
+      if (mid !== modelId) setModelId(mid);
+      if (mid) {
+        const { ekran5Target } = await getEkran5Target(mid).catch(() => ({ ekran5Target: null }));
+        setManualTarget(ekran5Target);
+      } else {
+        setManualTarget(null);
       }
 
       setProductLabel([meta?.productName, meta?.productModel].filter(Boolean).join(" · "));
@@ -386,17 +474,79 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     return () => clearInterval(ticker);
   }, [slide]);
 
+  // ── Doğum günü memos ────────────────────────────────────────────────────────
+  const birthdayCelebration = useMemo(() => {
+    if (birthdayToday.length === 0) return { title: "", people: [] as { id: number; fullName: string; age: number }[], dateLine: "" };
+    const refIso = todayIsoTurkey();
+    const people = birthdayToday
+      .map((p) => ({ id: p.id, fullName: `${p.firstName} ${p.lastName}`.trim(), age: completedAgeAtReference(p.birthDate, refIso) }))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, "tr", { sensitivity: "base" }));
+    const title = birthdayToday.length === 1 ? "DOĞUM GÜNÜN KUTLU OLSUN!" : "DOĞUM GÜNÜNÜZ KUTLU OLSUN!";
+    const dateLine = new Intl.DateTimeFormat("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date());
+    return { title, people, dateLine };
+  }, [birthdayToday]);
+
+  const birthdayPeopleKey = useMemo(
+    () => birthdayToday.length === 0 ? "" : birthdayToday.map((p) => p.id).sort((a, b) => a - b).join(","),
+    [birthdayToday],
+  );
+
+  const birthdayFocusPerson = useMemo(() => {
+    const list = birthdayCelebration.people;
+    if (list.length === 0) return null;
+    if (list.length === 1) return list[0]!;
+    return list[birthdaySlideIndex % list.length]!;
+  }, [birthdayCelebration.people, birthdaySlideIndex]);
+
+  // ── Doğum günü effects ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!hasToken) return;
+    const load = async () => { try { setBirthdayToday(await getPersonnelBirthdaysToday()); } catch { setBirthdayToday([]); } };
+    void load();
+    const id = setInterval(() => void load(), BDAY_FETCH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [hasToken]);
+
+  useEffect(() => {
+    if (!birthdayPeopleKey) { setBirthdayOverlayVisible(false); return; }
+    const n = birthdayToday.length;
+    const visibleMs = birthdayOverlayDurationMs(n);
+    let hideId: ReturnType<typeof setTimeout> | undefined;
+    const flash = () => {
+      setBirthdayOverlayVisible(true);
+      if (hideId) clearTimeout(hideId);
+      hideId = setTimeout(() => setBirthdayOverlayVisible(false), visibleMs);
+    };
+    flash();
+    const id = setInterval(flash, BDAY_OVERLAY_CYCLE_MS);
+    return () => { clearInterval(id); if (hideId) clearTimeout(hideId); setBirthdayOverlayVisible(false); };
+  }, [birthdayPeopleKey, birthdayToday.length]);
+
+  useEffect(() => {
+    if (!birthdayOverlayVisible || birthdayToday.length <= 1) return;
+    const n = birthdayToday.length;
+    setBirthdaySlideIndex(0);
+    const totalMs = birthdayOverlayDurationMs(n);
+    const stepMs = Math.max(1_200, Math.floor(totalMs / n));
+    const id = setInterval(() => setBirthdaySlideIndex((i) => (i + 1) % n), stepMs);
+    return () => clearInterval(id);
+  }, [birthdayOverlayVisible, birthdayPeopleKey, birthdayToday.length]);
+
   // unused suppressor
   const _pct = useMemo(() => calcUtuPaketPercent(paketCount, target), [paketCount, target]);
   void _pct;
 
-  function handleHedefSave(v: number) {
-    writeManualTarget(modelId, v);
+  async function handleHedefSave(v: number) {
+    if (modelId) {
+      await setEkran5Target(modelId, v).catch(() => {});
+    }
     setManualTarget(v);
     setHedefOpen(false);
   }
-  function handleHedefClear() {
-    writeManualTarget(modelId, null);
+  async function handleHedefClear() {
+    if (modelId) {
+      await setEkran5Target(modelId, null).catch(() => {});
+    }
     setManualTarget(null);
     setHedefOpen(false);
   }
@@ -430,6 +580,105 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       }`}
     >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
+
+      {/* ── DOĞUM GÜNÜ OVERLAY ── */}
+      {birthdayOverlayVisible && birthdayToday.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950/40 px-3 py-3 backdrop-blur-[3px] sm:px-5 sm:py-4">
+          <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
+            <div className="absolute inset-0 bg-gradient-to-br from-rose-900/25 via-slate-900/20 to-violet-900/20" />
+            <div className="absolute inset-0 overflow-hidden">
+              {BDAY_CONFETTI_SPECS.map((c, i) => (
+                <span key={`e5-bday-confetti-${i}`}
+                  className={`ekran1-bday-confetti-piece opacity-[0.92] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
+                  style={{ left: c.left, width: c.w, height: c.h, background: c.bg, animationDuration: c.dur, animationDelay: c.delay, ...({ "--ekran1-drift": c.drift } as CSSProperties) }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="ekran1-bday-overlay-card relative z-10 flex h-[min(780px,calc(100dvh-1.25rem))] w-full max-w-[min(96vw,52rem)] flex-col overflow-hidden rounded-xl border-[3px] border-slate-600 shadow-[0_32px_96px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.14)_inset] sm:max-w-[58rem] md:max-w-[min(94vw,64rem)]"
+            role="dialog" aria-modal="true" aria-live="polite" aria-label={`Doğum günü kutlaması — ${birthdayFocusPerson?.fullName ?? ""}`}>
+            <div className="flex shrink-0 items-center gap-2 border-b-2 border-slate-500/90 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+              <span className="flex shrink-0 gap-1.5 sm:gap-2" aria-hidden>
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 shadow-sm ring-1 ring-red-700/30 sm:h-3 sm:w-3" />
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400 shadow-sm ring-1 ring-amber-700/30 sm:h-3 sm:w-3" />
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-sm ring-1 ring-emerald-800/25 sm:h-3 sm:w-3" />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-center text-[10px] font-bold uppercase tracking-[0.12em] text-slate-700 sm:text-[11px] sm:tracking-[0.18em]">
+                Doğum Günü Kutlaması
+              </span>
+              <span className="inline-block w-12 shrink-0 sm:w-14" aria-hidden />
+            </div>
+
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-b-[10px] bg-white text-center">
+              <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-b-[10px]" aria-hidden>
+                {BDAY_CONFETTI_SPECS.slice(0, 40).map((c, i) => (
+                  <span key={`e5-bday-confetti-in-${i}`}
+                    className={`ekran1-bday-confetti-piece opacity-[0.62] ${i % 3 === 0 ? "rounded-full" : "rounded-sm"}`}
+                    style={{ left: c.left, width: Math.round(c.w * 0.72), height: Math.round(c.h * 0.72), background: c.bg, animationDuration: c.dur, animationDelay: c.delay, ...({ "--ekran1-drift": c.drift } as CSSProperties) }}
+                  />
+                ))}
+              </div>
+
+              <div className="relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <div className="pointer-events-none shrink-0 h-1 bg-gradient-to-r from-violet-500 via-rose-500 to-amber-400" aria-hidden />
+                <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 py-2 sm:gap-3 sm:px-4 sm:py-3 md:flex-row md:items-stretch md:gap-0 md:px-0 md:py-0">
+                  <div className="-translate-y-[10px] flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3 overflow-hidden py-2 text-center sm:gap-3.5 md:flex-[7] md:basis-0 md:border-r-2 md:border-slate-300 md:px-5 md:py-4">
+                    <span className="mx-auto inline-flex shrink-0 items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-1.5 text-xs font-black uppercase tracking-widest text-white shadow">
+                      <svg className="h-4 w-4 shrink-0 text-white/95" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path d="m12 2 1.74 5.57h5.8l-4.7 3.61 1.82 5.62L12 15.73 7.34 17.8l1.82-5.62-4.7-3.61h5.8L12 2z" />
+                      </svg>
+                      Bugün
+                    </span>
+                    <div className="relative z-[3] mx-auto flex w-full max-w-md min-h-[8rem] shrink-0 items-center justify-center rounded-2xl bg-slate-100 px-2 py-2 sm:min-h-[9rem]">
+                      <BirthdayCake age={birthdayFocusPerson?.age ?? null}
+                        className="block aspect-[200/128] h-auto w-[min(240px,78vw)] min-h-[120px] min-w-[200px] max-h-[min(22vh,12rem)] max-w-full shrink-0 [overflow:visible]" />
+                    </div>
+                    <p className="shrink-0 text-center font-black uppercase leading-tight tracking-tight text-slate-900"
+                      style={{ fontSize: "clamp(1.05rem, 4.2vmin, 2rem)" }}>
+                      {birthdayCelebration.people.length === 1 ? birthdayCelebration.title : "DOĞUM GÜNÜN KUTLU OLSUN!"}
+                    </p>
+                    <p className="shrink-0 text-center font-bold capitalize leading-tight text-slate-600"
+                      style={{ fontSize: "clamp(0.8rem, 2vmin, 1.1rem)" }}>
+                      {birthdayCelebration.dateLine}
+                    </p>
+                    {birthdayFocusPerson ? (
+                      <>
+                        <p className="min-h-0 shrink text-center font-black leading-[1.06] text-slate-950 [text-shadow:0_1px_0_rgba(255,255,255,0.6)]"
+                          style={{ fontSize: "clamp(1.5rem, 6vmin, 3.25rem)" }}>
+                          {birthdayFocusPerson.fullName}
+                        </p>
+                        {birthdayCelebration.people.length > 1 ? (
+                          <div className="flex shrink-0 flex-col items-center gap-2" aria-hidden>
+                            <div className="flex items-center gap-2.5">
+                              {birthdayCelebration.people.map((p, i) => (
+                                <span key={p.id} className={`rounded-full shadow-sm transition-all duration-300 ${i === birthdaySlideIndex % birthdayCelebration.people.length ? "h-3 w-3 scale-110 bg-teal-500 ring-2 ring-teal-700/35" : "h-2 w-2 bg-slate-300"}`} />
+                              ))}
+                            </div>
+                            <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-slate-500">
+                              {(birthdaySlideIndex % birthdayCelebration.people.length) + 1} / {birthdayCelebration.people.length}
+                            </p>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                  <footer className="flex w-full min-h-0 min-w-0 shrink-0 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-slate-300 bg-gradient-to-br from-emerald-500 via-teal-600 to-emerald-700 px-4 py-6 text-white shadow-lg sm:gap-3.5 sm:px-5 sm:py-7 md:flex-[3] md:basis-0 md:rounded-none md:border-0 md:shadow-none">
+                    <h2 className="w-full text-balance text-center font-black uppercase leading-tight tracking-[0.14em] text-white [text-shadow:0_2px_8px_rgba(0,0,0,0.25)]"
+                      style={{ fontSize: "clamp(1rem, 2.8vmin, 1.85rem)" }}>
+                      YEŞİL İMAJ TEKSTİL
+                    </h2>
+                    <p className="w-full text-balance text-center font-semibold leading-snug text-white/95"
+                      style={{ fontSize: "clamp(0.95rem, 2.4vmin, 1.55rem)" }}>
+                      Mutluluk, sağlık ve güzel yarınlar dileriz.
+                    </p>
+                  </footer>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-[min(100%,120rem)] flex-1 flex-col gap-2 px-3 py-2 sm:gap-3 sm:px-5 sm:py-3 md:gap-4 md:px-8 md:py-4 min-[1920px]:gap-4 min-[1920px]:px-10 min-[1920px]:py-5">
 
