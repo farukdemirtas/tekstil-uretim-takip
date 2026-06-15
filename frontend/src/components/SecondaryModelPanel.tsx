@@ -21,6 +21,9 @@ import {
   addWorkerToSecondary,
   removeWorkerFromSecondary,
   listProductModels,
+  getTeams,
+  getProcesses,
+  updateWorker,
   type ProductModelListItem,
   type SecondaryDayMeta,
 } from "@/lib/api";
@@ -196,9 +199,11 @@ type Props = {
   onRowsChange?: (rows: ProductionRow[]) => void;
   /** İkinci model adı değiştiğinde üst bileşeni bilgilendirir */
   onModelLabelChange?: (label: string | null) => void;
+  /** İkinci model ID'si değiştiğinde üst bileşeni bilgilendirir */
+  onModelIdChange?: (id: number | null) => void;
 };
 
-export default function SecondaryModelPanel({ selectedDate, primaryModelId, primaryRows, onRowsChange, onModelLabelChange }: Props) {
+export default function SecondaryModelPanel({ selectedDate, primaryModelId, primaryRows, onRowsChange, onModelLabelChange, onModelIdChange }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [models, setModels] = useState<ProductModelListItem[]>([]);
   const [dayMeta, setDayMeta] = useState<SecondaryDayMeta>({ secondaryModelId: null, modelInfo: null });
@@ -210,6 +215,13 @@ export default function SecondaryModelPanel({ selectedDate, primaryModelId, prim
   const [pickerBusy, setPickerBusy] = useState<Set<number>>(new Set());
   const [noteOpen, setNoteOpen] = useState<number | null>(null);
   const [noteInput, setNoteInput] = useState("");
+  // Düzenleme
+  const [editOpen, setEditOpen] = useState<number | null>(null);
+  const [editTeam, setEditTeam] = useState("");
+  const [editProcess, setEditProcess] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [teamOptions, setTeamOptions] = useState<{ code: string; label: string }[]>([]);
+  const [processOptions, setProcessOptions] = useState<string[]>([]);
 
   const rowsRef = useRef<ProductionRow[]>(rows);
   const dateRef = useRef(selectedDate);
@@ -226,10 +238,15 @@ export default function SecondaryModelPanel({ selectedDate, primaryModelId, prim
       : null;
     onModelLabelChange?.(label);
   }, [dayMeta.modelInfo, onModelLabelChange]);
+  useEffect(() => {
+    onModelIdChange?.(dayMeta.secondaryModelId);
+  }, [dayMeta.secondaryModelId, onModelIdChange]);
 
-  // Model listesi — bir kez yükle
+  // Model listesi + ekip + proses seçenekleri — bir kez yükle
   useEffect(() => {
     listProductModels().then(setModels).catch(() => {});
+    getTeams().then((t) => setTeamOptions(t.map((r) => ({ code: r.code, label: r.label })))).catch(() => {});
+    getProcesses().then((p) => setProcessOptions(p.map((r) => r.name))).catch(() => {});
   }, []);
 
   // Gün meta
@@ -312,6 +329,36 @@ export default function SecondaryModelPanel({ selectedDate, primaryModelId, prim
       setRows((prev) => prev.filter((r) => r.workerId !== workerId));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Personel kaldırılamadı");
+    }
+  }
+
+  // ─── Personel düzenleme ───────────────────────────────────────────────────
+  function openEdit(row: ProductionRow) {
+    setEditTeam(row.team);
+    setEditProcess(row.process ?? "");
+    setEditOpen(row.workerId);
+  }
+
+  async function handleEditSave() {
+    if (!editOpen || !editTeam.trim()) return;
+    setEditSaving(true);
+    try {
+      await updateWorker(editOpen, {
+        team: editTeam.trim().toUpperCase(),
+        process: editProcess.trim().toUpperCase(),
+      });
+      setRows((prev) =>
+        prev.map((r) =>
+          r.workerId === editOpen
+            ? { ...r, team: editTeam.trim().toUpperCase(), process: editProcess.trim().toUpperCase() }
+            : r
+        )
+      );
+      setEditOpen(null);
+    } catch {
+      setError("Personel güncellenemedi");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -544,6 +591,17 @@ export default function SecondaryModelPanel({ selectedDate, primaryModelId, prim
                                           {row.process}
                                         </span>
                                       )}
+                                      {/* Düzenle */}
+                                      <button
+                                        type="button"
+                                        onClick={() => openEdit(row)}
+                                        title="Bölüm / proses düzenle"
+                                        className="ml-0.5 rounded p-0.5 text-slate-300 transition hover:bg-violet-50 hover:text-violet-600"
+                                      >
+                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.5-6.5a2 2 0 112.828 2.828L11.828 15H9v-2.828l-.768.768z" />
+                                        </svg>
+                                      </button>
                                       {/* Not */}
                                       <button
                                         type="button"
@@ -631,6 +689,82 @@ export default function SecondaryModelPanel({ selectedDate, primaryModelId, prim
               </button>
               <button type="button" onClick={() => setNoteOpen(null)}
                 className="flex-1 rounded-xl border-2 border-slate-200 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400">
+                İptal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Personel düzenleme modalı */}
+      {editOpen != null && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border-2 border-violet-300 bg-white p-5 shadow-2xl dark:border-violet-700 dark:bg-slate-900">
+            <h3 className="mb-4 text-sm font-black text-slate-800 dark:text-slate-200">
+              Personel Düzenle — İkinci Model
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-400">Bölüm (Ekip)</label>
+                {teamOptions.length > 0 ? (
+                  <select
+                    value={editTeam}
+                    onChange={(e) => setEditTeam(e.target.value)}
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-300/30 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    <option value="">— Seçin —</option>
+                    {teamOptions.map((t) => (
+                      <option key={t.code} value={t.code}>{t.label} ({t.code})</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={editTeam}
+                    onChange={(e) => setEditTeam(e.target.value)}
+                    placeholder="Örn. BITIM"
+                    className="w-full rounded-xl border-2 border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  />
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-400">Proses</label>
+                {processOptions.length > 0 ? (
+                  <select
+                    value={editProcess}
+                    onChange={(e) => setEditProcess(e.target.value)}
+                    className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-300/30 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    <option value="">— Seçin —</option>
+                    {processOptions.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={editProcess}
+                    onChange={(e) => setEditProcess(e.target.value)}
+                    placeholder="Örn. DİKİM"
+                    className="w-full rounded-xl border-2 border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  />
+                )}
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                disabled={editSaving || !editTeam.trim()}
+                onClick={() => void handleEditSave()}
+                className="flex-1 rounded-xl bg-violet-600 py-2 text-sm font-black text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                {editSaving ? "Kaydediliyor…" : "Kaydet"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditOpen(null)}
+                className="flex-1 rounded-xl border-2 border-slate-200 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400"
+              >
                 İptal
               </button>
             </div>

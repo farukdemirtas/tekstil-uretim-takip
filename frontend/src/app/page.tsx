@@ -58,6 +58,7 @@ import { formatProductDisplayLine } from "@/lib/takipsanProduct";
 import ExcelImportPanel from "@/components/ExcelImportPanel";
 import BulkEntryPanel from "@/components/BulkEntryPanel";
 import SecondaryModelPanel from "@/components/SecondaryModelPanel";
+import { getSecondarySimpleTotals } from "@/lib/api";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
   applyThemeFromPermissions,
@@ -179,6 +180,8 @@ export default function HomePage() {
   const [prevAvgEfficiency, setPrevAvgEfficiency] = useState<number | null>(null);
   const [secondaryRows, setSecondaryRows] = useState<ProductionRow[]>([]);
   const [secondaryModelLabel, setSecondaryModelLabel] = useState<string | null>(null);
+  const [secondaryModelId, setSecondaryModelId] = useState<number | null>(null);
+  const [secondaryStages, setSecondaryStages] = useState<HedefStageLineDto[]>([]);
   const [genelProsesTick, setGenelProsesTick] = useState(0);
   const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
 
@@ -303,6 +306,8 @@ export default function HomePage() {
     if (isAuthenticated) {
       setSecondaryRows([]);
       setSecondaryModelLabel(null);
+      setSecondaryModelId(null);
+      setSecondaryStages([]);
       void loadDateData(selectedDate);
     }
   }, [selectedDate, isAuthenticated]);
@@ -501,23 +506,13 @@ export default function HomePage() {
     return Math.min(...stages.map((s) => v(s.total)));
   }, [hedefStageTotals]);
 
-  /** İkinci model: personel verilerinden ekip bazında ayrı aşama toplamları */
-  const secondaryStages = useMemo((): HedefStageLineDto[] => {
-    if (secondaryRows.length === 0) return [];
-    const teamTotals = new Map<string, number>();
-    for (const r of secondaryRows) {
-      teamTotals.set(r.team, (teamTotals.get(r.team) ?? 0) + sumProductionRow(r) + (Number(r.ekSayim) || 0));
-    }
-    return Array.from(teamTotals.entries())
-      .filter(([, total]) => total > 0)
-      .map(([teamCode, total], i) => ({
-        sortOrder: i,
-        teamCode,
-        processName: "",
-        teamLabel: teamMeta.find((t) => t.code === teamCode)?.label ?? teamCode,
-        total,
-      }));
-  }, [secondaryRows, teamMeta]);
+  // Model değişince veya kayıt olunca ürün modelindeki günlük özet proseslerini çek
+  useEffect(() => {
+    if (!secondaryModelId) { setSecondaryStages([]); return; }
+    void getSecondarySimpleTotals(selectedDate, secondaryModelId)
+      .then((res) => setSecondaryStages(res.stages as HedefStageLineDto[]))
+      .catch(() => setSecondaryStages([]));
+  }, [secondaryModelId, selectedDate, secondaryRows]);
 
   const useIntradayEfficiency = selectedDate === todayWorkdayIsoTurkey();
   const personnelEfficiencyLive = useMemo(() => {
@@ -1690,6 +1685,7 @@ export default function HomePage() {
           primaryRows={rows}
           onRowsChange={setSecondaryRows}
           onModelLabelChange={setSecondaryModelLabel}
+          onModelIdChange={setSecondaryModelId}
         />
       )}
 
