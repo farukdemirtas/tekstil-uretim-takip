@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   getDayProductMeta,
+  getEkran5Target,
   getHedefTakipStageTotals,
   getTeams,
   getTopWorkersAnalytics,
@@ -23,7 +24,6 @@ import {
 } from "@/lib/prosesVeri";
 import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 
-const STORAGE_KEY = "hedef_takip_settings_v1";
 /** Arka planda API verisi — slayt hızından bağımsız */
 const DATA_REFRESH_MS = 30_000;
 /** TV’de slaytların dönüş aralığı */
@@ -152,20 +152,7 @@ export default function Ekran4IcerikPage() {
     const prev = nWorkdaysBack(day, 1);
     setTodayIso(day);
 
-    let targetN = 5000;
     let mid: number | null = null;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw) as { target?: number; modelId?: number | null };
-        if (Number.isFinite(Number(s.target))) targetN = Number(s.target);
-        if (s.modelId != null && Number.isFinite(Number(s.modelId))) mid = Number(s.modelId);
-      }
-    } catch {
-      /* ignore */
-    }
-    setTarget(targetN);
-    setModelId(mid);
 
     try {
       const [metaToday, metaPrev, bulkHourly] = await Promise.all([
@@ -173,9 +160,18 @@ export default function Ekran4IcerikPage() {
         getDayProductMeta(prev).catch(() => null),
         getWorkerHourlyBreakdownsForDate(day).catch(() => []),
       ]);
-      // localStorage'daki modelId'yi meta yoksa fallback olarak kullan
-      const modelIdToday = metaToday?.modelId ?? mid ?? null;
-      const modelIdPrev  = metaPrev?.modelId  ?? mid ?? null;
+      const modelIdToday = metaToday?.modelId ?? null;
+      const modelIdPrev  = metaPrev?.modelId  ?? null;
+      mid = modelIdToday;
+      setModelId(mid);
+
+      // Modeldeki hedef miktarını çek
+      if (modelIdToday != null) {
+        const ekranTarget = await getEkran5Target(modelIdToday).catch(() => null);
+        if (ekranTarget?.ekran5Target != null && ekranTarget.ekran5Target > 0) {
+          setTarget(ekranTarget.ekran5Target);
+        }
+      }
 
       const w7 = lastNWorkdaysAscending(day, 7);
 

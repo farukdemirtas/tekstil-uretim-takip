@@ -787,6 +787,234 @@ export function upsertWorkerNote({ workerId, date, note }) {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  İKİNCİ MODEL (production_entries_b) — yardımcı fonksiyonlar
+// ═══════════════════════════════════════════════════════════════
+
+/** Günün ikinci modelini döndürür (null = ikinci model yok) */
+export async function getSecondaryModelId(date) {
+  const row = await dbGet(
+    `SELECT secondary_model_id AS secondaryModelId FROM daily_product_meta WHERE production_date = ?`,
+    [date]
+  );
+  if (!row?.secondaryModelId) return null;
+  return Number(row.secondaryModelId);
+}
+
+/** Günün ikinci modelini ayarlar (null = kaldır) */
+export function setSecondaryModelId(date, modelId) {
+  const mid = modelId != null && Number.isFinite(Number(modelId)) ? Number(modelId) : null;
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO daily_product_meta (production_date, product_name, product_model, secondary_model_id)
+       VALUES (?, '', '', ?)
+       ON CONFLICT(production_date) DO UPDATE SET secondary_model_id = excluded.secondary_model_id`,
+      [String(date), mid],
+      (err) => (err ? reject(err) : resolve({ ok: true }))
+    );
+  });
+}
+
+/**
+ * Günün ikinci model personel girişlerini döndürür.
+ * YALNIZCA production_entries_b'de kaydı olan personeli getirir (INNER JOIN).
+ * Personel ekleme/kaldırma için ayrı endpoint kullanılır.
+ */
+export function getSecondaryEntries(date, modelId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `
+      SELECT
+        w.id AS workerId,
+        w.name,
+        w.team,
+        w.process,
+        COALESCE(p.h0900, 0) AS h0900,
+        COALESCE(p.h1000, 0) AS h1000,
+        COALESCE(p.h1115, 0) AS h1115,
+        COALESCE(p.h1215, 0) AS h1215,
+        COALESCE(p.h1300, 0) AS h1300,
+        COALESCE(p.h1445, 0) AS h1445,
+        COALESCE(p.h1545, 0) AS h1545,
+        COALESCE(p.h1700, 0) AS h1700,
+        COALESCE(p.h1830, 0) AS h1830,
+        COALESCE(p.ek_sayim, 0) AS ekSayim,
+        COALESCE(p.note, '') AS note,
+        0 AS absentForDay
+      FROM production_entries_b p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.production_date = ? AND p.model_id = ?
+        AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))
+      ORDER BY w.team, w.process, w.name
+      `,
+      [date, modelId, date],
+      (err, rows) => (err ? reject(err) : resolve(rows))
+    );
+  });
+}
+
+/** Bir personeli ikinci modele ekler (sıfır satır oluşturur, kayıt yoksa) */
+export function addWorkerToSecondary(workerId, date, modelId) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT OR IGNORE INTO production_entries_b
+         (worker_id, production_date, model_id, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim)
+       VALUES (?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)`,
+      [Number(workerId), String(date), Number(modelId)],
+      (err) => (err ? reject(err) : resolve(true))
+    );
+  });
+}
+
+/** Bir personeli ikinci modelden kaldırır (satırı siler) */
+export function removeWorkerFromSecondary(workerId, date, modelId) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `DELETE FROM production_entries_b WHERE worker_id = ? AND production_date = ? AND model_id = ?`,
+      [Number(workerId), String(date), Number(modelId)],
+      (err) => (err ? reject(err) : resolve(true))
+    );
+  });
+}
+
+/** Tek satır — aktivite logunda tekrarı önlemek için önceki değerlerle karşılaştırma. */
+export function getSecondaryEntrySlots(workerId, date, modelId) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830,
+              COALESCE(ek_sayim, 0) AS ek_sayim
+       FROM production_entries_b WHERE worker_id = ? AND production_date = ? AND model_id = ?`,
+      [workerId, date, modelId],
+      (err, row) => {
+        if (err) return reject(err);
+        if (!row) return resolve(null);
+        const z = (n) => Number(n) || 0;
+        resolve({
+          h0900: z(row.h0900), h1000: z(row.h1000), h1115: z(row.h1115),
+          h1215: z(row.h1215), h1300: z(row.h1300), h1445: z(row.h1445),
+          h1545: z(row.h1545), h1700: z(row.h1700), h1830: z(row.h1830),
+          ekSayim: z(row.ek_sayim),
+        });
+      }
+    );
+  });
+}
+
+/** Saat dilimi upsert — ikinci model için */
+export function upsertSecondaryEntry(payload) {
+  const {
+    workerId, date, modelId,
+    h0900 = 0, h1000 = 0, h1115 = 0, h1215 = 0,
+    h1300 = 0, h1445 = 0, h1545 = 0, h1700 = 0, h1830 = 0,
+  } = payload;
+  const z = (n) => Number(n) || 0;
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO production_entries_b
+         (worker_id, production_date, model_id, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+       ON CONFLICT(worker_id, production_date, model_id) DO UPDATE SET
+         h0900 = excluded.h0900, h1000 = excluded.h1000, h1115 = excluded.h1115,
+         h1215 = excluded.h1215, h1300 = excluded.h1300, h1445 = excluded.h1445,
+         h1545 = excluded.h1545, h1700 = excluded.h1700, h1830 = excluded.h1830`,
+      [workerId, String(date), modelId,
+       z(h0900), z(h1000), z(h1115), z(h1215), z(h1300), z(h1445), z(h1545), z(h1700), z(h1830)],
+      (err) => (err ? reject(err) : resolve(true))
+    );
+  });
+}
+
+/** ek_sayim — ikinci model */
+export function upsertSecondaryEkSayim({ workerId, date, modelId, ekSayim }) {
+  const z = Math.max(0, Math.floor(Number(ekSayim) || 0));
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO production_entries_b (worker_id, production_date, model_id, ek_sayim)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(worker_id, production_date, model_id) DO UPDATE SET ek_sayim = excluded.ek_sayim`,
+      [Number(workerId), String(date), Number(modelId), z],
+      (err) => (err ? reject(err) : resolve(true))
+    );
+  });
+}
+
+/** not — ikinci model */
+export function upsertSecondaryNote({ workerId, date, modelId, note }) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO production_entries_b (worker_id, production_date, model_id, note)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(worker_id, production_date, model_id) DO UPDATE SET note = excluded.note`,
+      [Number(workerId), String(date), Number(modelId), note ?? ""],
+      (err) => (err ? reject(err) : resolve(true))
+    );
+  });
+}
+
+/** Grup/proses bazlı basit toplam — ikinci model stage totals */
+export async function getSecondarySimpleTotals(date, modelId) {
+  const SUM_COLS = `COALESCE(p.h0900,0)+COALESCE(p.h1000,0)+COALESCE(p.h1115,0)+
+    COALESCE(p.h1215,0)+COALESCE(p.h1300,0)+COALESCE(p.h1445,0)+
+    COALESCE(p.h1545,0)+COALESCE(p.h1700,0)+COALESCE(p.h1830,0)+COALESCE(p.ek_sayim,0)`;
+
+  // Önce modelin baseline satırlarını dene
+  const baseRows = await dbAll(
+    `SELECT sort_order AS sortOrder, team_code AS teamCode, process_name AS processName,
+            COALESCE(arka_half, 0) AS arkaHalf
+     FROM model_hedef_baselines WHERE model_id = ? ORDER BY sort_order ASC`,
+    [modelId]
+  );
+  const teamRows = await dbAll("SELECT code, label FROM teams");
+  const labelByCode = Object.fromEntries((teamRows || []).map((t) => [t.code, t.label]));
+
+  if (baseRows.length) {
+    const stages = [];
+    for (const r of baseRows) {
+      const mult = Number(r.arkaHalf) === 1 ? 0.5 : 1.0;
+      const row = await dbGet(
+        `SELECT COALESCE(SUM(${SUM_COLS}), 0) AS total
+         FROM production_entries_b p
+         JOIN workers w ON w.id = p.worker_id
+         WHERE p.production_date = ? AND p.model_id = ?
+           AND TRIM(COALESCE(w.team,'')) = TRIM(COALESCE(?,''))
+           AND (? = '' OR TRIM(COALESCE(w.process,'')) = TRIM(COALESCE(?,'') ))
+           AND (w.created_at IS NULL OR date(w.created_at) <= date(?))
+           AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))`,
+        [date, modelId, r.teamCode, r.processName, r.processName, date, date]
+      );
+      stages.push({
+        sortOrder: Number(r.sortOrder),
+        teamCode: String(r.teamCode || ""),
+        processName: String(r.processName || ""),
+        teamLabel: labelByCode[r.teamCode] || String(r.teamCode || ""),
+        total: Math.round((Number(row?.total) || 0) * mult),
+      });
+    }
+    return { stages };
+  }
+
+  // Baseline yoksa grup toplamı döndür
+  const rows = await dbAll(
+    `SELECT w.team, COALESCE(SUM(${SUM_COLS}), 0) AS total
+     FROM production_entries_b p
+     JOIN workers w ON w.id = p.worker_id
+     WHERE p.production_date = ? AND p.model_id = ?
+       AND (w.created_at IS NULL OR date(w.created_at) <= date(?))
+       AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))
+     GROUP BY w.team ORDER BY w.team`,
+    [date, modelId, date, date]
+  );
+  return {
+    stages: rows.map((r, i) => ({
+      sortOrder: i,
+      teamCode: String(r.team || ""),
+      processName: "",
+      teamLabel: labelByCode[r.team] || String(r.team || ""),
+      total: Number(r.total) || 0,
+    })),
+  };
+}
+
 export function upsertEntriesBulk(entries) {
   return new Promise((resolve, reject) => {
     db.serialize(() => {
@@ -1626,13 +1854,17 @@ export async function updateProductModel(id, payload, teamCodes) {
 export function getEkran5Target(id) {
   return new Promise((resolve, reject) => {
     db.get(
-      "SELECT ekran5_target AS ekran5Target FROM product_models WHERE id = ?",
+      "SELECT ekran5_target AS ekran5Target, target_quantity AS targetQuantity FROM product_models WHERE id = ?",
       [id],
       (err, row) => {
         if (err) return reject(err);
-        if (!row) return resolve({ ekran5Target: null });
+        if (!row) return resolve({ ekran5Target: null, targetQuantity: null });
         const v = row.ekran5Target;
-        resolve({ ekran5Target: v != null && Number.isFinite(Number(v)) ? Number(v) : null });
+        const tq = row.targetQuantity;
+        resolve({
+          ekran5Target: v != null && Number.isFinite(Number(v)) ? Number(v) : null,
+          targetQuantity: tq != null && Number.isFinite(Number(tq)) && Number(tq) > 0 ? Number(tq) : null,
+        });
       }
     );
   });

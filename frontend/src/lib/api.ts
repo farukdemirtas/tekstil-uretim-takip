@@ -515,6 +515,120 @@ export async function saveWorkerNote(payload: {
   if (!response.ok) throw new Error("Not kaydedilemedi");
 }
 
+// ─── İkinci model (production-b) API'si ────────────────────────────────────
+
+export type SecondaryDayMeta = {
+  secondaryModelId: number | null;
+  modelInfo: { id: number; modelCode: string; productName: string } | null;
+};
+
+export async function getSecondaryDayMeta(date: string): Promise<SecondaryDayMeta> {
+  const res = await apiFetch(`${apiBase()}/production-b/day-meta?date=${encodeURIComponent(date)}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) return { secondaryModelId: null, modelInfo: null };
+  const raw = (await res.json()) as Record<string, unknown>;
+  const mid = raw.secondaryModelId;
+  const secondaryModelId = mid != null && Number.isFinite(Number(mid)) ? Number(mid) : null;
+  const mi = raw.modelInfo as Record<string, unknown> | null | undefined;
+  const modelInfo = mi && mi.id != null
+    ? { id: Number(mi.id), modelCode: String(mi.modelCode ?? ""), productName: String(mi.productName ?? "") }
+    : null;
+  return { secondaryModelId, modelInfo };
+}
+
+export async function setSecondaryDayMeta(date: string, secondaryModelId: number | null): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/production-b/day-meta`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ date, secondaryModelId }),
+  });
+  if (!res.ok) throw new Error("İkinci model ayarlanamadı");
+}
+
+export async function getSecondaryProduction(date: string, modelId: number): Promise<ProductionRow[]> {
+  const res = await apiFetch(
+    `${apiBase()}/production-b?date=${encodeURIComponent(date)}&modelId=${modelId}`,
+    { cache: "no-store", headers: authHeaders() }
+  );
+  if (!res.ok) throw new Error("İkinci model verisi alınamadı");
+  const raw = (await res.json()) as unknown;
+  if (!Array.isArray(raw)) return [];
+  return raw.map(parseProductionRow).filter((r): r is ProductionRow => r != null);
+}
+
+export async function saveSecondaryProduction(payload: {
+  workerId: number;
+  date: string;
+  modelId: number;
+  h0900?: number; h1000?: number; h1115?: number; h1215?: number;
+  h1300?: number; h1445?: number; h1545?: number; h1700?: number; h1830?: number;
+}): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/production-b`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("İkinci model kaydedilemedi");
+}
+
+export async function saveSecondaryEkSayim(payload: {
+  workerId: number; date: string; modelId: number; ekSayim: number;
+}): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/production-b/ek-sayim`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Ek sayım kaydedilemedi");
+}
+
+export async function saveSecondaryNote(payload: {
+  workerId: number; date: string; modelId: number; note: string;
+}): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/production-b/note`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Not kaydedilemedi");
+}
+
+export async function addWorkerToSecondary(payload: {
+  workerId: number; date: string; modelId: number;
+}): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/production-b/worker`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Personel eklenemedi");
+}
+
+export async function removeWorkerFromSecondary(payload: {
+  workerId: number; date: string; modelId: number;
+}): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/production-b/worker`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Personel kaldırılamadı");
+}
+
+export async function getSecondarySimpleTotals(
+  date: string,
+  modelId: number
+): Promise<{ stages: { sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number }[] }> {
+  const res = await apiFetch(
+    `${apiBase()}/production-b/stage-totals?date=${encodeURIComponent(date)}&modelId=${modelId}`,
+    { cache: "no-store", headers: authHeaders() }
+  );
+  if (!res.ok) return { stages: [] };
+  return res.json() as Promise<{ stages: { sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number }[] }>;
+}
+
 export async function saveProduction(payload: {
   workerId: number;
   date: string;
@@ -786,13 +900,13 @@ export async function deleteProductModel(id: number): Promise<void> {
 }
 
 /** Ekran5 paylaşımlı manuel hedef — okuma */
-export async function getEkran5Target(modelId: number): Promise<{ ekran5Target: number | null }> {
+export async function getEkran5Target(modelId: number): Promise<{ ekran5Target: number | null; targetQuantity: number | null }> {
   const res = await apiFetch(`${apiBase()}/product-models/${modelId}/ekran5-target`, {
     cache: "no-store",
     headers: authHeaders(),
   });
-  if (!res.ok) return { ekran5Target: null };
-  return res.json() as Promise<{ ekran5Target: number | null }>;
+  if (!res.ok) return { ekran5Target: null, targetQuantity: null };
+  return res.json() as Promise<{ ekran5Target: number | null; targetQuantity: number | null }>;
 }
 
 /** Ekran5 paylaşımlı manuel hedef — kaydetme (value=null → temizle) */

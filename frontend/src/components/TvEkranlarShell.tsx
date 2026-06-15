@@ -6,10 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "1" | "2" | "3" | "4" | "5";
+type TabId = "1" | "1b" | "2" | "3" | "4" | "5";
 
 const IFRAME_SRC: Record<TabId, string> = {
   "1": "/ekran1/icerik",
+  "1b": "/ekran1b/icerik",
   "2": "/ekran2/icerik",
   "3": "/ekran3/icerik",
   "4": "/ekran4/icerik",
@@ -18,6 +19,7 @@ const IFRAME_SRC: Record<TabId, string> = {
 
 const ROUTE: Record<TabId, string> = {
   "1": "/ekran1",
+  "1b": "/ekran1b",
   "2": "/ekran2",
   "3": "/ekran3",
   "4": "/ekran4",
@@ -51,6 +53,7 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
 
   const allowedForActive =
     (active === "1" && can1) ||
+    (active === "1b" && can1) ||
     (active === "2" && can2) ||
     (active === "3" && can3) ||
     (active === "4" && can4) ||
@@ -101,6 +104,7 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
   const tabs = useMemo(() => {
     const t: { id: TabId; label: string; href: string }[] = [];
     if (can1) t.push({ id: "1", label: "EKRAN1", href: ROUTE["1"] });
+    if (can1) t.push({ id: "1b", label: "2. MODEL", href: ROUTE["1b"] });
     if (can2) t.push({ id: "2", label: "EKRAN2", href: ROUTE["2"] });
     if (can3) t.push({ id: "3", label: "EKRAN3", href: ROUTE["3"] });
     if (can4) t.push({ id: "4", label: "EKRAN4", href: ROUTE["4"] });
@@ -135,8 +139,12 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
                 href={t.href}
                 className={`rounded-md px-2.5 py-1 text-xs font-semibold transition sm:px-3 sm:py-1.5 sm:text-sm ${
                   on
-                    ? "bg-teal-600 text-white shadow-sm"
-                    : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    ? t.id === "1b"
+                      ? "bg-violet-600 text-white shadow-sm"
+                      : "bg-teal-600 text-white shadow-sm"
+                    : t.id === "1b"
+                      ? "border border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50"
+                      : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 }`}
               >
                 {t.label}

@@ -23,6 +23,10 @@ type AdminPanelProps = {
   ekran1TodayProduced?: number | null;
   ekran1Stages?: HedefStageLine[] | null;
   ekran1DailySummaryStages?: HedefStageLine[] | null;
+  /** İkinci model ekip toplamları — ayrı bölümde gösterilir */
+  secondaryStages?: HedefStageLine[];
+  /** İkinci modelin ürün adı / model kodu */
+  secondaryModelLabel?: string | null;
 };
 
 function safeNum(n: unknown): number {
@@ -39,7 +43,7 @@ function stageLabel(s: HedefStageLine): string {
   return p ? `${s.teamLabel} · ${p}` : s.teamLabel;
 }
 
-export default function AdminPanel({ workerCount, stageTotals, stageError, ekran1TotalCompleted, ekran1TodayProduced, ekran1Stages, ekran1DailySummaryStages }: AdminPanelProps) {
+export default function AdminPanel({ workerCount, stageTotals, stageError, ekran1TotalCompleted, ekran1TodayProduced, ekran1Stages, ekran1DailySummaryStages, secondaryStages, secondaryModelLabel }: AdminPanelProps) {
   const stages = stageTotals.stages ?? [];
   const daily = stageTotals.dailySummaryStages ?? [];
 
@@ -161,8 +165,34 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
           </div>
         )}
 
-        {stages.length === 0 && daily.length === 0 && (
+        {stages.length === 0 && daily.length === 0 && !secondaryStages?.length && (
           <p className="py-2 text-center text-xs text-slate-400 dark:text-slate-500">Veri bekleniyor…</p>
+        )}
+
+        {/* İkinci model aşamaları — ayrı bölüm */}
+        {secondaryStages && secondaryStages.length > 0 && (
+          <div className="rounded-xl border border-violet-200 bg-violet-50/60 px-3 py-3 dark:border-violet-800/40 dark:bg-violet-950/20">
+            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-violet-700 dark:text-violet-400">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 text-[8px] font-black text-white">2</span>
+              {secondaryModelLabel ? secondaryModelLabel : "Ek Model"}
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {secondaryStages.map((s, i) => (
+                <div
+                  key={`sec-${i}`}
+                  className="relative rounded-xl bg-violet-100/80 px-3 py-3 shadow-sm ring-1 ring-violet-300/70 dark:bg-violet-900/30 dark:ring-violet-700/50"
+                >
+                  <div className="absolute inset-y-0 left-0 w-[3px] rounded-l-xl bg-violet-500 dark:bg-violet-400" />
+                  <p className="line-clamp-2 text-xs font-bold leading-snug text-slate-700 dark:text-slate-200">
+                    {s.processName ? `${s.teamLabel} · ${s.processName}` : s.teamLabel}
+                  </p>
+                  <p className="mt-1.5 text-2xl font-black tabular-nums text-violet-700 dark:text-violet-300">
+                    {safeNum(s.total).toLocaleString("tr-TR")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Renk açıklaması */}

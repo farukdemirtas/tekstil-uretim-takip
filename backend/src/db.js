@@ -252,6 +252,89 @@ export function initDb() {
         product_model TEXT NOT NULL DEFAULT ''
       )
     `);
+    // Günlük ikinci model desteği
+    db.all("PRAGMA table_info(daily_product_meta)", [], (pragmaErr, cols) => {
+      if (pragmaErr || !Array.isArray(cols) || cols.length === 0) return;
+      const names = new Set(cols.map((c) => c.name));
+      if (!names.has("secondary_model_id")) {
+        db.run("ALTER TABLE daily_product_meta ADD COLUMN secondary_model_id INTEGER REFERENCES product_models(id)", (e) => {
+          if (e) console.error("[tekstil-db] daily_product_meta secondary_model_id migration:", e.message);
+        });
+      }
+    });
+
+    // İkinci model üretim girişleri — ana tabloyla aynı yapı, model_id zorunlu
+    db.run(`
+      CREATE TABLE IF NOT EXISTS production_entries_b (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        worker_id INTEGER NOT NULL,
+        production_date TEXT NOT NULL,
+        model_id INTEGER NOT NULL REFERENCES product_models(id),
+        t1000 INTEGER DEFAULT 0,
+        t1300 INTEGER DEFAULT 0,
+        t1600 INTEGER DEFAULT 0,
+        t1830 INTEGER DEFAULT 0,
+        h0900 INTEGER NOT NULL DEFAULT 0,
+        h1000 INTEGER NOT NULL DEFAULT 0,
+        h1115 INTEGER NOT NULL DEFAULT 0,
+        h1215 INTEGER NOT NULL DEFAULT 0,
+        h1300 INTEGER NOT NULL DEFAULT 0,
+        h1445 INTEGER NOT NULL DEFAULT 0,
+        h1545 INTEGER NOT NULL DEFAULT 0,
+        h1700 INTEGER NOT NULL DEFAULT 0,
+        h1830 INTEGER NOT NULL DEFAULT 0,
+        ek_sayim INTEGER NOT NULL DEFAULT 0,
+        note TEXT NOT NULL DEFAULT '',
+        UNIQUE(worker_id, production_date, model_id),
+        FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
+      )
+    `);
+    // Eski hatalı schema düzeltme: h1830b → h1830 (tablo veri içermiyorsa yeniden oluştur)
+    db.all("PRAGMA table_info(production_entries_b)", [], (pragmaErr, pbCols) => {
+      if (pragmaErr || !Array.isArray(pbCols) || pbCols.length === 0) return;
+      const pbNames = pbCols.map((c) => c.name);
+      if (pbNames.includes("h1830b") && !pbNames.includes("h1830")) {
+        // Veri var mı kontrol et
+        db.get("SELECT COUNT(*) AS cnt FROM production_entries_b", [], (cntErr, cntRow) => {
+          if (cntErr) return;
+          const safeToRecreate = !cntRow || Number(cntRow.cnt) === 0;
+          if (safeToRecreate) {
+            db.exec(
+              `PRAGMA foreign_keys = OFF;
+               BEGIN TRANSACTION;
+               DROP TABLE IF EXISTS production_entries_b;
+               CREATE TABLE production_entries_b (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 worker_id INTEGER NOT NULL,
+                 production_date TEXT NOT NULL,
+                 model_id INTEGER NOT NULL REFERENCES product_models(id),
+                 t1000 INTEGER DEFAULT 0, t1300 INTEGER DEFAULT 0,
+                 t1600 INTEGER DEFAULT 0, t1830 INTEGER DEFAULT 0,
+                 h0900 INTEGER NOT NULL DEFAULT 0, h1000 INTEGER NOT NULL DEFAULT 0,
+                 h1115 INTEGER NOT NULL DEFAULT 0, h1215 INTEGER NOT NULL DEFAULT 0,
+                 h1300 INTEGER NOT NULL DEFAULT 0, h1445 INTEGER NOT NULL DEFAULT 0,
+                 h1545 INTEGER NOT NULL DEFAULT 0, h1700 INTEGER NOT NULL DEFAULT 0,
+                 h1830 INTEGER NOT NULL DEFAULT 0,
+                 ek_sayim INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '',
+                 UNIQUE(worker_id, production_date, model_id),
+                 FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
+               );
+               COMMIT;
+               PRAGMA foreign_keys = ON;`,
+              (execErr) => {
+                if (execErr) {
+                  // eslint-disable-next-line no-console
+                  console.error("[tekstil-db] production_entries_b h1830 migration:", String(execErr));
+                } else {
+                  // eslint-disable-next-line no-console
+                  console.log("[tekstil-db] production_entries_b: h1830b → h1830 migration tamamlandı");
+                }
+              }
+            );
+          }
+        });
+      }
+    });
 
     db.run(`
       CREATE TABLE IF NOT EXISTS product_models (

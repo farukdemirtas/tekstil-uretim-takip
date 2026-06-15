@@ -90,6 +90,16 @@ import {
   evaluateHedefAlertStatus,
   getTeamComparisonData,
   getDualRangeFactoryTotals,
+  getSecondaryModelId,
+  setSecondaryModelId,
+  getSecondaryEntries,
+  getSecondaryEntrySlots,
+  upsertSecondaryEntry,
+  upsertSecondaryEkSayim,
+  upsertSecondaryNote,
+  getSecondarySimpleTotals,
+  addWorkerToSecondary,
+  removeWorkerFromSecondary,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
@@ -1108,6 +1118,144 @@ app.get("/api/production", async (req, res) => {
     res.json(rows);
   } catch (error) {
     res.status(500).json({ message: "Üretim verisi alınamadı", error: String(error) });
+  }
+});
+
+// ─── İKİNCİ MODEL ROUTE'LARI ────────────────────────────────────────────────
+
+/** Günün ikinci model ID'sini getir */
+app.get("/api/production-b/day-meta", async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    const secondaryModelId = await getSecondaryModelId(String(date));
+    // Model detayını da getir
+    let modelInfo = null;
+    if (secondaryModelId) {
+      const m = await getProductModelWithBaselines(secondaryModelId).catch(() => null);
+      if (m) modelInfo = { id: m.id, modelCode: m.modelCode, productName: m.productName };
+    }
+    res.json({ secondaryModelId, modelInfo });
+  } catch (error) {
+    res.status(500).json({ message: "İkinci model bilgisi alınamadı", error: String(error) });
+  }
+});
+
+/** Günün ikinci modelini ayarla (null = kaldır) */
+app.put("/api/production-b/day-meta", requireAuth, async (req, res) => {
+  const { date, secondaryModelId } = req.body || {};
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    await setSecondaryModelId(String(date), secondaryModelId ?? null);
+    logActivity(req, "ikinci_model_ayarla", "daily_product_meta", { date, secondaryModelId: secondaryModelId ?? null });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "İkinci model ayarlanamadı", error: String(error) });
+  }
+});
+
+/** İkinci model personel girişleri */
+app.get("/api/production-b", async (req, res) => {
+  const { date, modelId } = req.query;
+  if (!date || !modelId) return res.status(400).json({ message: "date ve modelId zorunlu" });
+  try {
+    const rows = await getSecondaryEntries(String(date), Number(modelId));
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ message: "İkinci model verisi alınamadı", error: String(error) });
+  }
+});
+
+/** İkinci model saat dilimi kaydet */
+app.post("/api/production-b", async (req, res) => {
+  const b = req.body || {};
+  const { workerId, date, modelId,
+    h0900 = 0, h1000 = 0, h1115 = 0, h1215 = 0,
+    h1300 = 0, h1445 = 0, h1545 = 0, h1700 = 0, h1830 = 0,
+  } = b;
+  if (!workerId || !date || !modelId) {
+    return res.status(400).json({ message: "workerId, date ve modelId zorunlu" });
+  }
+  try {
+    const wid = Number(workerId);
+    const mid = Number(modelId);
+    const dateStr = String(date);
+    const z = (n) => Number(n) || 0;
+    const prev = await getSecondaryEntrySlots(wid, dateStr, mid);
+    const unchanged = prev !== null &&
+      prev.h0900 === z(h0900) && prev.h1000 === z(h1000) && prev.h1115 === z(h1115) &&
+      prev.h1215 === z(h1215) && prev.h1300 === z(h1300) && prev.h1445 === z(h1445) &&
+      prev.h1545 === z(h1545) && prev.h1700 === z(h1700) && prev.h1830 === z(h1830);
+    await upsertSecondaryEntry({ workerId: wid, date: dateStr, modelId: mid,
+      h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830 });
+    if (!unchanged) {
+      const workerName = await getWorkerNameById(wid);
+      logActivity(req, "ikinci_model_kayit", "production_entries_b",
+        { workerId: wid, date: dateStr, modelId: mid, workerName: workerName || undefined });
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "İkinci model verisi kaydedilemedi", error: String(error) });
+  }
+});
+
+/** İkinci model ek_sayim */
+app.put("/api/production-b/ek-sayim", async (req, res) => {
+  const { workerId, date, modelId, ekSayim } = req.body || {};
+  if (!workerId || !date || !modelId) return res.status(400).json({ message: "workerId, date ve modelId zorunlu" });
+  try {
+    await upsertSecondaryEkSayim({ workerId: Number(workerId), date: String(date), modelId: Number(modelId), ekSayim });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "Ek sayım kaydedilemedi", error: String(error) });
+  }
+});
+
+/** İkinci model not */
+app.put("/api/production-b/note", async (req, res) => {
+  const { workerId, date, modelId, note } = req.body || {};
+  if (!workerId || !date || !modelId) return res.status(400).json({ message: "workerId, date ve modelId zorunlu" });
+  try {
+    await upsertSecondaryNote({ workerId: Number(workerId), date: String(date), modelId: Number(modelId), note: note ?? "" });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "Not kaydedilemedi", error: String(error) });
+  }
+});
+
+/** İkinci model aşama toplamları */
+app.get("/api/production-b/stage-totals", async (req, res) => {
+  const { date, modelId } = req.query;
+  if (!date || !modelId) return res.status(400).json({ message: "date ve modelId zorunlu" });
+  try {
+    const result = await getSecondarySimpleTotals(String(date), Number(modelId));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ message: "Aşama toplamları alınamadı", error: String(error) });
+  }
+});
+
+/** Personeli ikinci modele ekle */
+app.post("/api/production-b/worker", async (req, res) => {
+  const { workerId, date, modelId } = req.body || {};
+  if (!workerId || !date || !modelId) return res.status(400).json({ message: "workerId, date ve modelId zorunlu" });
+  try {
+    await addWorkerToSecondary(Number(workerId), String(date), Number(modelId));
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "Personel eklenemedi", error: String(error) });
+  }
+});
+
+/** Personeli ikinci modelden kaldır */
+app.delete("/api/production-b/worker", async (req, res) => {
+  const { workerId, date, modelId } = req.body || {};
+  if (!workerId || !date || !modelId) return res.status(400).json({ message: "workerId, date ve modelId zorunlu" });
+  try {
+    await removeWorkerFromSecondary(Number(workerId), String(date), Number(modelId));
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: "Personel kaldırılamadı", error: String(error) });
   }
 });
 

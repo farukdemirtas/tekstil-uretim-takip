@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
@@ -576,9 +575,6 @@ export default function ProductModelsSection() {
                     <p className="text-[10px] font-bold uppercase tracking-widest text-teal-700 dark:text-teal-400">Üretim Günlerine Uygula</p>
                     <p className="text-[11px] text-slate-400">Seçili hafta içi günlere bu modeli ata; Ekran 1 «Biten» de bu tarihten sayılır.</p>
                   </div>
-                  <Link href="/hedef-takip" className="rounded-lg border border-teal-200 px-2.5 py-1 text-[10px] font-semibold text-teal-700 hover:bg-teal-50 dark:border-teal-800 dark:text-teal-300 dark:hover:bg-teal-950/30">
-                    Hedef Takip →
-                  </Link>
                 </div>
                 <div className="flex flex-wrap items-end gap-3">
                   <WeekdayDatePicker label="Başlangıç" value={hedefApplyStart} onChange={(v) => { setHedefApplyStart(coerceWeekdayPickerValue(v)); setSessionStartDate(coerceWeekdayPickerValue(v)); }} className="min-w-[10rem] flex-1" />

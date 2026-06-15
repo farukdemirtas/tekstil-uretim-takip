@@ -29,6 +29,7 @@ import {
   updateWorker,
   saveWorkerNote,
   type DayProductMeta,
+  type HedefStageLineDto,
 } from "@/lib/api";
 import { clampToWeekdayIso, previousWeekdayIso, todayWeekdayIso, todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
 import {
@@ -56,6 +57,7 @@ import {
 import { formatProductDisplayLine } from "@/lib/takipsanProduct";
 import ExcelImportPanel from "@/components/ExcelImportPanel";
 import BulkEntryPanel from "@/components/BulkEntryPanel";
+import SecondaryModelPanel from "@/components/SecondaryModelPanel";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
   applyThemeFromPermissions,
@@ -175,6 +177,8 @@ export default function HomePage() {
   const [bulkExportProgress, setBulkExportProgress] = useState<{ done: number; total: number } | null>(null);
   const [ekSayimOpen, setEkSayimOpen] = useState(false);
   const [prevAvgEfficiency, setPrevAvgEfficiency] = useState<number | null>(null);
+  const [secondaryRows, setSecondaryRows] = useState<ProductionRow[]>([]);
+  const [secondaryModelLabel, setSecondaryModelLabel] = useState<string | null>(null);
   const [genelProsesTick, setGenelProsesTick] = useState(0);
   const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
 
@@ -297,6 +301,8 @@ export default function HomePage() {
 
   useEffect(() => {
     if (isAuthenticated) {
+      setSecondaryRows([]);
+      setSecondaryModelLabel(null);
       void loadDateData(selectedDate);
     }
   }, [selectedDate, isAuthenticated]);
@@ -369,20 +375,6 @@ export default function HomePage() {
     setRole("data_entry");
     setIsAuthenticated(false);
     setRows([]);
-  }
-
-  async function pushToHedefTakip() {
-    try {
-      const mid = activeModelIdRef.current;
-      const t = await getHedefTakipStageTotals(selectedDate, selectedDate, mid ?? undefined);
-      window.localStorage.setItem(
-        "hedef_takip_stage_totals_v1",
-        JSON.stringify({ stages: t.stages, date: selectedDate, modelId: mid ?? null })
-      );
-    } catch {
-      /* cache isteğe bağlı */
-    }
-    router.push("/hedef-takip");
   }
 
   async function handleAddWorker(payload: { name: string; team: string; process: string }) {
@@ -508,6 +500,24 @@ export default function HomePage() {
     if (stages.length === 0) return 0;
     return Math.min(...stages.map((s) => v(s.total)));
   }, [hedefStageTotals]);
+
+  /** İkinci model: personel verilerinden ekip bazında ayrı aşama toplamları */
+  const secondaryStages = useMemo((): HedefStageLineDto[] => {
+    if (secondaryRows.length === 0) return [];
+    const teamTotals = new Map<string, number>();
+    for (const r of secondaryRows) {
+      teamTotals.set(r.team, (teamTotals.get(r.team) ?? 0) + sumProductionRow(r) + (Number(r.ekSayim) || 0));
+    }
+    return Array.from(teamTotals.entries())
+      .filter(([, total]) => total > 0)
+      .map(([teamCode, total], i) => ({
+        sortOrder: i,
+        teamCode,
+        processName: "",
+        teamLabel: teamMeta.find((t) => t.code === teamCode)?.label ?? teamCode,
+        total,
+      }));
+  }, [secondaryRows, teamMeta]);
 
   const useIntradayEfficiency = selectedDate === todayWorkdayIsoTurkey();
   const personnelEfficiencyLive = useMemo(() => {
@@ -1049,9 +1059,6 @@ export default function HomePage() {
           {hasPermission("utuPaket") || isAdminRole() ? (
             <Link href="/utu-paket" className="btn-nav-utu-paket">Ütü–Paket</Link>
           ) : null}
-          {hasPermission("hedefTakip") ? (
-            <button onClick={() => void pushToHedefTakip()} className="btn-nav shrink-0" type="button">Hedef Takip</button>
-          ) : null}
           {hasPermission("analysis") || hasPermission("ekran2") || hasPermission("karsilastirma") || hasPermission("modelAnalizi") ? (
             <button
               type="button"
@@ -1073,7 +1080,7 @@ export default function HomePage() {
             <Link href="/is-bitirme-hesaplama" className="btn-nav shrink-0">İş Hesaplama</Link>
           ) : null}
           {hasPermission("ekran1") || hasPermission("ekran2") || hasPermission("ekran3") || hasPermission("ekran4") ? (
-            <Link href="/ekran1" onClick={() => sessionStorage.removeItem("ekran1_from_hedef_takip_v1")} className="btn-nav shrink-0">
+            <Link href="/ekran1" className="btn-nav shrink-0">
               TV Ekranları
             </Link>
           ) : null}
@@ -1675,6 +1682,17 @@ export default function HomePage() {
         />
       )}
 
+      {/* İkinci model giriş paneli */}
+      {!loading && (
+        <SecondaryModelPanel
+          selectedDate={selectedDate}
+          primaryModelId={activeModelIdRef.current}
+          primaryRows={rows}
+          onRowsChange={setSecondaryRows}
+          onModelLabelChange={setSecondaryModelLabel}
+        />
+      )}
+
       {/* Yönetici: Excel içe aktarma var; yapıştırma paneli yalnızca «veri girişi» + Toplu ekle yetkisi */}
       {!loading && rows.length > 0 && role !== "admin" && hasPermission("topluEkle") ? (
         <BulkEntryPanel
@@ -1695,6 +1713,8 @@ export default function HomePage() {
         ekran1TodayProduced={ekran1Summary?.todayProduced ?? null}
         ekran1Stages={ekran1Summary?.stages ?? null}
         ekran1DailySummaryStages={ekran1Summary?.dailySummaryStages ?? null}
+        secondaryStages={secondaryStages}
+        secondaryModelLabel={secondaryModelLabel}
       />
     </main>
   );
