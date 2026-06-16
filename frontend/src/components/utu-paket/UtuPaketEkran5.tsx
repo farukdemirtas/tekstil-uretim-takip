@@ -16,6 +16,7 @@ import { todayIsoTurkey, todayWeekdayIso } from "@/lib/businessCalendar";
 import {
   calcUtuPaketPercent,
   normalizeUtuPaketPayload,
+  normalizeTakipsanPackages,
   sumGunPaketlenen,
   sumUtuPaketSlots,
 } from "@/lib/utuPaket";
@@ -182,9 +183,9 @@ function formatClock() {
 }
 
 // ─── Stat kutu ───────────────────────────────────────────────────────────────
-function StatBox({ label, value, style }: { label: string; value: string; style: BoxStyle }) {
+function StatBox({ label, value, style, subLabel }: { label: string; value: string; style: BoxStyle; subLabel?: string }) {
   return (
-    <div className={`flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 px-2 shadow-md ${style.box}`}>
+    <div className={`relative flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 px-2 shadow-md ${style.box}`}>
       <p className={`shrink-0 font-black uppercase tracking-[0.12em] ${style.label}`}
         style={{ fontSize: "clamp(0.7rem, 1.4vw, 1.1rem)" }}>
         {label}
@@ -193,17 +194,24 @@ function StatBox({ label, value, style }: { label: string; value: string; style:
         style={{ fontSize: "clamp(2rem, 5vw, 5rem)" }}>
         {value}
       </p>
+      {subLabel && (
+        <p className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-amber-400 px-2 py-0.5 font-black tabular-nums uppercase tracking-wide text-amber-950 shadow-sm"
+          style={{ fontSize: "clamp(1rem, 2.2vw, 1.75rem)" }}>
+          {subLabel}
+        </p>
+      )}
     </div>
   );
 }
 
 // ─── Slayt paneli ────────────────────────────────────────────────────────────
 function SlidePanel({
-  slideKey, total, todayCount, target,
-}: { slideKey: SlideKey; total: number; todayCount: number; target: number }) {
+  slideKey, total, todayCount, target, koliCount, totalKoliCount,
+}: { slideKey: SlideKey; total: number; todayCount: number; target: number; koliCount?: number; totalKoliCount?: number }) {
   const m = SLIDE_META[slideKey];
   const pct = calcUtuPaketPercent(total, target);
   const remaining = Math.max(0, target - total);
+  const showKoli = slideKey === "paketleme" && koliCount != null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 md:gap-4">
@@ -239,10 +247,20 @@ function SlidePanel({
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-2.5 [grid-auto-rows:minmax(0,1fr)] sm:grid-cols-4 sm:gap-3 md:gap-4">
-        <StatBox label="Hedef"  value={target > 0 ? target.toLocaleString("tr-TR") : "—"}             style={m.targetStyle} />
-        <StatBox label="Toplam" value={total.toLocaleString("tr-TR")}                                  style={m.totalStyle}  />
-        <StatBox label="Bugün"  value={todayCount.toLocaleString("tr-TR")}                             style={m.todayStyle}  />
-        <StatBox label="Kalan"  value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"}           style={m.remainStyle} />
+        <StatBox label="Hedef"  value={target > 0 ? target.toLocaleString("tr-TR") : "—"}   style={m.targetStyle} />
+        <StatBox
+          label="Toplam"
+          value={total.toLocaleString("tr-TR")}
+          style={m.totalStyle}
+          subLabel={showKoli && totalKoliCount != null && totalKoliCount > 0 ? `${totalKoliCount.toLocaleString("tr-TR")} PAKET` : undefined}
+        />
+        <StatBox
+          label="Bugün"
+          value={todayCount.toLocaleString("tr-TR")}
+          style={m.todayStyle}
+          subLabel={showKoli && koliCount! > 0 ? `${koliCount!.toLocaleString("tr-TR")} PAKET` : undefined}
+        />
+        <StatBox label="Kalan"  value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"} style={m.remainStyle} />
       </div>
     </div>
   );
@@ -360,6 +378,8 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [utuTotal, setUtuTotal]           = useState(0);
   const [paketCount, setPaketCount]       = useState(0);
   const [gunPaketlenen, setGunPaketlenen] = useState(0);
+  const [gunKoli, setGunKoli]             = useState(0);
+  const [toplamKoli, setToplamKoli]       = useState(0);
 
   /** Takipsan'dan gelen ham hedef */
   const [takipsanTarget, setTakipsanTarget] = useState(0);
@@ -412,7 +432,10 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       setOptikCount(todayOptik);
       setUtuCount(todayUtu);
       setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
-      setGunPaketlenen(sumGunPaketlenen(data.takipsan?.packages, date).adet);
+      const gunPkt = sumGunPaketlenen(data.takipsan?.packages, date);
+      setGunPaketlenen(gunPkt.adet);
+      setGunKoli(gunPkt.paket);
+      setToplamKoli(normalizeTakipsanPackages(data.takipsan?.packages).length);
 
       const rawTarget = data.takipsan?.orderQuantity ?? data.packagingTarget;
       setTakipsanTarget(rawTarget);
@@ -748,7 +771,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         {/* ── SLAYT ── */}
         <div className={`flex min-h-0 flex-1 transition-opacity duration-300 ${transitioning ? "opacity-0" : "opacity-100"}`}>
           {slideKey === "paketleme" && (
-            <SlidePanel slideKey="paketleme" total={paketCount}  todayCount={gunPaketlenen} target={target} />
+            <SlidePanel slideKey="paketleme" total={paketCount}  todayCount={gunPaketlenen} target={target} koliCount={gunKoli} totalKoliCount={toplamKoli} />
           )}
           {slideKey === "optik" && (
             <SlidePanel slideKey="optik"     total={optikTotal}  todayCount={optikCount}    target={target} />
