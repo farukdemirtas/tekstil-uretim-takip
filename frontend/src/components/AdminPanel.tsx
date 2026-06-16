@@ -53,27 +53,10 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
   const stages = stageTotals.stages ?? [];
   const daily = stageTotals.dailySummaryStages ?? [];
 
-  // Admin panel için GENEL TAMAMLANAN: kümülatif birincil aşamaların minimumu (darboğaz)
-  // ekran1TotalCompleted günlük özet prosesleri toplamı olduğundan admin panelde doğrudan kullanmıyoruz.
-  const genelTamamlanan = useMemo(() => {
-    const cumStages = ekran1Stages ?? [];
-    if (cumStages.length > 0) return bottleneckOfStages(cumStages).value;
-    // Kümülatif yoksa ekran1TotalCompleted'e geri dön
-    return ekran1TotalCompleted ?? 0;
-  }, [ekran1Stages, ekran1TotalCompleted]);
-
-  // BUGÜN TAMAMLANAN: kümülatif darboğaz aşamasının bugünkü değeri
-  const todayProduced = useMemo(() => {
-    const cumStages = ekran1Stages ?? [];
-    if (cumStages.length > 0 && stages.length > 0) {
-      const { idx } = bottleneckOfStages(cumStages);
-      // Aynı sortOrder'ı bugünkü aşamalarda bul
-      const bottleneckOrder = cumStages[idx]?.sortOrder;
-      const todayMatch = stages.find((s) => s.sortOrder === bottleneckOrder) ?? stages[idx];
-      return todayMatch != null ? Math.floor(safeNum(todayMatch.total)) : null;
-    }
-    return ekran1TodayProduced ?? null;
-  }, [ekran1Stages, stages, ekran1TodayProduced]);
+  // Ekran1 ile aynı değerler: totalCompleted ve todayProduced doğrudan kullan.
+  // Yoksa stages minimumuna (darboğaz) geri dön.
+  const genelTamamlanan = ekran1TotalCompleted ?? bottleneckOfStages(stages).value;
+  const todayProduced   = ekran1TodayProduced ?? null;
 
   const cumByOrder = useMemo(() => {
     const map = new Map<number, number>();

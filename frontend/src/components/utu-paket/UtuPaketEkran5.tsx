@@ -195,8 +195,8 @@ function StatBox({ label, value, style, subLabel }: { label: string; value: stri
         {value}
       </p>
       {subLabel && (
-        <p className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-amber-400 px-2 py-0.5 font-black tabular-nums uppercase tracking-wide text-amber-950 shadow-sm"
-          style={{ fontSize: "clamp(1rem, 2.2vw, 1.75rem)" }}>
+        <p className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-indigo-600 px-2 py-0.5 font-black tabular-nums uppercase tracking-wide text-white shadow-sm"
+          style={{ fontSize: "clamp(0.8rem, 1.6vw, 1.25rem)" }}>
           {subLabel}
         </p>
       )}
@@ -252,13 +252,13 @@ function SlidePanel({
           label="Toplam"
           value={total.toLocaleString("tr-TR")}
           style={m.totalStyle}
-          subLabel={showKoli && totalKoliCount != null && totalKoliCount > 0 ? `${totalKoliCount.toLocaleString("tr-TR")} PAKET` : undefined}
+          subLabel={showKoli && totalKoliCount != null && totalKoliCount > 0 ? `${totalKoliCount.toLocaleString("tr-TR")} koli` : undefined}
         />
         <StatBox
           label="Bugün"
           value={todayCount.toLocaleString("tr-TR")}
           style={m.todayStyle}
-          subLabel={showKoli && koliCount! > 0 ? `${koliCount!.toLocaleString("tr-TR")} PAKET` : undefined}
+          subLabel={showKoli && koliCount! > 0 ? `${koliCount!.toLocaleString("tr-TR")} koli` : undefined}
         />
         <StatBox label="Kalan"  value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"} style={m.remainStyle} />
       </div>
