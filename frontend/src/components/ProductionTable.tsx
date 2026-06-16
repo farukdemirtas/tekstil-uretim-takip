@@ -316,15 +316,34 @@ export default function ProductionTable({
     return [...head, ...tail];
   }, [displayRows, teamOrder]);
 
+  type WorkerGroup = {
+    name: string;
+    rows: ProductionRow[];
+    rowNos: number[];
+  };
+
   let rowNo = 1;
 
   const sections = sortedSectionTeams.map((team) => {
     const teamRows = displayRows.filter((r) => r.team === team);
     if (teamRows.length === 0) return null;
-    const startNo = rowNo;
-    rowNo += teamRows.length;
-    return { team, teamRows, startNo };
-  }).filter(Boolean) as { team: string; teamRows: ProductionRow[]; startNo: number }[];
+
+    const groups: WorkerGroup[] = [];
+    const nameToIdx = new Map<string, number>();
+    for (const row of teamRows) {
+      const key = row.name.trim().toLocaleLowerCase("tr");
+      if (!nameToIdx.has(key)) {
+        nameToIdx.set(key, groups.length);
+        groups.push({ name: row.name, rows: [row], rowNos: [rowNo++] });
+      } else {
+        const g = groups[nameToIdx.get(key)!];
+        g.rows.push(row);
+        g.rowNos.push(rowNo++);
+      }
+    }
+
+    return { team, groups };
+  }).filter(Boolean) as { team: string; groups: WorkerGroup[] }[];
 
   const processOptions =
     processNames.length > 0
@@ -491,7 +510,7 @@ export default function ProductionTable({
             </tr>
           </thead>
           <tbody>
-            {sections.map(({ team, teamRows, startNo }) => (
+            {sections.map(({ team, groups }) => (
               <Fragment key={team}>
                 <tr className="bg-slate-200 dark:bg-slate-700/60">
                   <td colSpan={tableColSpan} className="px-3 py-1.5">
@@ -500,81 +519,340 @@ export default function ProductionTable({
                     </span>
                   </td>
                 </tr>
-                {teamRows.map((row, index) => {
-                  const total = sumProductionRow(row);
-                  const isEditing = editingId === row.workerId;
-                  const absent = Boolean(row.absentForDay);
-                  const effectiveRow = rowEffectiveForEfficiency(row, isEditing);
-                  const rowEffPct = workerEfficiencyPercent(effectiveRow, prosesMap, useIntradayEfficiency);
+                {groups.map((group) => {
+                  const isMulti = group.rows.length > 1;
                   return (
-                    <tr
-                      key={`${team}-${row.workerId}-${index}`}
-                      className={`border-b border-slate-100 align-middle transition-colors dark:border-slate-700/60 ${
-                        absent
-                          ? "bg-slate-50/80 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500"
-                          : "bg-white hover:bg-slate-50/80 dark:bg-transparent dark:hover:bg-slate-800/40"
-                      }`}
-                    >
-                      <td className="px-2 py-2 text-center tabular-nums text-slate-600 dark:text-slate-400">{startNo + index}</td>
-                      {/* Ad Soyad + Proses — birleşik hücre */}
-                      <td className="px-3 py-2">
-                        {isEditing ? (
-                          <div className="flex items-start gap-3">
-                            {/* Sol: isim */}
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
-                                  {row.name}
-                                </span>
-                                {efficiencyBadge(absent, rowEffPct)}
-                              </div>
-                            </div>
-                            {/* Sağ: bölüm + proses seçimi */}
-                            <div className="flex w-44 shrink-0 flex-col gap-1.5">
-                              <div className="relative">
-                                <select
-                                  value={editingTeam}
-                                  onChange={(e) => setEditingTeam(e.target.value)}
-                                  className="select-modern-compact w-full"
-                                  autoFocus
-                                >
-                                  {teamOrder.map((code) => (
-                                    <option key={code} value={code}>{teamLabel(code)}</option>
-                                  ))}
-                                </select>
-                                <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500 dark:text-slate-400">
-                                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                                </span>
-                              </div>
-                              <ProcessSelectEditor
-                                value={editingProcess}
-                                onChange={setEditingProcess}
-                                options={processOptions}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
-                                {row.name}
+                    <Fragment key={group.rows.map((r) => r.workerId).join("-")}>
+                      {/* Çok prosesli personel — isim başlık satırı */}
+                      {isMulti && (
+                        <tr className="border-b border-indigo-100/80 bg-indigo-50/60 dark:border-indigo-900/30 dark:bg-indigo-950/20">
+                          <td className="px-2 py-1.5" />
+                          <td colSpan={tableColSpan - 1} className="px-3 py-1.5">
+                            <div className="flex items-center gap-2">
+                              <svg className="shrink-0 text-indigo-400 dark:text-indigo-500" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                              </svg>
+                              <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{group.name}</span>
+                              <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                                {group.rows.length} proses
                               </span>
-                              {efficiencyBadge(absent, rowEffPct)}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {group.rows.map((row, rowIdx) => {
+                        const no = group.rowNos[rowIdx];
+                        const total = sumProductionRow(row);
+                        const isEditing = editingId === row.workerId;
+                        const absent = Boolean(row.absentForDay);
+                        const effectiveRow = rowEffectiveForEfficiency(row, isEditing);
+                        const rowEffPct = workerEfficiencyPercent(effectiveRow, prosesMap, useIntradayEfficiency);
+                        return (
+                          <tr
+                            key={`${team}-${row.workerId}-${rowIdx}`}
+                            className={`border-b border-slate-100 align-middle transition-colors dark:border-slate-700/60 ${
+                              absent
+                                ? "bg-slate-50/80 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500"
+                                : isMulti
+                                  ? "bg-indigo-50/20 hover:bg-indigo-50/50 dark:bg-indigo-950/10 dark:hover:bg-indigo-950/25"
+                                  : "bg-white hover:bg-slate-50/80 dark:bg-transparent dark:hover:bg-slate-800/40"
+                            }`}
+                          >
+                            <td className="px-2 py-2 text-center tabular-nums text-slate-600 dark:text-slate-400">{no}</td>
+                            {/* Ad Soyad + Proses — birleşik hücre */}
+                            <td className={`py-2 ${isMulti ? "pl-7 pr-3" : "px-3"}`}>
+                              {isEditing ? (
+                                <div className="flex items-start gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
+                                        {row.name}
+                                      </span>
+                                      {efficiencyBadge(absent, rowEffPct)}
+                                    </div>
+                                  </div>
+                                  <div className="flex w-44 shrink-0 flex-col gap-1.5">
+                                    <div className="relative">
+                                      <select
+                                        value={editingTeam}
+                                        onChange={(e) => setEditingTeam(e.target.value)}
+                                        className="select-modern-compact w-full"
+                                        autoFocus
+                                      >
+                                        {teamOrder.map((code) => (
+                                          <option key={code} value={code}>{teamLabel(code)}</option>
+                                        ))}
+                                      </select>
+                                      <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500 dark:text-slate-400">
+                                        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                      </span>
+                                    </div>
+                                    <ProcessSelectEditor
+                                      value={editingProcess}
+                                      onChange={setEditingProcess}
+                                      options={processOptions}
+                                    />
+                                  </div>
+                                </div>
+                              ) : isMulti ? (
+                                /* Çok prosesli: sadece proses adı (isim üstteki başlıkta) */
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="mr-0.5 text-[11px] text-slate-400 dark:text-slate-500">↳</span>
+                                    <span className={`text-sm font-medium ${absent ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-300"}`}>
+                                      {row.process}
+                                    </span>
+                                    {efficiencyBadge(absent, rowEffPct)}
+                                    {absent ? (
+                                      <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                                        Sahada yok
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {noteEditingId === row.workerId ? (
+                                    <div className="mt-1.5 flex flex-col gap-1">
+                                      <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Açıklama yazın…" rows={2}
+                                        className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                                      />
+                                      <div className="flex gap-1">
+                                        <button type="button" onClick={() => void saveNote(row.workerId)} disabled={saving}
+                                          className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                                        >Kaydet</button>
+                                        <button type="button" onClick={cancelNoteEdit} disabled={saving}
+                                          className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300"
+                                        >İptal</button>
+                                      </div>
+                                    </div>
+                                  ) : row.note ? (
+                                    <p className="mt-0.5 text-xs italic text-slate-400 dark:text-slate-500">{row.note}</p>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                /* Tek prosesli: normal görünüm */
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>
+                                      {row.name}
+                                    </span>
+                                    {efficiencyBadge(absent, rowEffPct)}
+                                    {absent ? (
+                                      <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                                        Sahada yok
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{row.process}</p>
+                                  {noteEditingId === row.workerId ? (
+                                    <div className="mt-1.5 flex flex-col gap-1">
+                                      <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Açıklama yazın…" rows={2}
+                                        className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                                      />
+                                      <div className="flex gap-1">
+                                        <button type="button" onClick={() => void saveNote(row.workerId)} disabled={saving}
+                                          className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                                        >Kaydet</button>
+                                        <button type="button" onClick={cancelNoteEdit} disabled={saving}
+                                          className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300"
+                                        >İptal</button>
+                                      </div>
+                                    </div>
+                                  ) : row.note ? (
+                                    <p className="mt-0.5 text-xs italic text-slate-400 dark:text-slate-500">{row.note}</p>
+                                  ) : null}
+                                </div>
+                              )}
+                            </td>
+                            {timeFields.map(({ key }) => (
+                              <td key={key} className="px-1.5 py-1.5 text-center">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  disabled={absent}
+                                  aria-disabled={absent}
+                                  title={absent ? "Sahada yok — önce Bugün var ile açın" : undefined}
+                                  value={cellInputValue(row[key as keyof ProductionRow] as number)}
+                                  onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
+                                  className={`w-full rounded px-1 py-1.5 text-center text-[14px] font-semibold tabular-nums outline-none transition ${
+                                    absent
+                                      ? "cursor-not-allowed border-0 bg-transparent text-slate-300 dark:text-slate-600"
+                                      : "border border-slate-200 bg-white focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-teal-500"
+                                  }`}
+                                />
+                              </td>
+                            ))}
+                            <td className={`px-1.5 py-2 text-center text-[15px] tabular-nums font-bold ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-800 dark:text-slate-100"}`}>{total}</td>
+                            {(() => {
+                              const prosesKey = makeProsesKey(row.team, row.process);
+                              const result = calcFromDk(prosesMap[prosesKey] ?? "");
+                              return (
+                                <>
+                                  <td className="px-2 py-2 text-center tabular-nums">
+                                    {result ? <span className="font-semibold text-amber-700 dark:text-amber-400">{prosesMap[prosesKey]}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                  </td>
+                                  <td className="px-2 py-2 text-center tabular-nums">
+                                    {result ? <span className="font-semibold text-sky-700 dark:text-sky-400">{result.saatlik}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                  </td>
+                                  <td className="px-2 py-2 text-center tabular-nums">
+                                    {result ? <span className="font-semibold text-emerald-700 dark:text-emerald-400">{result.gunluk}</span> : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                                  </td>
+                                </>
+                              );
+                            })()}
+                            <td className="px-2 py-2 text-center">
+                              {isEditing ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <button onClick={() => void saveEdit(row.workerId)} disabled={saving}
+                                    className="rounded border border-emerald-400 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                                  >Kaydet</button>
+                                  <button onClick={cancelEdit} disabled={saving}
+                                    className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
+                                  >İptal</button>
+                                </div>
+                              ) : (
+                                <div className="relative flex justify-center">
+                                  <button
+                                    type="button"
+                                    title="İşlemler"
+                                    onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
+                                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                                      <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+                                    </svg>
+                                  </button>
+                                  {openMenuId === row.workerId && (
+                                    <div className="absolute right-0 top-full z-50 mt-1 min-w-[148px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                                      <button type="button" disabled={absent} onClick={() => { setOpenMenuId(null); startEdit(row); }}
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                                      >
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
+                                        Taşı
+                                      </button>
+                                      <button type="button" onClick={() => { setOpenMenuId(null); setDkEditTeam(row.team); setDkEditProcess(row.process); setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? ""); }}
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                                      >
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                        Dk Adet Düzenle
+                                      </button>
+                                      {onSaveNote ? (
+                                        <button type="button" onClick={() => { setOpenMenuId(null); startNoteEdit(row); }}
+                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                                        >
+                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+                                          {row.note ? "Açıklamayı düzenle" : "Açıklama ekle"}
+                                        </button>
+                                      ) : null}
+                                      {absent && onUnhideWorkerForDay ? (
+                                        <button type="button" onClick={() => { setOpenMenuId(null); onUnhideWorkerForDay(row.workerId, row.name); }}
+                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40"
+                                        >
+                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                          Bugün var
+                                        </button>
+                                      ) : null}
+                                      {!absent && onHideWorkerForDay ? (
+                                        <button type="button" onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
+                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-orange-700 transition hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
+                                        >
+                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                                          Bugün yok
+                                        </button>
+                                      ) : null}
+                                      {canDelete ? (
+                                        <>
+                                          <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                                          <button type="button" onClick={() => { setOpenMenuId(null); onDeleteWorker(row.workerId, row.name); }}
+                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                          >
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                            Sil
+                                          </button>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="divide-y divide-slate-200 dark:divide-slate-700 md:hidden">
+        {sections.map(({ team, groups }) => (
+          <div key={team}>
+            <div className="bg-slate-200 px-4 py-1.5 dark:bg-slate-700/60">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                {teamLabel(team)}
+              </span>
+            </div>
+
+            {groups.map((group) => {
+              const isMulti = group.rows.length > 1;
+              return (
+                <div key={group.rows.map((r) => r.workerId).join("-")}>
+                  {/* Çok prosesli — mobil isim başlık kartı */}
+                  {isMulti && (
+                    <div className="flex items-center gap-2 border-b border-indigo-100/80 bg-indigo-50/70 px-4 py-2 dark:border-indigo-900/30 dark:bg-indigo-950/25">
+                      <svg className="shrink-0 text-indigo-400 dark:text-indigo-500" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                      </svg>
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{group.name}</span>
+                      <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                        {group.rows.length} proses
+                      </span>
+                    </div>
+                  )}
+
+                  {group.rows.map((row, rowIdx) => {
+                    const no = group.rowNos[rowIdx];
+                    const total = sumProductionRow(row);
+                    const isEditing = editingId === row.workerId;
+                    const absent = Boolean(row.absentForDay);
+                    const effectiveMob = rowEffectiveForEfficiency(row, isEditing);
+                    const rowEffPctMob = workerEfficiencyPercent(effectiveMob, prosesMap, useIntradayEfficiency);
+
+                    return (
+                      <div
+                        key={`${team}-${row.workerId}-${rowIdx}`}
+                        className={`p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60 ${
+                          absent ? "!bg-slate-100/90 dark:!bg-slate-900/70" : ""
+                        } ${isMulti ? "pl-5" : ""}`}
+                      >
+                        <div className="mb-2 flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                              <span className="text-xs text-slate-400">{no}.</span>
+                              {isMulti ? (
+                                /* Çok prosesli: sadece proses adını göster */
+                                <>
+                                  <span className="text-[11px] text-slate-400 dark:text-slate-500">↳</span>
+                                  <span className={`text-sm font-medium ${absent ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-300"}`}>{row.process}</span>
+                                </>
+                              ) : (
+                                <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>{row.name}</span>
+                              )}
+                              {efficiencyBadge(absent, rowEffPctMob)}
                               {absent ? (
-                                <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                                <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
                                   Sahada yok
                                 </span>
                               ) : null}
                             </div>
-                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{row.process}</p>
+                            {!isMulti && !isEditing && (
+                              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{row.process}</p>
+                            )}
                             {noteEditingId === row.workerId ? (
                               <div className="mt-1.5 flex flex-col gap-1">
-                                <textarea
-                                  autoFocus
-                                  value={noteText}
-                                  onChange={(e) => setNoteText(e.target.value)}
-                                  placeholder="Açıklama yazın…"
-                                  rows={2}
+                                <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Açıklama yazın…" rows={2}
                                   className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                                 />
                                 <div className="flex gap-1">
@@ -586,401 +864,150 @@ export default function ProductionTable({
                                   >İptal</button>
                                 </div>
                               </div>
-                            ) : row.note ? (
+                            ) : row.note && !isEditing ? (
                               <p className="mt-0.5 text-xs italic text-slate-400 dark:text-slate-500">{row.note}</p>
                             ) : null}
-                          </div>
-                        )}
-                      </td>
-                      {timeFields.map(({ key }) => (
-                        <td key={key} className="px-1.5 py-1.5 text-center">
-                          <input
-                            type="number"
-                            min={0}
-                            disabled={absent}
-                            aria-disabled={absent}
-                            title={absent ? "Sahada yok — önce Bugün var ile açın" : undefined}
-                            value={cellInputValue(row[key as keyof ProductionRow] as number)}
-                            onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
-                            className={`w-full rounded px-1 py-1.5 text-center text-[14px] font-semibold tabular-nums outline-none transition ${
-                              absent
-                                ? "cursor-not-allowed border-0 bg-transparent text-slate-300 dark:text-slate-600"
-                                : "border border-slate-200 bg-white focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-teal-500"
-                            }`}
-                          />
-                        </td>
-                      ))}
-                      <td className={`px-1.5 py-2 text-center text-[15px] tabular-nums font-bold ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-800 dark:text-slate-100"}`}>{total}</td>
-                      {(() => {
-                        const prosesKey = makeProsesKey(row.team, row.process);
-                        const result = calcFromDk(prosesMap[prosesKey] ?? "");
-                        return (
-                          <>
-                            <td className="px-2 py-2 text-center tabular-nums">
-                              {result ? (
-                                <span className="font-semibold text-amber-700 dark:text-amber-400">{prosesMap[prosesKey]}</span>
-                              ) : (
-                                <span className="text-slate-300 dark:text-slate-600">—</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-2 text-center tabular-nums">
-                              {result ? (
-                                <span className="font-semibold text-sky-700 dark:text-sky-400">{result.saatlik}</span>
-                              ) : (
-                                <span className="text-slate-300 dark:text-slate-600">—</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-2 text-center tabular-nums">
-                              {result ? (
-                                <span className="font-semibold text-emerald-700 dark:text-emerald-400">{result.gunluk}</span>
-                              ) : (
-                                <span className="text-slate-300 dark:text-slate-600">—</span>
-                              )}
-                            </td>
-                          </>
-                        );
-                      })()}
-                      <td className="px-2 py-2 text-center">
-                        {isEditing ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => void saveEdit(row.workerId)}
-                              disabled={saving}
-                              className="rounded border border-emerald-400 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                            >Kaydet</button>
-                            <button
-                              onClick={cancelEdit}
-                              disabled={saving}
-                              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
-                            >İptal</button>
-                          </div>
-                        ) : (
-                          <div className="relative flex justify-center">
-                            <button
-                              type="button"
-                              title="İşlemler"
-                              onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
-                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                            >
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                                <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
-                              </svg>
-                            </button>
-                            {openMenuId === row.workerId && (
-                              <div className="absolute right-0 top-full z-50 mt-1 min-w-[148px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                                <button
-                                  type="button"
-                                  disabled={absent}
-                                  onClick={() => { setOpenMenuId(null); startEdit(row); }}
-                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-950/40"
-                                >
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
-                                  Taşı
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => { setOpenMenuId(null); setDkEditTeam(row.team); setDkEditProcess(row.process); setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? ""); }}
-                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
-                                >
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                  Dk Adet Düzenle
-                                </button>
-                                {onSaveNote ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => { setOpenMenuId(null); startNoteEdit(row); }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
-                                  >
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
-                                    {row.note ? "Açıklamayı düzenle" : "Açıklama ekle"}
-                                  </button>
-                                ) : null}
-                                {absent && onUnhideWorkerForDay ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => { setOpenMenuId(null); onUnhideWorkerForDay(row.workerId, row.name); }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40"
-                                  >
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                    Bugün var
-                                  </button>
-                                ) : null}
-                                {!absent && onHideWorkerForDay ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-orange-700 transition hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
-                                  >
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                                    Bugün yok
-                                  </button>
-                                ) : null}
-                                {canDelete ? (
-                                  <>
-                                    <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
-                                    <button
-                                      type="button"
-                                      onClick={() => { setOpenMenuId(null); onDeleteWorker(row.workerId, row.name); }}
-                                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                                    >
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                      Sil
-                                    </button>
-                                  </>
-                                ) : null}
+                            {isEditing ? (
+                              <div className="mt-2 flex flex-col gap-1.5">
+                                <div className="relative w-full">
+                                  <select value={editingTeam} onChange={(e) => setEditingTeam(e.target.value)} className="select-modern-compact w-full max-w-none">
+                                    {teamOrder.map((code) => (
+                                      <option key={code} value={code}>{teamLabel(code)}</option>
+                                    ))}
+                                  </select>
+                                  <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500 dark:text-slate-400">
+                                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                  </span>
+                                </div>
+                                <ProcessSelectEditor value={editingProcess} onChange={setEditingProcess} options={processOptions} className="max-w-none" />
                               </div>
-                            )}
+                            ) : null}
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="divide-y divide-slate-200 dark:divide-slate-700 md:hidden">
-        {sections.map(({ team, teamRows, startNo }) => (
-          <div key={team}>
-            <div className="bg-slate-200 px-4 py-1.5 dark:bg-slate-700/60">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                {teamLabel(team)}
-              </span>
-            </div>
-
-            {teamRows.map((row, index) => {
-              const total = sumProductionRow(row);
-              const isEditing = editingId === row.workerId;
-              const absent = Boolean(row.absentForDay);
-              const effectiveMob = rowEffectiveForEfficiency(row, isEditing);
-              const rowEffPctMob = workerEfficiencyPercent(effectiveMob, prosesMap, useIntradayEfficiency);
-
-              return (
-                <div
-                  key={`${team}-${row.workerId}-${index}`}
-                  className={`p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60 ${
-                    absent ? "!bg-slate-100/90 dark:!bg-slate-900/70" : ""
-                  }`}
-                >
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                        <span className="text-xs text-slate-400">{startNo + index}.</span>
-                        <span className={`font-medium ${absent ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"}`}>{row.name}</span>
-                        {efficiencyBadge(absent, rowEffPctMob)}
-                        {absent ? (
-                          <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                            Sahada yok
-                          </span>
-                        ) : null}
-                      </div>
-                      {noteEditingId === row.workerId ? (
-                        <div className="mt-1.5 flex flex-col gap-1">
-                          <textarea
-                            autoFocus
-                            value={noteText}
-                            onChange={(e) => setNoteText(e.target.value)}
-                            placeholder="Açıklama yazın…"
-                            rows={2}
-                            className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-                          />
-                          <div className="flex gap-1">
-                            <button
-                              type="button"
-                              onClick={() => void saveNote(row.workerId)}
-                              disabled={saving}
-                              className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                            >Kaydet</button>
-                            <button
-                              type="button"
-                              onClick={cancelNoteEdit}
-                              disabled={saving}
-                              className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300"
-                            >İptal</button>
+                          <div className="shrink-0 text-right">
+                            <span className="text-xs text-slate-500">Toplam</span>
+                            <p className="text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{total}</p>
                           </div>
                         </div>
-                      ) : row.note && !isEditing ? (
-                        <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500 italic">{row.note}</p>
-                      ) : null}
-                      {isEditing ? (
-                        <div className="mt-2 flex flex-col gap-1.5">
-                          <div className="relative w-full">
-                            <select
-                              value={editingTeam}
-                              onChange={(e) => setEditingTeam(e.target.value)}
-                              className="select-modern-compact w-full max-w-none"
-                            >
-                              {teamOrder.map((code) => (
-                                <option key={code} value={code}>
-                                  {teamLabel(code)}
-                                </option>
-                              ))}
-                            </select>
-                            <span className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-center text-slate-500 dark:text-slate-400">
-                              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden><path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                            </span>
-                          </div>
-                          <ProcessSelectEditor
-                            value={editingProcess}
-                            onChange={setEditingProcess}
-                            options={processOptions}
-                            className="max-w-none"
-                          />
-                        </div>
-                      ) : (
-                        <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{row.process}</p>
-                      )}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <span className="text-xs text-slate-500">Toplam</span>
-                      <p className="text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{total}</p>
-                    </div>
-                  </div>
 
-                  <div className={`mb-2 grid gap-2 ${timeColCount > 4 ? "grid-cols-3" : "grid-cols-2"}`}>
-                    {timeFields.map(({ key, label }) => (
-                      <div key={key} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-600 dark:bg-slate-700">
-                        <span className={`shrink-0 font-medium text-slate-500 dark:text-slate-400 ${timeColCount > 4 ? "w-[2.75rem] text-[10px]" : "w-10 text-xs"}`}>{label}</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          disabled={absent}
-                          value={cellInputValue(row[key as keyof ProductionRow] as number)}
-                          onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
-                          className={`min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none ${
-                            absent
-                              ? "cursor-not-allowed text-slate-400 dark:text-slate-500"
-                              : "focus:text-blue-600 dark:focus:text-blue-300"
-                          }`}
-                        />
-                      </div>
-                    ))}
-                  </div>
+                        <div className={`mb-2 grid gap-2 ${timeColCount > 4 ? "grid-cols-3" : "grid-cols-2"}`}>
+                          {timeFields.map(({ key, label }) => (
+                            <div key={key} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-600 dark:bg-slate-700">
+                              <span className={`shrink-0 font-medium text-slate-500 dark:text-slate-400 ${timeColCount > 4 ? "w-[2.75rem] text-[10px]" : "w-10 text-xs"}`}>{label}</span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                disabled={absent}
+                                value={cellInputValue(row[key as keyof ProductionRow] as number)}
+                                onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
+                                className={`min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none ${
+                                  absent ? "cursor-not-allowed text-slate-400 dark:text-slate-500" : "focus:text-blue-600 dark:focus:text-blue-300"
+                                }`}
+                              />
+                            </div>
+                          ))}
+                        </div>
 
-                  {(() => {
-                    const mobileProsesKey = makeProsesKey(row.team, row.process);
-                    const result = calcFromDk(prosesMap[mobileProsesKey] ?? "");
-                    return (
-                      <div className="mb-2 flex items-center gap-2">
-                        <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-700/60 dark:bg-amber-950/30">
-                          <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Dk</span>
-                          <span className="text-sm font-bold text-amber-800 dark:text-amber-200">
-                            {result ? prosesMap[mobileProsesKey] : "—"}
-                          </span>
-                        </div>
-                        <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800/50 dark:bg-sky-950/30">
-                          <span className="text-xs font-medium text-sky-700 dark:text-sky-300">Saat</span>
-                          <span className="text-sm font-bold text-sky-800 dark:text-sky-300">
-                            {result ? result.saatlik : "—"}
-                          </span>
-                        </div>
-                        <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800/50 dark:bg-emerald-950/30">
-                          <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Günlük</span>
-                          <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300">
-                            {result ? result.gunluk : "—"}
-                          </span>
+                        {(() => {
+                          const mobileProsesKey = makeProsesKey(row.team, row.process);
+                          const result = calcFromDk(prosesMap[mobileProsesKey] ?? "");
+                          return (
+                            <div className="mb-2 flex items-center gap-2">
+                              <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-700/60 dark:bg-amber-950/30">
+                                <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Dk</span>
+                                <span className="text-sm font-bold text-amber-800 dark:text-amber-200">{result ? prosesMap[mobileProsesKey] : "—"}</span>
+                              </div>
+                              <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800/50 dark:bg-sky-950/30">
+                                <span className="text-xs font-medium text-sky-700 dark:text-sky-300">Saat</span>
+                                <span className="text-sm font-bold text-sky-800 dark:text-sky-300">{result ? result.saatlik : "—"}</span>
+                              </div>
+                              <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800/50 dark:bg-emerald-950/30">
+                                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Günlük</span>
+                                <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{result ? result.gunluk : "—"}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        <div className="flex gap-2">
+                          {isEditing ? (
+                            <>
+                              <button onClick={() => void saveEdit(row.workerId)} disabled={saving}
+                                className="flex-1 rounded-lg border border-emerald-400 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+                              >Kaydet</button>
+                              <button onClick={cancelEdit} disabled={saving}
+                                className="flex-1 rounded-lg border border-slate-300 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
+                              >İptal</button>
+                            </>
+                          ) : (
+                            <div className="relative w-full">
+                              <button
+                                type="button"
+                                onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
+                                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                                  <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
+                                </svg>
+                                İşlemler
+                              </button>
+                              {openMenuId === row.workerId && (
+                                <div className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                                  <button type="button" disabled={absent} onClick={() => { setOpenMenuId(null); startEdit(row); }}
+                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
+                                    Taşı
+                                  </button>
+                                  <button type="button" onClick={() => { setOpenMenuId(null); setDkEditTeam(row.team); setDkEditProcess(row.process); setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? ""); }}
+                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                    Dk Adet Düzenle
+                                  </button>
+                                  {onSaveNote ? (
+                                    <button type="button" onClick={() => { setOpenMenuId(null); startNoteEdit(row); }}
+                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+                                      {row.note ? "Açıklamayı düzenle" : "Açıklama ekle"}
+                                    </button>
+                                  ) : null}
+                                  {absent && onUnhideWorkerForDay ? (
+                                    <button type="button" onClick={() => { setOpenMenuId(null); onUnhideWorkerForDay(row.workerId, row.name); }}
+                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40"
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                      Bugün var
+                                    </button>
+                                  ) : null}
+                                  {!absent && onHideWorkerForDay ? (
+                                    <button type="button" onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
+                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-orange-700 transition hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                                      Bugün yok
+                                    </button>
+                                  ) : null}
+                                  {canDelete ? (
+                                    <>
+                                      <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                                      <button type="button" onClick={() => { setOpenMenuId(null); onDeleteWorker(row.workerId, row.name); }}
+                                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                                      >
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                        Sil
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
-                  })()}
-
-                  <div className="flex gap-2">
-                    {isEditing ? (
-                      <>
-                        <button
-                          onClick={() => void saveEdit(row.workerId)}
-                          disabled={saving}
-                          className="flex-1 rounded-lg border border-emerald-400 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                        >Kaydet</button>
-                        <button
-                          onClick={cancelEdit}
-                          disabled={saving}
-                          className="flex-1 rounded-lg border border-slate-300 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
-                        >İptal</button>
-                      </>
-                    ) : (
-                      <div className="relative w-full">
-                        <button
-                          type="button"
-                          onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
-                          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                            <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
-                          </svg>
-                          İşlemler
-                        </button>
-                        {openMenuId === row.workerId && (
-                          <div className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                            <button
-                              type="button"
-                              disabled={absent}
-                              onClick={() => { setOpenMenuId(null); startEdit(row); }}
-                              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-950/40"
-                            >
-                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
-                              Taşı
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setOpenMenuId(null); setDkEditTeam(row.team); setDkEditProcess(row.process); setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? ""); }}
-                              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
-                            >
-                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                              Dk Adet Düzenle
-                            </button>
-                            {onSaveNote ? (
-                              <button
-                                type="button"
-                                onClick={() => { setOpenMenuId(null); startNoteEdit(row); }}
-                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
-                              >
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
-                                {row.note ? "Açıklamayı düzenle" : "Açıklama ekle"}
-                              </button>
-                            ) : null}
-                            {absent && onUnhideWorkerForDay ? (
-                              <button
-                                type="button"
-                                onClick={() => { setOpenMenuId(null); onUnhideWorkerForDay(row.workerId, row.name); }}
-                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40"
-                              >
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                Bugün var
-                              </button>
-                            ) : null}
-                            {!absent && onHideWorkerForDay ? (
-                              <button
-                                type="button"
-                                onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
-                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-orange-700 transition hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
-                              >
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                                Bugün yok
-                              </button>
-                            ) : null}
-                            {canDelete ? (
-                              <>
-                                <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
-                                <button
-                                  type="button"
-                                  onClick={() => { setOpenMenuId(null); onDeleteWorker(row.workerId, row.name); }}
-                                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                                >
-                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                  Sil
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  })}
                 </div>
               );
             })}

@@ -109,8 +109,8 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
           </div>
         </div>
 
-        {/* Bölüm aşamaları */}
-        {stages.length > 0 && (
+        {/* Bölüm aşamaları — birincil model (teal) + ek model (violet) aynı grid'de */}
+        {(stages.length > 0 || (secondaryStages && secondaryStages.length > 0)) && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {stages.map((s, i) => {
               const cumTotal = cumByOrder.get(s.sortOrder);
@@ -134,6 +134,30 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
                 </div>
               );
             })}
+            {/* Ek model aşamaları — aynı grid, violet renk + "2" rozeti */}
+            {secondaryStages && secondaryStages.map((s, i) => (
+              <div
+                key={`sec-${i}`}
+                className="relative rounded-xl bg-violet-50/70 px-3 py-3 shadow-sm ring-1 ring-violet-300/70 dark:bg-violet-950/25 dark:ring-violet-700/50"
+              >
+                <div className="absolute inset-y-0 left-0 w-[3px] rounded-l-xl bg-violet-500 dark:bg-violet-400" />
+                {/* Ek model rozeti */}
+                <span className="absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 text-[8px] font-black text-white">
+                  2
+                </span>
+                <p className="line-clamp-2 pr-5 text-xs font-bold leading-snug text-slate-700 dark:text-slate-200">
+                  {s.processName ? `${s.teamLabel} · ${s.processName}` : s.teamLabel}
+                </p>
+                <p className="mt-1.5 text-2xl font-black tabular-nums text-violet-600 dark:text-violet-300">
+                  {safeNum(s.total).toLocaleString("tr-TR")}
+                </p>
+                {secondaryModelLabel && (
+                  <p className="mt-0.5 truncate text-[10px] font-semibold text-violet-400/80 dark:text-violet-500/70">
+                    {secondaryModelLabel}
+                  </p>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
@@ -169,41 +193,25 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
           <p className="py-2 text-center text-xs text-slate-400 dark:text-slate-500">Veri bekleniyor…</p>
         )}
 
-        {/* İkinci model aşamaları — ayrı bölüm */}
-        {secondaryStages && secondaryStages.length > 0 && (
-          <div className="rounded-xl border border-violet-200 bg-violet-50/60 px-3 py-3 dark:border-violet-800/40 dark:bg-violet-950/20">
-            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-violet-700 dark:text-violet-400">
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 text-[8px] font-black text-white">2</span>
-              {secondaryModelLabel ? secondaryModelLabel : "Ek Model"}
-            </p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {secondaryStages.map((s, i) => (
-                <div
-                  key={`sec-${i}`}
-                  className="relative rounded-xl bg-violet-100/80 px-3 py-3 shadow-sm ring-1 ring-violet-300/70 dark:bg-violet-900/30 dark:ring-violet-700/50"
-                >
-                  <div className="absolute inset-y-0 left-0 w-[3px] rounded-l-xl bg-violet-500 dark:bg-violet-400" />
-                  <p className="line-clamp-2 text-xs font-bold leading-snug text-slate-700 dark:text-slate-200">
-                    {s.processName ? `${s.teamLabel} · ${s.processName}` : s.teamLabel}
-                  </p>
-                  <p className="mt-1.5 text-2xl font-black tabular-nums text-violet-700 dark:text-violet-300">
-                    {safeNum(s.total).toLocaleString("tr-TR")}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Renk açıklaması */}
-        {(stages.length > 0 || daily.length > 0) && (
-          <div className="flex items-center gap-4 pt-1">
-            <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
-              <span className="h-2 w-2 rounded-full bg-teal-400" /> Bölüm aşaması
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
-              <span className="h-2 w-2 rounded-full bg-violet-400" /> Özet proses
-            </span>
+        {(stages.length > 0 || daily.length > 0 || secondaryStages?.length) && (
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            {stages.length > 0 && (
+              <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+                <span className="h-2 w-2 rounded-full bg-teal-400" /> Bölüm aşaması
+              </span>
+            )}
+            {daily.length > 0 && (
+              <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+                <span className="h-2 w-2 rounded-full bg-violet-400" /> Özet proses
+              </span>
+            )}
+            {secondaryStages && secondaryStages.length > 0 && (
+              <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+                <span className="flex h-3 w-3 items-center justify-center rounded-full bg-violet-500 text-[7px] font-black text-white">2</span>
+                {secondaryModelLabel ?? "Ek model"}
+              </span>
+            )}
           </div>
         )}
 

@@ -1445,13 +1445,22 @@ export async function getEkran1GenelIlerleme(date, modelId) {
 
   const cStages = cumulative.stages ?? [];
   const tStages = todayRes.stages ?? [];
+  const cDailyStages = cumulative.dailySummaryStages ?? [];
+  const tDailyStages = todayRes.dailySummaryStages ?? [];
+
   const bottleneckIdx = findBottleneckStageIndex(cStages);
 
-  const totalCompleted = cStages.length
-    ? Math.max(0, Math.floor(Number(cStages[bottleneckIdx]?.total) || 0))
-    : 0;
-  const todayProduced =
-    tStages.length && bottleneckIdx < tStages.length
+  // Günlük özet prosesleri yapılandırılmışsa bunların TOPLAMINI "biten" sayar;
+  // yoksa eski yaklaşım: bölüm aşamalarının minimumu (darboğaz) kullanılır.
+  const totalCompleted = cDailyStages.length
+    ? Math.max(0, Math.floor(cDailyStages.reduce((s, r) => s + (Number(r.total) || 0), 0)))
+    : cStages.length
+      ? Math.max(0, Math.floor(Number(cStages[bottleneckIdx]?.total) || 0))
+      : 0;
+
+  const todayProduced = tDailyStages.length
+    ? Math.max(0, Math.floor(tDailyStages.reduce((s, r) => s + (Number(r.total) || 0), 0)))
+    : tStages.length && bottleneckIdx < tStages.length
       ? Math.max(0, Math.floor(Number(tStages[bottleneckIdx]?.total) || 0))
       : 0;
 
@@ -1466,7 +1475,7 @@ export async function getEkran1GenelIlerleme(date, modelId) {
     dataStartDate: rangeStart,
     /** Alt proses barları: kümülatif (biten) + bugünkü üretim */
     stages: cStages,
-    dailySummaryStages: cumulative.dailySummaryStages ?? [],
+    dailySummaryStages: cDailyStages,
     todayStages: tStages,
     affectingStage: aff
       ? {

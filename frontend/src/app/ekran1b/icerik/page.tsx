@@ -11,6 +11,7 @@ import {
   getSecondaryDayMeta,
   getSecondarySimpleTotals,
   getEkran5Target,
+  setEkran5Target,
   getEkranRefreshSignal,
   setAuthToken,
   type SecondaryDayMeta,
@@ -28,6 +29,93 @@ const STAGE_COLORS = [
   { bar: "from-teal-500 via-cyan-500 to-sky-500", text: "text-teal-700", bg: "bg-teal-50", border: "border-teal-300", pct: "text-teal-800" },
   { bar: "from-rose-500 via-pink-500 to-fuchsia-500", text: "text-rose-700", bg: "bg-rose-50", border: "border-rose-300", pct: "text-rose-800" },
 ];
+
+function HedefModal({
+  apiTarget,
+  manualTarget,
+  productLabel,
+  onSave,
+  onClear,
+  onClose,
+}: {
+  apiTarget: number;
+  manualTarget: number | null;
+  productLabel: string;
+  onSave: (v: number) => void | Promise<void>;
+  onClear: () => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [input, setInput] = useState(
+    manualTarget != null ? String(manualTarget) : apiTarget > 0 ? String(apiTarget) : ""
+  );
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  function handleSave() {
+    const v = parseInt(input.replace(/\D/g, ""), 10);
+    if (!Number.isFinite(v) || v <= 0) return;
+    void onSave(v);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-black text-slate-900">Hedef Ayarla</h3>
+          <button type="button" onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {productLabel ? (
+          <p className="mb-3 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+            {productLabel}
+          </p>
+        ) : null}
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+          <span className={`h-2 w-2 rounded-full ${manualTarget != null ? "bg-amber-400" : "bg-emerald-400"}`} />
+          <span className="font-semibold text-slate-600">
+            {manualTarget != null
+              ? `El ile: ${manualTarget.toLocaleString("tr-TR")}`
+              : apiTarget > 0
+                ? `Modelden: ${apiTarget.toLocaleString("tr-TR")}`
+                : "Model: veri yok"}
+          </span>
+        </div>
+        <div className="mb-4">
+          <label className="mb-1.5 block text-xs font-bold text-slate-700">El ile hedef (adet)</label>
+          <input
+            ref={inputRef}
+            type="number"
+            min={1}
+            step={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") onClose(); }}
+            className="w-full rounded-xl border-2 border-slate-300 px-4 py-2.5 text-center text-xl font-black tabular-nums text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-400/30"
+            placeholder="Örn: 23500"
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <button type="button" onClick={handleSave}
+            className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-violet-700">
+            Kaydet
+          </button>
+          <button type="button" onClick={() => void onClear()}
+            className="rounded-xl border-2 border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100">
+            Modelden al {apiTarget > 0 ? `(${apiTarget.toLocaleString("tr-TR")})` : ""}
+          </button>
+          <button type="button" onClick={onClose}
+            className="rounded-xl border-2 border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+            İptal
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function formatDateTr(iso: string) {
   try {
@@ -47,7 +135,9 @@ export default function Ekran1BIcerikPage() {
   const [hasToken, setHasToken] = useState(false);
   const [dayMeta, setDayMeta] = useState<SecondaryDayMeta>({ secondaryModelId: null, modelInfo: null });
   const [stages, setStages] = useState<{ sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number }[]>([]);
-  const [target, setTarget] = useState<number>(0);
+  const [manualTarget, setManualTarget] = useState<number | null>(null);
+  const [apiTarget, setApiTarget] = useState<number>(0);
+  const [hedefOpen, setHedefOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
@@ -55,6 +145,10 @@ export default function Ekran1BIcerikPage() {
 
   const today = todayWorkdayIsoTurkey();
 
+  const target = useMemo(
+    () => manualTarget != null && manualTarget > 0 ? manualTarget : apiTarget,
+    [manualTarget, apiTarget]
+  );
   const grandTotal = useMemo(() => stages.reduce((s, r) => s + r.total, 0), [stages]);
   const minTotal = useMemo(() => stages.length > 0 ? Math.min(...stages.map((s) => s.total)) : 0, [stages]);
   const genelPercent = useMemo(() => calcPercent(minTotal, target), [minTotal, target]);
@@ -76,14 +170,9 @@ export default function Ekran1BIcerikPage() {
         getEkran5Target(mid).catch(() => null),
       ]);
       if (totalsRes) setStages(totalsRes.stages);
-      // Öncelik: el ile hedef (ekran5Target) → model hedefi (targetQuantity) → 0
-      const resolvedTarget =
-        (targetRes?.ekran5Target != null && targetRes.ekran5Target > 0)
-          ? targetRes.ekran5Target
-          : (targetRes?.targetQuantity != null && targetRes.targetQuantity > 0)
-            ? targetRes.targetQuantity
-            : 0;
-      setTarget(resolvedTarget);
+      // manualTarget = el ile ayarlanan (ekran5Target), apiTarget = modelin base hedefi (targetQuantity)
+      setManualTarget(targetRes?.ekran5Target != null && targetRes.ekran5Target > 0 ? targetRes.ekran5Target : null);
+      setApiTarget(targetRes?.targetQuantity != null && targetRes.targetQuantity > 0 ? targetRes.targetQuantity : 0);
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
     } catch {
       setError("Veri alınamadı");
@@ -137,6 +226,20 @@ export default function Ekran1BIcerikPage() {
     return () => clearInterval(id);
   }, [hasToken]);
 
+  async function handleHedefSave(v: number) {
+    const mid = dayMeta.secondaryModelId;
+    if (mid) await setEkran5Target(mid, v).catch(() => {});
+    setManualTarget(v);
+    setHedefOpen(false);
+  }
+
+  async function handleHedefClear() {
+    const mid = dayMeta.secondaryModelId;
+    if (mid) await setEkran5Target(mid, null).catch(() => {});
+    setManualTarget(null);
+    setHedefOpen(false);
+  }
+
   function toggleFullscreen() {
     if (document.fullscreenElement) void document.exitFullscreen();
     else {
@@ -165,6 +268,16 @@ export default function Ekran1BIcerikPage() {
       ref={containerRef}
       className="fixed inset-0 flex flex-col overflow-hidden bg-slate-100 text-neutral-900 [color-scheme:light]"
     >
+      {hedefOpen && (
+        <HedefModal
+          apiTarget={apiTarget}
+          manualTarget={manualTarget}
+          productLabel={productLabel ?? ""}
+          onSave={handleHedefSave}
+          onClear={handleHedefClear}
+          onClose={() => setHedefOpen(false)}
+        />
+      )}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 sm:gap-4 sm:px-6 sm:py-4 md:gap-5 md:px-8 md:py-5">
@@ -277,12 +390,23 @@ export default function Ekran1BIcerikPage() {
                   className="mt-2 grid grid-cols-3 gap-2.5 sm:gap-3 md:mt-3 md:gap-4"
                   style={{ height: "clamp(9rem, 22vh, 26rem)", minHeight: 0 }}
                 >
-                  <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-slate-300 bg-white px-1 shadow-md">
-                    <p className="shrink-0 font-black uppercase tracking-[0.12em] text-slate-500" style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>Hedef</p>
+                  <button
+                    type="button"
+                    onClick={() => setHedefOpen(true)}
+                    className="flex h-full min-w-0 w-full flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-slate-300 bg-white px-1 shadow-md transition hover:border-violet-400 hover:bg-violet-50 active:scale-95"
+                    title="Hedefi düzenle"
+                  >
+                    <div className="flex items-center gap-1 shrink-0">
+                      <p className="font-black uppercase tracking-[0.12em] text-slate-500" style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>Hedef</p>
+                      <span className={`h-1.5 w-1.5 rounded-full ${manualTarget != null ? "bg-amber-400" : "bg-emerald-400"}`} />
+                    </div>
                     <p className="w-full text-center font-black tabular-nums leading-none text-slate-900" style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
                       {target > 0 ? target.toLocaleString("tr-TR") : "—"}
                     </p>
-                  </div>
+                    {manualTarget != null && (
+                      <p className="shrink-0 text-center font-semibold text-amber-600" style={{ fontSize: "clamp(0.5rem, 0.9vw, 0.75rem)" }}>El ile</p>
+                    )}
+                  </button>
                   <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-violet-400 bg-violet-50 px-1 shadow-md">
                     <p className="shrink-0 font-black uppercase tracking-[0.12em] text-violet-700" style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>BİTEN</p>
                     <p className="w-full text-center font-black tabular-nums leading-none text-violet-800" style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
