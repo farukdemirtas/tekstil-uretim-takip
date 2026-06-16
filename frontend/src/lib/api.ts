@@ -617,16 +617,18 @@ export async function removeWorkerFromSecondary(payload: {
   if (!res.ok) throw new Error("Personel kaldırılamadı");
 }
 
+type SecondaryStageRow = { sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number };
 export async function getSecondarySimpleTotals(
   date: string,
   modelId: number
-): Promise<{ stages: { sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number }[] }> {
+): Promise<{ stages: SecondaryStageRow[]; dailySummaryStages: SecondaryStageRow[] }> {
   const res = await apiFetch(
     `${apiBase()}/production-b/stage-totals?date=${encodeURIComponent(date)}&modelId=${modelId}`,
     { cache: "no-store", headers: authHeaders() }
   );
-  if (!res.ok) return { stages: [] };
-  return res.json() as Promise<{ stages: { sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number }[] }>;
+  if (!res.ok) return { stages: [], dailySummaryStages: [] };
+  const data = await res.json() as { stages?: SecondaryStageRow[]; dailySummaryStages?: SecondaryStageRow[] };
+  return { stages: data.stages ?? [], dailySummaryStages: data.dailySummaryStages ?? [] };
 }
 
 export async function saveProduction(payload: {

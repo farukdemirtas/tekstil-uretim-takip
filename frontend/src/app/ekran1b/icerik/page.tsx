@@ -135,6 +135,7 @@ export default function Ekran1BIcerikPage() {
   const [hasToken, setHasToken] = useState(false);
   const [dayMeta, setDayMeta] = useState<SecondaryDayMeta>({ secondaryModelId: null, modelInfo: null });
   const [stages, setStages] = useState<{ sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number }[]>([]);
+  const [dailySummaryStages, setDailySummaryStages] = useState<{ sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number }[]>([]);
   const [manualTarget, setManualTarget] = useState<number | null>(null);
   const [apiTarget, setApiTarget] = useState<number>(0);
   const [hedefOpen, setHedefOpen] = useState(false);
@@ -149,10 +150,16 @@ export default function Ekran1BIcerikPage() {
     () => manualTarget != null && manualTarget > 0 ? manualTarget : apiTarget,
     [manualTarget, apiTarget]
   );
-  const grandTotal = useMemo(() => stages.reduce((s, r) => s + r.total, 0), [stages]);
-  const minTotal = useMemo(() => stages.length > 0 ? Math.min(...stages.map((s) => s.total)) : 0, [stages]);
-  const genelPercent = useMemo(() => calcPercent(minTotal, target), [minTotal, target]);
-  const kalan = useMemo(() => Math.max(0, target - minTotal), [target, minTotal]);
+  // Günlük özet prosesleri yapılandırılmışsa TOPLAMLARINI kullan (ekran1 mantığıyla aynı);
+  // yoksa tüm aşamaların minimumuna geri dön.
+  const bitenTotal = useMemo(() => {
+    if (dailySummaryStages.length > 0) {
+      return Math.max(0, dailySummaryStages.reduce((s, r) => s + r.total, 0));
+    }
+    return stages.length > 0 ? Math.min(...stages.map((s) => s.total)) : 0;
+  }, [dailySummaryStages, stages]);
+  const genelPercent = useMemo(() => calcPercent(bitenTotal, target), [bitenTotal, target]);
+  const kalan = useMemo(() => Math.max(0, target - bitenTotal), [target, bitenTotal]);
 
   const load = useCallback(async (silent: boolean) => {
     if (!silent) setLoading(true);
@@ -169,7 +176,10 @@ export default function Ekran1BIcerikPage() {
         getSecondarySimpleTotals(today, mid).catch(() => null),
         getEkran5Target(mid).catch(() => null),
       ]);
-      if (totalsRes) setStages(totalsRes.stages);
+      if (totalsRes) {
+        setStages(totalsRes.stages);
+        setDailySummaryStages(totalsRes.dailySummaryStages);
+      }
       // manualTarget = el ile ayarlanan (ekran5Target), apiTarget = modelin base hedefi (targetQuantity)
       setManualTarget(targetRes?.ekran5Target != null && targetRes.ekran5Target > 0 ? targetRes.ekran5Target : null);
       setApiTarget(targetRes?.targetQuantity != null && targetRes.targetQuantity > 0 ? targetRes.targetQuantity : 0);
@@ -410,7 +420,7 @@ export default function Ekran1BIcerikPage() {
                   <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-violet-400 bg-violet-50 px-1 shadow-md">
                     <p className="shrink-0 font-black uppercase tracking-[0.12em] text-violet-700" style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>BİTEN</p>
                     <p className="w-full text-center font-black tabular-nums leading-none text-violet-800" style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
-                      {grandTotal.toLocaleString("tr-TR")}
+                      {bitenTotal.toLocaleString("tr-TR")}
                     </p>
                   </div>
                   <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-amber-400 bg-amber-50 px-1 shadow-md">

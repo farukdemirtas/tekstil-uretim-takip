@@ -957,62 +957,85 @@ export async function getSecondarySimpleTotals(date, modelId) {
     COALESCE(p.h1215,0)+COALESCE(p.h1300,0)+COALESCE(p.h1445,0)+
     COALESCE(p.h1545,0)+COALESCE(p.h1700,0)+COALESCE(p.h1830,0)+COALESCE(p.ek_sayim,0)`;
 
-  // Önce modelin baseline satırlarını dene
+  const teamRows = await dbAll("SELECT code, label FROM teams");
+  const labelByCode = Object.fromEntries((teamRows || []).map((t) => [t.code, t.label]));
+
+  /** production_entries_b'den belirli team+process için günlük toplam */
+  async function sumSecondaryForRow(teamCode, processName, arkaHalf) {
+    const mult = Number(arkaHalf) === 1 ? 0.5 : 1.0;
+    const row = await dbGet(
+      `SELECT COALESCE(SUM(${SUM_COLS}), 0) AS total
+       FROM production_entries_b p
+       JOIN workers w ON w.id = p.worker_id
+       WHERE p.production_date = ? AND p.model_id = ?
+         AND TRIM(COALESCE(w.team,'')) = TRIM(COALESCE(?,''))
+         AND (? = '' OR TRIM(COALESCE(w.process,'')) = TRIM(COALESCE(?,'') ))
+         AND (w.created_at IS NULL OR date(w.created_at) <= date(?))
+         AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))`,
+      [date, modelId, teamCode, processName, processName, date, date]
+    );
+    return Math.round((Number(row?.total) || 0) * mult);
+  }
+
+  // Baseline aşama satırları
   const baseRows = await dbAll(
     `SELECT sort_order AS sortOrder, team_code AS teamCode, process_name AS processName,
             COALESCE(arka_half, 0) AS arkaHalf
      FROM model_hedef_baselines WHERE model_id = ? ORDER BY sort_order ASC`,
     [modelId]
   );
-  const teamRows = await dbAll("SELECT code, label FROM teams");
-  const labelByCode = Object.fromEntries((teamRows || []).map((t) => [t.code, t.label]));
 
+  let stages = [];
   if (baseRows.length) {
-    const stages = [];
     for (const r of baseRows) {
-      const mult = Number(r.arkaHalf) === 1 ? 0.5 : 1.0;
-      const row = await dbGet(
-        `SELECT COALESCE(SUM(${SUM_COLS}), 0) AS total
-         FROM production_entries_b p
-         JOIN workers w ON w.id = p.worker_id
-         WHERE p.production_date = ? AND p.model_id = ?
-           AND TRIM(COALESCE(w.team,'')) = TRIM(COALESCE(?,''))
-           AND (? = '' OR TRIM(COALESCE(w.process,'')) = TRIM(COALESCE(?,'') ))
-           AND (w.created_at IS NULL OR date(w.created_at) <= date(?))
-           AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))`,
-        [date, modelId, r.teamCode, r.processName, r.processName, date, date]
-      );
       stages.push({
         sortOrder: Number(r.sortOrder),
         teamCode: String(r.teamCode || ""),
         processName: String(r.processName || ""),
         teamLabel: labelByCode[r.teamCode] || String(r.teamCode || ""),
-        total: Math.round((Number(row?.total) || 0) * mult),
+        total: await sumSecondaryForRow(r.teamCode, r.processName, r.arkaHalf),
       });
     }
-    return { stages };
-  }
-
-  // Baseline yoksa grup toplamı döndür
-  const rows = await dbAll(
-    `SELECT w.team, COALESCE(SUM(${SUM_COLS}), 0) AS total
-     FROM production_entries_b p
-     JOIN workers w ON w.id = p.worker_id
-     WHERE p.production_date = ? AND p.model_id = ?
-       AND (w.created_at IS NULL OR date(w.created_at) <= date(?))
-       AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))
-     GROUP BY w.team ORDER BY w.team`,
-    [date, modelId, date, date]
-  );
-  return {
-    stages: rows.map((r, i) => ({
+  } else {
+    // Baseline yoksa grup toplamı döndür
+    const rows = await dbAll(
+      `SELECT w.team, COALESCE(SUM(${SUM_COLS}), 0) AS total
+       FROM production_entries_b p
+       JOIN workers w ON w.id = p.worker_id
+       WHERE p.production_date = ? AND p.model_id = ?
+         AND (w.created_at IS NULL OR date(w.created_at) <= date(?))
+         AND (w.deleted_at IS NULL OR date(w.deleted_at) > date(?))
+       GROUP BY w.team ORDER BY w.team`,
+      [date, modelId, date, date]
+    );
+    stages = rows.map((r, i) => ({
       sortOrder: i,
       teamCode: String(r.team || ""),
       processName: "",
       teamLabel: labelByCode[r.team] || String(r.team || ""),
       total: Number(r.total) || 0,
-    })),
-  };
+    }));
+  }
+
+  // Günlük özet prosesleri — "biten" hesabı için kullanılır (ekran1b)
+  const dailyRows = await dbAll(
+    `SELECT sort_order AS sortOrder, team_code AS teamCode, process_name AS processName,
+            COALESCE(arka_half, 0) AS arkaHalf
+     FROM model_gunluk_ozet_processes WHERE model_id = ? ORDER BY sort_order ASC`,
+    [modelId]
+  );
+  const dailySummaryStages = [];
+  for (const r of dailyRows) {
+    dailySummaryStages.push({
+      sortOrder: Number(r.sortOrder),
+      teamCode: String(r.teamCode || ""),
+      processName: String(r.processName || ""),
+      teamLabel: labelByCode[r.teamCode] || String(r.teamCode || ""),
+      total: await sumSecondaryForRow(r.teamCode, r.processName, r.arkaHalf),
+    });
+  }
+
+  return { stages, dailySummaryStages };
 }
 
 export function upsertEntriesBulk(entries) {
