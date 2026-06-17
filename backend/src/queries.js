@@ -1412,6 +1412,42 @@ export async function getHedefTakipStageTotals(startDate, endDate, modelId) {
   return { stages, dailySummaryStages };
 }
 
+/** Kümülatif toplam için bitiş: referans gün ile oturumda veri girilmiş en ileri günün büyük olanı */
+async function getModelCumulativeRangeEnd(modelId, rangeStart, referenceDate) {
+  const ref = String(referenceDate);
+  const start = String(rangeStart);
+  if (ref < start) return ref;
+
+  const candidates = [ref];
+
+  if (modelId != null && Number.isFinite(Number(modelId)) && Number(modelId) > 0) {
+    const mid = Number(modelId);
+    const metaRow = await dbGet(
+      `SELECT MAX(production_date) AS d FROM daily_product_meta
+       WHERE model_id = ? AND production_date >= ?`,
+      [mid, start]
+    );
+    if (metaRow?.d) candidates.push(String(metaRow.d));
+
+    const prodRow = await dbGet(
+      `SELECT MAX(p.production_date) AS d
+       FROM production_entries p
+       INNER JOIN daily_product_meta m ON m.production_date = p.production_date AND m.model_id = ?
+       WHERE p.production_date >= ?`,
+      [mid, start]
+    );
+    if (prodRow?.d) candidates.push(String(prodRow.d));
+  } else {
+    const row = await dbGet(
+      `SELECT MAX(production_date) AS d FROM production_entries WHERE production_date >= ?`,
+      [start]
+    );
+    if (row?.d) candidates.push(String(row.d));
+  }
+
+  return candidates.sort().pop() ?? ref;
+}
+
 function findBottleneckStageIndex(stages) {
   const list = stages ?? [];
   if (list.length === 0) return 0;
@@ -1438,6 +1474,12 @@ export async function getEkran1GenelIlerleme(date, modelId) {
   let hasModelTarget = false;
   let dataStartDate = null;
 
+  const day = await getUtuPaketDay(date);
+  const paketHedef = Math.max(
+    0,
+    Math.floor(Number(day.packagingTarget) || Number(day.takipsan?.orderQuantity) || 0)
+  );
+
   if (mid) {
     const modelRow = await dbGet(
       `SELECT target_quantity, session_start_date FROM product_models WHERE id = ?`,
@@ -1452,12 +1494,12 @@ export async function getEkran1GenelIlerleme(date, modelId) {
     }
   }
 
-  if (target <= 0) {
-    const day = await getUtuPaketDay(date);
-    target = Math.max(
-      0,
-      Math.floor(Number(day.packagingTarget) || Number(day.takipsan?.orderQuantity) || 0)
-    );
+  // Birleştirilmiş sevkiyat hedefi (Takipsan sync) model hedefinden büyükse esas alınır
+  if (paketHedef > 0) {
+    target = Math.max(target, paketHedef);
+    if (target === paketHedef && paketHedef > 0) {
+      hasModelTarget = hasModelTarget || Boolean(day.takipsan?.syncedAt);
+    }
   }
 
   if (mid && !dataStartDate) {
@@ -1473,7 +1515,8 @@ export async function getEkran1GenelIlerleme(date, modelId) {
   }
 
   const rangeStart = dataStartDate <= date ? dataStartDate : String(date);
-  const cumulative = await getHedefTakipStageTotals(rangeStart, date, mid);
+  const rangeEnd = await getModelCumulativeRangeEnd(mid, rangeStart, date);
+  const cumulative = await getHedefTakipStageTotals(rangeStart, rangeEnd, mid);
   const todayRes = await getHedefTakipStageTotals(date, date, mid);
 
   const cStages = cumulative.stages ?? [];
@@ -1506,6 +1549,7 @@ export async function getEkran1GenelIlerleme(date, modelId) {
     totalCompleted,
     todayProduced,
     dataStartDate: rangeStart,
+    dataEndDate: rangeEnd,
     /** Alt proses barları: kümülatif (biten) + bugünkü üretim */
     stages: cStages,
     dailySummaryStages: cDailyStages,
@@ -4019,7 +4063,7 @@ export async function getUtuPaketEkran1Summary(date) {
     }
   }
 
-  if (totalCompleted === 0 && packages.length === 0) {
+  if (totalCompleted === 0) {
     totalCompleted = Math.max(0, Math.floor(Number(day.takipsan?.readCount) || 0));
   }
 
@@ -4070,11 +4114,16 @@ export function getUtuPaketDay(date) {
                   0,
                   Math.floor(Number(metaRow?.packaging_target) || 0)
                 );
-                const readCount = UTU_PAKET_SLOT_KEYS.reduce(
+                const packages = parseTakipsanPackagesJson(metaRow?.takipsan_packages_json);
+                const slotReadCount = UTU_PAKET_SLOT_KEYS.reduce(
                   (s, k) => s + (Number(stages.paketleme?.[k]) || 0),
                   0
                 );
-                const packages = parseTakipsanPackagesJson(metaRow?.takipsan_packages_json);
+                const packageItemSum = (packages || []).reduce(
+                  (s, p) => s + Math.max(0, Math.floor(Number(p?.items) || 0)),
+                  0
+                );
+                const readCount = Math.max(slotReadCount, packageItemSum);
                 resolve({
                   date,
                   stages,
