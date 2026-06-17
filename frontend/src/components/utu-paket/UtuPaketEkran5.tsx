@@ -5,7 +5,9 @@ import {
   getDayProductMeta,
   getEkran1GenelIlerleme,
   getEkran5Target,
+  getEkranRefreshSignal,
   getPersonnelBirthdaysToday,
+  getProductModel,
   getUtuPaket,
   getUtuPaketAnalytics,
   setAuthToken,
@@ -182,6 +184,35 @@ function formatClock() {
   return new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Günün ürünü / modeli ile Takipsan sipariş kodu uyuşmuyorsa eski modelin paket verisini gösterme */
+function currentProductMatchesTakipsan(
+  meta: { productModel?: string; productName?: string } | null,
+  orderCode: string,
+  modelCodes: string[] = []
+): boolean {
+  const oc = orderCode.trim().toLowerCase();
+  if (!oc) return false;
+  const norm = (s: string) => s.replace(/[^a-z0-9]/g, "");
+  const ocNorm = norm(oc);
+
+  for (const raw of modelCodes) {
+    const code = raw.trim().toLowerCase();
+    if (!code) continue;
+    const codeNorm = norm(code);
+    if (oc.includes(code) || code.includes(oc) || (codeNorm && ocNorm.includes(codeNorm))) return true;
+  }
+
+  const pm = (meta?.productModel ?? "").trim().toLowerCase();
+  const pn = (meta?.productName ?? "").trim().toLowerCase();
+  if (!pm && !pn) return true;
+  if (pm && (oc.includes(pm) || pm.includes(oc) || ocNorm.includes(norm(pm)))) return true;
+  if (pn) {
+    const first = pn.split(/\s+/)[0] ?? "";
+    if (first.length >= 3 && oc.includes(first)) return true;
+  }
+  return false;
+}
+
 // ─── Stat kutu ───────────────────────────────────────────────────────────────
 function StatBox({ label, value, style, subLabel }: { label: string; value: string; style: BoxStyle; subLabel?: string }) {
   return (
@@ -268,14 +299,14 @@ function SlidePanel({
 
 // ─── Hedef düzenleme modalı ──────────────────────────────────────────────────
 function HedefModal({
-  takipsanTarget,
+  apiTarget,
   manualTarget,
   productLabel,
   onSave,
   onClear,
   onClose,
 }: {
-  takipsanTarget: number;
+  apiTarget: number;
   manualTarget: number | null;
   productLabel: string;
   onSave: (v: number) => void | Promise<void>;
@@ -283,7 +314,7 @@ function HedefModal({
   onClose: () => void;
 }) {
   const [input, setInput] = useState(
-    manualTarget != null ? String(manualTarget) : takipsanTarget > 0 ? String(takipsanTarget) : ""
+    manualTarget != null ? String(manualTarget) : apiTarget > 0 ? String(apiTarget) : ""
   );
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -322,9 +353,9 @@ function HedefModal({
           <span className="font-semibold text-slate-600">
             {manualTarget != null
               ? `El ile: ${manualTarget.toLocaleString("tr-TR")}`
-              : takipsanTarget > 0
-                ? `Takipsan: ${takipsanTarget.toLocaleString("tr-TR")}`
-                : "Takipsan: veri yok"}
+              : apiTarget > 0
+                ? `Modelden: ${apiTarget.toLocaleString("tr-TR")}`
+                : "Model: veri yok"}
           </span>
         </div>
 
@@ -352,7 +383,7 @@ function HedefModal({
           </button>
           <button type="button" onClick={onClear}
             className="rounded-xl border-2 border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100">
-            Takipsandan al {takipsanTarget > 0 ? `(${takipsanTarget.toLocaleString("tr-TR")})` : ""}
+            Modelden al {apiTarget > 0 ? `(${apiTarget.toLocaleString("tr-TR")})` : ""}
           </button>
           <button type="button" onClick={onClose}
             className="rounded-xl border-2 border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
@@ -381,14 +412,14 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [gunKoli, setGunKoli]             = useState(0);
   const [toplamKoli, setToplamKoli]       = useState(0);
 
-  /** Takipsan'dan gelen ham hedef */
-  const [takipsanTarget, setTakipsanTarget] = useState(0);
-  /** Aktif model ID — localStorage anahtarı */
+  /** Model hedefi (target_quantity) — el ile hedef yoksa kullanılır */
+  const [apiTarget, setApiTarget] = useState(0);
+  /** Aktif model ID */
   const [modelId, setModelId]             = useState<number | null>(null);
-  /** El ile set edilen hedef (null = Takipsan'ı kullan) */
+  /** El ile set edilen hedef (null = model hedefi) */
   const [manualTarget, setManualTarget]   = useState<number | null>(null);
-  /** Etkin hedef = manualTarget ?? takipsanTarget */
-  const target = manualTarget ?? takipsanTarget;
+  /** Etkin hedef = el ile ?? model */
+  const target = manualTarget != null && manualTarget > 0 ? manualTarget : apiTarget;
 
   const [productLabel, setProductLabel]   = useState("");
   const [lastUpdated, setLastUpdated]     = useState("");
@@ -420,38 +451,58 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const [raw, meta, genelOzet] = await Promise.all([
+      // Önce meta'yı çek — model ID'si diğer çağrılara gerekiyor
+      const meta = await getDayProductMeta(date).catch(() => null);
+      const mid = meta?.modelId ?? null;
+      if (mid !== modelId) setModelId(mid);
+
+      const modelDetail = mid ? await getProductModel(mid).catch(() => null) : null;
+
+      // Model ID'siyle paralel çağrı: genelOzet modele özgü session tarihini döndürür
+      const [raw, genelOzet, ekran5Res] = await Promise.all([
         getUtuPaket(date),
-        getDayProductMeta(date).catch(() => null),
-        getEkran1GenelIlerleme(date, undefined).catch(() => null),
+        getEkran1GenelIlerleme(date, mid ?? undefined).catch(() => null),
+        mid ? getEkran5Target(mid).catch(() => ({ ekran5Target: null, targetQuantity: null })) : Promise.resolve({ ekran5Target: null, targetQuantity: null }),
       ]);
+
       const data = normalizeUtuPaketPayload({ ...raw, date });
       const todayOptik = sumUtuPaketSlots(data.stages.optik);
       const todayUtu   = sumUtuPaketSlots(data.stages.utu);
       setDisplayDate(date);
       setOptikCount(todayOptik);
       setUtuCount(todayUtu);
-      setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
-      const gunPkt = sumGunPaketlenen(data.takipsan?.packages, date);
-      setGunPaketlenen(gunPkt.adet);
-      setGunKoli(gunPkt.paket);
-      setToplamKoli(normalizeTakipsanPackages(data.takipsan?.packages).length);
 
-      const rawTarget = data.takipsan?.orderQuantity ?? data.packagingTarget;
-      setTakipsanTarget(rawTarget);
-
-      // DB'deki paylaşımlı hedefi her yüklemede çek (model değişse de değişmese de)
-      const mid = meta?.modelId ?? null;
-      if (mid !== modelId) setModelId(mid);
-      if (mid) {
-        const { ekran5Target } = await getEkran5Target(mid).catch(() => ({ ekran5Target: null }));
-        setManualTarget(ekran5Target);
+      const modelCodes = [
+        meta?.productModel ?? "",
+        modelDetail?.modelCode ?? "",
+        modelDetail?.takipsanOrderCode ?? "",
+      ];
+      const takipsanOk = currentProductMatchesTakipsan(meta, data.takipsan?.orderCode ?? "", modelCodes);
+      if (takipsanOk) {
+        setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
+        const gunPkt = sumGunPaketlenen(data.takipsan?.packages, date);
+        setGunPaketlenen(gunPkt.adet);
+        setGunKoli(gunPkt.paket);
+        setToplamKoli(normalizeTakipsanPackages(data.takipsan?.packages).length);
       } else {
-        setManualTarget(null);
+        setPaketCount(0);
+        setGunPaketlenen(0);
+        setGunKoli(0);
+        setToplamKoli(0);
       }
 
+      const modelHedef = ekran5Res.targetQuantity ?? 0;
+      const genelHedef = genelOzet?.target ?? 0;
+      const utuHedef = data.takipsan?.orderQuantity ?? data.packagingTarget ?? 0;
+      setApiTarget(
+        genelHedef > 0 ? genelHedef : modelHedef > 0 ? modelHedef : utuHedef
+      );
+      setManualTarget(
+        ekran5Res.ekran5Target != null && ekran5Res.ekran5Target > 0 ? ekran5Res.ekran5Target : null
+      );
       setProductLabel([meta?.productName, meta?.productModel].filter(Boolean).join(" · "));
 
+      // Modele özgü session başlangıcından bugüne analitik
       const startDate = genelOzet?.dataStartDate ?? date;
       if (startDate && startDate <= date) {
         const analytics = await getUtuPaketAnalytics({ startDate, endDate: date }).catch(() => null);
@@ -473,6 +524,21 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     if (!hasToken) return;
     void load(false);
     const id = setInterval(() => void load(true), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [hasToken, load]);
+
+  /** Veri girişinde model/hedef değişince uzaktan yenile */
+  useEffect(() => {
+    if (!hasToken) return;
+    let lastSignal = "";
+    const checkSignal = async () => {
+      const sig = await getEkranRefreshSignal().catch(() => "");
+      if (!sig || sig === "0") return;
+      if (lastSignal === "") { lastSignal = sig; return; }
+      if (sig !== lastSignal) { lastSignal = sig; void load(true); }
+    };
+    void checkSignal();
+    const id = setInterval(() => void checkSignal(), 6_000);
     return () => clearInterval(id);
   }, [hasToken, load]);
 
@@ -723,9 +789,11 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
                 <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ring-1 ${
                   manualTarget != null
                     ? "bg-amber-50 text-amber-700 ring-amber-300"
-                    : "bg-emerald-50 text-emerald-700 ring-emerald-300"
+                    : apiTarget > 0
+                      ? "bg-emerald-50 text-emerald-700 ring-emerald-300"
+                      : "bg-slate-100 text-slate-500 ring-slate-300"
                 }`}>
-                  {manualTarget != null ? "El ile hedef" : "Takipsan hedefi"}
+                  {manualTarget != null ? "El ile hedef" : apiTarget > 0 ? "Model hedefi" : "Hedef yok"}
                 </span>
               </div>
               {lastUpdated ? (
@@ -805,7 +873,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       {/* ── HEDEF MODALIN ── */}
       {hedefOpen && (
         <HedefModal
-          takipsanTarget={takipsanTarget}
+          apiTarget={apiTarget}
           manualTarget={manualTarget}
           productLabel={productLabel}
           onSave={handleHedefSave}

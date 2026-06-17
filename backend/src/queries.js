@@ -598,9 +598,19 @@ export async function getDayProductMeta(date) {
   let modelId =
     mid != null && mid !== "" && Number.isFinite(Number(mid)) ? Number(mid) : null;
   const ms = row?.metaSource != null ? String(row.metaSource) : "manual";
+  const productModel = row?.productModel != null ? String(row.productModel) : "";
+  const productName = row?.productName != null ? String(row.productName) : "";
 
-  // Bu gün için model yoksa en yakın geçmiş tarihin modelini kullan (fallback)
-  if (modelId === null) {
+  // Veri giriş ekranındaki günün model kodu esas alınır (yeni modele geçişte)
+  if (productModel.trim()) {
+    const byCode = await dbGet(
+      `SELECT id FROM product_models WHERE TRIM(LOWER(model_code)) = TRIM(LOWER(?)) LIMIT 1`,
+      [productModel.trim()]
+    );
+    if (byCode?.id != null && Number.isFinite(Number(byCode.id))) {
+      modelId = Number(byCode.id);
+    }
+  } else if (modelId === null) {
     const fallback = await new Promise((resolve, reject) => {
       db.get(
         `SELECT model_id AS modelId FROM daily_product_meta
@@ -617,8 +627,8 @@ export async function getDayProductMeta(date) {
   }
 
   return {
-    productName: row?.productName != null ? String(row.productName) : "",
-    productModel: row?.productModel != null ? String(row.productModel) : "",
+    productName,
+    productModel,
     modelId,
     metaSource: ms === "hedef" ? "hedef" : "manual",
   };

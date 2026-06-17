@@ -1116,6 +1116,7 @@ app.put("/api/production/day-meta", async (req, res) => {
       modelId: meta.modelId,
       metaSource: meta.metaSource,
     });
+    void bumpEkranRefreshSignal().catch(() => {});
     res.json(meta);
   } catch (error) {
     res.status(500).json({ message: "Ürün bilgisi kaydedilemedi", error: String(error) });
