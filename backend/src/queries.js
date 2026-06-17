@@ -1623,6 +1623,76 @@ export function applyHedefSessionToDailyMeta({ modelId, startDate, endDate, prod
   });
 }
 
+/** Ütü–paket ve Ekran5: seçili günlere model ata (veri girişinden bağımsız) */
+export function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, productName, productModel }) {
+  const name = String(productName ?? "").trim();
+  const model = String(productModel ?? "").trim();
+  const mid = Number(modelId);
+  const start = String(startDate).trim();
+  if (!Number.isFinite(mid) || mid < 1) {
+    return Promise.reject(new Error("Geçersiz model"));
+  }
+  const dates = eachWeekdayIsoInRange(startDate, endDate);
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run("BEGIN TRANSACTION");
+      db.run(
+        `UPDATE product_models SET utu_paket_session_start_date = ? WHERE id = ?`,
+        [start, mid],
+        (updErr) => {
+          if (updErr) {
+            db.run("ROLLBACK");
+            return reject(updErr);
+          }
+          const stmt = db.prepare(`
+            INSERT INTO utu_paket_meta (production_date, packaging_target, model_id, product_name, product_model, model_reference_date)
+            VALUES (?, 0, ?, ?, ?, ?)
+            ON CONFLICT(production_date) DO UPDATE SET
+              model_id = excluded.model_id,
+              product_name = excluded.product_name,
+              product_model = excluded.product_model,
+              model_reference_date = excluded.model_reference_date
+          `);
+          for (const d of dates) {
+            stmt.run([d, mid, name, model, d]);
+          }
+          stmt.finalize((finErr) => {
+            if (finErr) {
+              db.run("ROLLBACK");
+              return reject(finErr);
+            }
+            db.run("COMMIT", (cErr) => {
+              if (cErr) return reject(cErr);
+              resolve({ ok: true, datesUpdated: dates.length, sessionStartDate: start });
+            });
+          });
+        }
+      );
+    });
+  });
+}
+
+/** Gün için atanmış ütü–paket modeli (ayarlardan); veri girişi modelinden bağımsız */
+export async function getUtuPaketModelForDate(date) {
+  const row = await dbGet(
+    `SELECT m.model_id AS modelId, m.product_name AS productName, m.product_model AS productModel,
+            pm.utu_paket_session_start_date AS utuPaketSessionStartDate
+     FROM utu_paket_meta m
+     LEFT JOIN product_models pm ON pm.id = m.model_id
+     WHERE m.production_date = ? AND m.model_id IS NOT NULL`,
+    [String(date)]
+  );
+  if (!row?.modelId) return null;
+  return {
+    modelId: Number(row.modelId),
+    productName: String(row.productName || ""),
+    productModel: String(row.productModel || ""),
+    utuPaketSessionStartDate: row.utuPaketSessionStartDate
+      ? String(row.utuPaketSessionStartDate)
+      : null,
+  };
+}
+
 export function listProductModels() {
   return new Promise((resolve, reject) => {
     db.all(
@@ -1631,6 +1701,8 @@ export function listProductModels() {
               takipsan_order_code AS takipsanOrderCode,
               target_quantity AS targetQuantity,
               session_start_date AS sessionStartDate,
+              utu_paket_session_start_date AS utuPaketSessionStartDate,
+              primary_consignment_id AS primaryConsignmentId,
               secondary_consignment_id AS secondaryConsignmentId
        FROM product_models ORDER BY model_code COLLATE NOCASE`,
       [],
@@ -1658,6 +1730,8 @@ export function getProductModelWithBaselines(id) {
               takipsan_order_code AS takipsanOrderCode,
               target_quantity AS targetQuantity,
               session_start_date AS sessionStartDate,
+              utu_paket_session_start_date AS utuPaketSessionStartDate,
+              primary_consignment_id AS primaryConsignmentId,
               secondary_consignment_id AS secondaryConsignmentId
        FROM product_models WHERE id = ?`,
       [id],
@@ -1900,6 +1974,13 @@ export async function updateProductModel(id, payload, teamCodes) {
         : null
       : existing.secondaryConsignmentId ?? null;
 
+  const primaryConsignmentId =
+    payload?.primaryConsignmentId !== undefined
+      ? payload.primaryConsignmentId
+        ? String(payload.primaryConsignmentId).trim()
+        : null
+      : existing.primaryConsignmentId ?? null;
+
   validateBaselineRows(teamCodes, payload?.baselines);
   validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
   const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
@@ -1907,8 +1988,8 @@ export async function updateProductModel(id, payload, teamCodes) {
 
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE product_models SET model_code = ?, product_name = ?, session_start_date = ?, secondary_consignment_id = ? WHERE id = ?`,
-      [code, pname, sessionStart, secondaryConsignmentId, id],
+      `UPDATE product_models SET model_code = ?, product_name = ?, session_start_date = ?, primary_consignment_id = ?, secondary_consignment_id = ? WHERE id = ?`,
+      [code, pname, sessionStart, primaryConsignmentId, secondaryConsignmentId, id],
       function onUp(err) {
         if (err) return reject(err);
         if (this.changes === 0) return reject(new Error("Kayıt bulunamadı"));
@@ -1926,7 +2007,7 @@ export async function updateProductModel(id, payload, teamCodes) {
             if (fe) return reject(fe);
             try {
               await insertDailySummaryRows(id, dailyRows);
-              resolve({ id, modelCode: code, productName: pname, sessionStartDate: sessionStart, secondaryConsignmentId });
+              resolve({ id, modelCode: code, productName: pname, sessionStartDate: sessionStart, primaryConsignmentId, secondaryConsignmentId });
             } catch (e) {
               reject(e);
             }
@@ -4091,7 +4172,8 @@ export function getUtuPaketDay(date) {
           (bedenErr, bedenRows) => {
             if (bedenErr) return reject(bedenErr);
             db.get(
-              `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json
+              `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json, model_reference_date,
+                      model_id AS modelId, product_name AS utuProductName, product_model AS utuProductModel
                FROM utu_paket_meta WHERE production_date = ?`,
               [date],
               (metaErr, metaRow) => {
@@ -4124,8 +4206,21 @@ export function getUtuPaketDay(date) {
                   0
                 );
                 const readCount = Math.max(slotReadCount, packageItemSum);
+                const modelReferenceDate = metaRow?.model_reference_date
+                  ? String(metaRow.model_reference_date)
+                  : String(date);
+                const utuPaketModel =
+                  metaRow?.modelId != null && Number.isFinite(Number(metaRow.modelId))
+                    ? {
+                        modelId: Number(metaRow.modelId),
+                        productName: String(metaRow.utuProductName || ""),
+                        productModel: String(metaRow.utuProductModel || ""),
+                      }
+                    : null;
                 resolve({
                   date,
+                  modelReferenceDate,
+                  utuPaketModel,
                   stages,
                   stageEkSayim,
                   beden,
@@ -4151,6 +4246,20 @@ export function getUtuPaketDay(date) {
   });
 }
 
+export function setUtuPaketModelReferenceDate(productionDate, modelReferenceDate) {
+  const date = String(productionDate).trim();
+  const ref = String(modelReferenceDate || productionDate).trim();
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO utu_paket_meta (production_date, packaging_target, model_reference_date)
+       VALUES (?, 0, ?)
+       ON CONFLICT(production_date) DO UPDATE SET model_reference_date = excluded.model_reference_date`,
+      [date, ref],
+      (err) => (err ? reject(err) : resolve({ ok: true, modelReferenceDate: ref }))
+    );
+  });
+}
+
 export function saveUtuPaketDay(date, payload) {
   const stagesIn = payload?.stages && typeof payload.stages === "object" ? payload.stages : {};
   const bedenIn = payload?.beden && typeof payload.beden === "object" ? payload.beden : {};
@@ -4159,7 +4268,8 @@ export function saveUtuPaketDay(date, payload) {
 
   return new Promise((resolve, reject) => {
     db.get(
-      `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json
+      `SELECT packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json, model_reference_date,
+              model_id, product_name, product_model
        FROM utu_paket_meta WHERE production_date = ?`,
       [date],
       (metaReadErr, metaRow) => {
@@ -4180,6 +4290,20 @@ export function saveUtuPaketDay(date, payload) {
         const takipsanPackagesJson = takipsanSync
           ? serializeTakipsanPackages(payload?.takipsanPackages)
           : metaRow?.takipsan_packages_json || null;
+        const modelReferenceDate =
+          payload?.modelReferenceDate !== undefined
+            ? String(payload.modelReferenceDate || date).trim()
+            : metaRow?.model_reference_date
+              ? String(metaRow.model_reference_date)
+              : String(date);
+        const modelId =
+          metaRow?.model_id != null && Number.isFinite(Number(metaRow.model_id))
+            ? Number(metaRow.model_id)
+            : null;
+        const utuProductName =
+          metaRow?.product_name != null ? String(metaRow.product_name) : "";
+        const utuProductModel =
+          metaRow?.product_model != null ? String(metaRow.product_model) : "";
 
         db.serialize(() => {
       db.run("BEGIN", (beginErr) => {
@@ -4242,15 +4366,19 @@ export function saveUtuPaketDay(date, payload) {
             const commitMeta = () => {
               db.run(
                 `INSERT INTO utu_paket_meta (
-                  production_date, packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                  production_date, packaging_target, takipsan_package_count, takipsan_synced_at, takipsan_order_code, takipsan_packages_json, model_reference_date, model_id, product_name, product_model
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(production_date) DO UPDATE SET
                   packaging_target = excluded.packaging_target,
                   takipsan_package_count = excluded.takipsan_package_count,
                   takipsan_synced_at = excluded.takipsan_synced_at,
                   takipsan_order_code = excluded.takipsan_order_code,
-                  takipsan_packages_json = COALESCE(excluded.takipsan_packages_json, utu_paket_meta.takipsan_packages_json)`,
-                [date, packagingTarget, takipsanPackageCount, takipsanSyncedAt, takipsanOrderCode, takipsanPackagesJson],
+                  takipsan_packages_json = COALESCE(excluded.takipsan_packages_json, utu_paket_meta.takipsan_packages_json),
+                  model_reference_date = COALESCE(utu_paket_meta.model_reference_date, excluded.model_reference_date),
+                  model_id = COALESCE(utu_paket_meta.model_id, excluded.model_id),
+                  product_name = COALESCE(NULLIF(utu_paket_meta.product_name, ''), excluded.product_name),
+                  product_model = COALESCE(NULLIF(utu_paket_meta.product_model, ''), excluded.product_model)`,
+                [date, packagingTarget, takipsanPackageCount, takipsanSyncedAt, takipsanOrderCode, takipsanPackagesJson, modelReferenceDate, modelId, utuProductName, utuProductModel],
                 (metaErr) => {
                   if (metaErr) {
                     db.run("ROLLBACK");

@@ -5,10 +5,9 @@ import {
   getUtuPaketDay,
   saveUtuPaketDay,
   refreshProductModelTargetsFromTakipsan,
-  listProductModels,
-  getDayProductMeta,
   getProductModelWithBaselines,
   getSecondaryModelId,
+  getUtuPaketModelForDate,
 } from "./queries.js";
 import { TakipsanClient, isTakipsanConfigured } from "./takipsanClient.js";
 import { splitTakipsanProductLabel, buildTakipsanProductLabel } from "./takipsanProduct.js";
@@ -125,122 +124,98 @@ export function getTakipsanClient() {
   return getSharedClient();
 }
 
-function normCode(s) {
-  return String(s || "").trim().toLowerCase();
+function parseConsignmentIds(raw) {
+  return String(raw || "")
+    .split(/[,+\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-function codesMatch(a, b) {
-  const x = normCode(a);
-  const y = normCode(b);
-  if (!x || !y) return false;
-  if (x === y) return true;
-  const strip = (v) => v.replace(/[^a-z0-9]/g, "");
-  const nx = strip(x);
-  const ny = strip(y);
-  return nx.length > 0 && ny.length > 0 && (nx.includes(ny) || ny.includes(nx));
-}
-
-/** Aynı ürün ailesine ait iki sipariş kodu (68131-01/… + 68131-01-…) */
-function ordersRelated(orderCodeA, orderCodeB) {
-  if (codesMatch(orderCodeA, orderCodeB)) return true;
-  const strip = (v) => normCode(v).replace(/[^a-z0-9]/g, "");
-  const a = strip(orderCodeA);
-  const b = strip(orderCodeB);
-  if (!a || !b) return false;
-  const minLen = Math.min(a.length, b.length, 10);
-  for (let len = minLen; len >= 6; len--) {
-    if (a.slice(0, len) === b.slice(0, len)) return true;
+function pushConsignmentIds(ordered, seen, raw) {
+  for (const id of parseConsignmentIds(raw)) {
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      ordered.push(id);
+    }
   }
-  return false;
 }
 
 /**
- * Birincil sevkiyat dışında birleştirilecek ikincil sevkiyat ID'leri.
- * Aktif model, günün ikinci modeli (production-b), env ve tek-model yedekleri.
+ * Aktif ütü-paket modeline göre birleştirilecek tüm Takipsan sevkiyat ID'leri (sıralı, tekrarsız).
+ * Ana (258152) + ikincil (258154) ayrı alanlarda veya ikincil alanda virgülle yazılabilir.
  */
-async function collectMergeConsignmentIds(date, activeModel, primaryFetchId) {
+async function buildConsignmentIdList(productionDate, activeModel) {
+  const envPrimary = String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
   const envSecondary = String(process.env.TAKIPSAN_SECONDARY_CONSIGNMENT_ID || "").trim();
-  const ids = new Set();
-  const add = (raw) => {
-    const id = String(raw || "").trim();
-    if (id && id !== primaryFetchId) ids.add(id);
-  };
+  const ordered = [];
+  const seen = new Set();
 
-  if (envSecondary) add(envSecondary);
+  const modelPrimary = String(activeModel?.primaryConsignmentId || "").trim();
+  const modelSecondary = activeModel?.secondaryConsignmentId || "";
+  const hasModelConsignment = Boolean(modelPrimary || String(modelSecondary).trim());
 
-  const modelSecondary = String(activeModel?.secondaryConsignmentId || "").trim();
-  if (modelSecondary) add(modelSecondary);
-
-  try {
-    const secMid = await getSecondaryModelId(date);
-    if (secMid) {
-      const sm = await getProductModelWithBaselines(secMid);
-      add(sm?.secondaryConsignmentId);
-    }
-  } catch {
-    /* devam */
+  if (hasModelConsignment) {
+    if (modelPrimary) pushConsignmentIds(ordered, seen, modelPrimary);
+    pushConsignmentIds(ordered, seen, modelSecondary);
+    // Yalnızca ikincil tanımlıysa .env birincil de ekle (örn. 258152 + 258154)
+    if (!modelPrimary && envPrimary) pushConsignmentIds(ordered, seen, envPrimary);
+  } else {
+    if (envPrimary) pushConsignmentIds(ordered, seen, envPrimary);
+    if (envSecondary) pushConsignmentIds(ordered, seen, envSecondary);
   }
 
-  if (ids.size === 0) {
+  if (ordered.length <= 1) {
     try {
-      const models = await listProductModels();
-      const withSecondary = models.filter((m) => m.secondaryConsignmentId);
-      if (withSecondary.length === 1) {
-        add(withSecondary[0].secondaryConsignmentId);
+      const secMid = await getSecondaryModelId(productionDate);
+      if (secMid) {
+        const sm = await getProductModelWithBaselines(secMid);
+        if (sm?.primaryConsignmentId) pushConsignmentIds(ordered, seen, sm.primaryConsignmentId);
+        if (sm?.secondaryConsignmentId) pushConsignmentIds(ordered, seen, sm.secondaryConsignmentId);
       }
     } catch {
       /* devam */
     }
   }
 
-  return [...ids];
+  if (ordered.length === 0 && envPrimary) pushConsignmentIds(ordered, seen, envPrimary);
+
+  return ordered;
 }
 
 /**
- * Günün veri girişi modeline göre hangi Takipsan sevkiyat(lar)ından okunacağını belirler.
- * Aktif modelin kendi sevkiyatı varsa (env birincilden farklı) o esas alınır; gerekirse env birincil de birleştirilir.
+ * Günün ütü-paket modeline göre hangi Takipsan sevkiyat(lar)ından okunacağını belirler.
  */
-async function resolveSyncConsignments(date) {
-  const envPrimary = String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
-  const envSecondary = String(process.env.TAKIPSAN_SECONDARY_CONSIGNMENT_ID || "").trim();
-
+async function resolveSyncConsignments(productionDate) {
   let activeModelId = null;
   let activeModel = null;
   let meta = null;
 
   try {
-    meta = await getDayProductMeta(date);
-    activeModelId = meta?.modelId ?? null;
-    if (activeModelId) {
-      activeModel = await getProductModelWithBaselines(activeModelId);
+    const upm = await getUtuPaketModelForDate(productionDate);
+    if (upm?.modelId) {
+      activeModelId = upm.modelId;
+      meta = {
+        productName: upm.productName,
+        productModel: upm.productModel,
+        modelId: upm.modelId,
+      };
+      activeModel = await getProductModelWithBaselines(upm.modelId);
     }
   } catch {
     // env varsayılanına düş
   }
 
-  const modelSecondary = String(activeModel?.secondaryConsignmentId || "").trim();
-
-  // Model kendi sevkiyatına bağlıysa (Bershka vb.) — gün o modele ait
-  if (modelSecondary && activeModelId && modelSecondary !== envPrimary) {
-    return {
-      primaryId: modelSecondary,
-      envPrimary,
-      envSecondary: envSecondary || null,
-      activeModelId,
-      activeModel,
-      meta,
-      mode: "model_consignment",
-    };
-  }
+  const consignmentIds = await buildConsignmentIdList(productionDate, activeModel);
+  const primaryId =
+    consignmentIds[0] || String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
 
   return {
-    primaryId: envPrimary,
-    envPrimary,
-    envSecondary: envSecondary || null,
+    primaryId,
+    mergeIds: consignmentIds.slice(1),
+    consignmentIds,
     activeModelId,
     activeModel,
     meta,
-    mode: "env_primary",
   };
 }
 
@@ -273,8 +248,14 @@ export async function syncTakipsanToUtuPaket(options = {}) {
   syncInFlight = (async () => {
     const date = options.date || todayTurkeyIso();
     const syncedAt = new Date().toISOString();
+
+    const existingDay = await getUtuPaketDay(date).catch(() => null);
+
     const resolved = await resolveSyncConsignments(date);
     const consignmentId = resolved.primaryId;
+    const allConsignmentIds = resolved.consignmentIds?.length
+      ? resolved.consignmentIds
+      : [consignmentId, ...resolved.mergeIds].filter(Boolean);
     const activeModel = resolved.activeModel;
     const meta = resolved.meta;
 
@@ -284,67 +265,18 @@ export async function syncTakipsanToUtuPaket(options = {}) {
       const client = getTakipsanClient();
       let data = await client.fetchConsignmentReadData(consignmentId);
 
-      if (resolved.mode === "model_consignment") {
-        // Aynı ürün ailesinde bölünmüş sipariş (68131 birincil + ikincil): env birincili de ekle
-        const envPrimary = resolved.envPrimary;
-        if (envPrimary && envPrimary !== consignmentId) {
-          try {
-            const primary = await client.fetchConsignmentReadData(envPrimary);
-            const modelRef =
-              activeModel?.takipsanOrderCode ||
-              activeModel?.modelCode ||
-              meta?.productModel ||
-              data.orderCode;
-            if (
-              ordersRelated(primary.orderCode, modelRef) ||
-              ordersRelated(primary.orderCode, data.orderCode)
-            ) {
-              data = mergeConsignmentData(primary, data);
-              console.log(
-                `[TakipsanSync] Model sevkiyatı + env birincil birleştirildi: ${envPrimary} + ${consignmentId}`
-              );
-            }
-          } catch (primaryErr) {
-            console.warn(
-              `[TakipsanSync] Env birincil (${envPrimary}) model sevkiyatına eklenemedi:`,
-              String(primaryErr?.message ?? primaryErr)
-            );
-          }
-        }
+      if (resolved.mergeIds.length > 0) {
+        data = await mergeExtraConsignments(client, data, resolved.mergeIds);
+      }
+
+      if (allConsignmentIds.length > 1) {
         console.log(
-          `[TakipsanSync] Aktif model sevkiyatı: ${consignmentId} → ${data.readCount} okunan / ${data.orderQuantity} hedef`
+          `[TakipsanSync] Birleşik sevkiyat: ${allConsignmentIds.join(" + ")} → ${data.readCount} okunan / ${data.orderQuantity} hedef`
         );
-      } else {
-        let mergeIds = await collectMergeConsignmentIds(date, activeModel, consignmentId);
-
-        try {
-          const models = await listProductModels();
-          const withSecondary = models.filter((m) => m.secondaryConsignmentId);
-          if (withSecondary.length > 1 && data.orderCode) {
-            const dataOc = String(data.orderCode).trim();
-            const related = withSecondary.filter((m) => {
-              const oc = String(m.takipsanOrderCode || m.modelCode || "").trim();
-              return oc && ordersRelated(dataOc, oc);
-            });
-            if (related.length > 0) {
-              const allowed = new Set(
-                related.map((m) => String(m.secondaryConsignmentId).trim()).filter(Boolean)
-              );
-              if (resolved.envSecondary) allowed.add(resolved.envSecondary);
-              mergeIds = mergeIds.filter((id) => allowed.has(id));
-            }
-          }
-        } catch {
-          /* tüm adayları birleştir */
-        }
-
-        if (mergeIds.length > 0) {
-          data = await mergeExtraConsignments(client, data, mergeIds);
-        }
       }
 
       const slotKey = getCurrentUtuPaketSlotKey();
-      const existing = await getUtuPaketDay(date);
+      const existing = existingDay || (await getUtuPaketDay(date));
 
       const stages = { ...existing.stages };
       stages.paketleme = buildPaketlemeSlots(data.readCount, slotKey);
@@ -384,8 +316,8 @@ export async function syncTakipsanToUtuPaket(options = {}) {
       const result = {
         ok: true,
         date,
-        consignmentId,
-        syncMode: resolved.mode,
+        consignmentId: allConsignmentIds.join("+") || consignmentId,
+        syncMode: allConsignmentIds.length > 1 ? "merged" : "single",
         readCount: data.readCount,
         orderQuantity: packagingTarget,
         orderCode: data.orderCode,
@@ -405,7 +337,7 @@ export async function syncTakipsanToUtuPaket(options = {}) {
         lastSuccessAt: syncedAt,
         lastReadCount: data.readCount,
         lastSource: data.source,
-        lastConsignmentId: consignmentId,
+        lastConsignmentId: allConsignmentIds.join("+") || consignmentId,
         lastDate: date,
         lastSlotKey: slotKey,
         lastPackageCount: packageCount,

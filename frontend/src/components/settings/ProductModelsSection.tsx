@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
   applyHedefSession,
+  applyUtuPaketSession,
   createProductModel,
   deleteProductModel,
   getProcesses,
@@ -63,6 +64,7 @@ export default function ProductModelsSection() {
   const [takipsanOrderCode, setTakipsanOrderCode] = useState("");
   const [targetQuantity, setTargetQuantity] = useState(0);
   const [secondaryConsignmentId, setSecondaryConsignmentId] = useState("");
+  const [primaryConsignmentId, setPrimaryConsignmentId] = useState("");
   const [isTakipsanLinkedEdit, setIsTakipsanLinkedEdit] = useState(false);
   const [takipsanBusy, setTakipsanBusy] = useState(false);
   const [takipsanInputId, setTakipsanInputId] = useState("");
@@ -73,6 +75,11 @@ export default function ProductModelsSection() {
   const [hedefApplyBusy, setHedefApplyBusy] = useState(false);
   const [hedefApplyMsg, setHedefApplyMsg] = useState<string | null>(null);
   const [hedefApplyErr, setHedefApplyErr] = useState<string | null>(null);
+  const [utuPaketApplyStart, setUtuPaketApplyStart] = useState(() => clampToWeekdayIso(todayWeekdayIso()));
+  const [utuPaketApplyEnd, setUtuPaketApplyEnd] = useState(() => clampToWeekdayIso(todayWeekdayIso()));
+  const [utuPaketApplyBusy, setUtuPaketApplyBusy] = useState(false);
+  const [utuPaketApplyMsg, setUtuPaketApplyMsg] = useState<string | null>(null);
+  const [utuPaketApplyErr, setUtuPaketApplyErr] = useState<string | null>(null);
 
   const processNames = useMemo(() => processes.map((p) => p.name).sort((a, b) => a.localeCompare(b, "tr")), [processes]);
 
@@ -125,6 +132,7 @@ export default function ProductModelsSection() {
     setTakipsanOrderCode("");
     setTargetQuantity(0);
     setSecondaryConsignmentId("");
+    setPrimaryConsignmentId("");
     setIsTakipsanLinkedEdit(false);
     setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
     setError(null);
@@ -149,6 +157,7 @@ export default function ProductModelsSection() {
       setTakipsanOrderCode(info.orderCode);
       setTargetQuantity(info.orderQuantity);
       setSecondaryConsignmentId("");
+      setPrimaryConsignmentId("");
       setBaselines([emptyRow()]);
       setDailySummaryRows([]);
       setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
@@ -176,8 +185,13 @@ export default function ProductModelsSection() {
       setTakipsanOrderCode(d.takipsanOrderCode || "");
       setTargetQuantity(d.targetQuantity ?? 0);
       setSecondaryConsignmentId(d.secondaryConsignmentId ?? "");
+      setPrimaryConsignmentId(d.primaryConsignmentId ?? "");
       const ssd = d.sessionStartDate ? clampToWeekdayIso(String(d.sessionStartDate)) : clampToWeekdayIso(todayWeekdayIso());
       setSessionStartDate(ssd);
+      setUtuPaketApplyStart(
+        d.utuPaketSessionStartDate ? clampToWeekdayIso(String(d.utuPaketSessionStartDate)) : ssd
+      );
+      setUtuPaketApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
       // Formun içindeki "Günlere uygula" alanını mevcut model ve tarihle hazırla
       setHedefApplyModelId(id);
       setHedefApplyStart(ssd);
@@ -216,6 +230,7 @@ export default function ProductModelsSection() {
       baselines: baselines.map((b) => ({ teamCode: b.teamCode, processName: b.processName, arkaHalf: b.arkaHalf ? 1 : 0 })),
       dailySummaryProcesses: dailySummaryRows.filter((b) => b.teamCode.trim() && b.processName.trim()).map((b) => ({ teamCode: b.teamCode, processName: b.processName, arkaHalf: b.arkaHalf ? 1 : 0 })),
       sessionStartDate: sessionStartDate || null,
+      primaryConsignmentId: primaryConsignmentId.trim() || null,
       secondaryConsignmentId: secondaryConsignmentId.trim() || null,
       ...(editingId === "new" && fromTakipsan ? { fromTakipsan: true, takipsanProductLabel, takipsanOrderCode, targetQuantity } : {}),
     };
@@ -267,6 +282,41 @@ export default function ProductModelsSection() {
       setHedefApplyErr(e instanceof Error ? e.message : "Uygulanamadı");
     } finally {
       setHedefApplyBusy(false);
+    }
+  }
+
+  async function handleUtuPaketApplyToDays() {
+    setUtuPaketApplyMsg(null);
+    setUtuPaketApplyErr(null);
+    if (typeof editingId !== "number") {
+      setUtuPaketApplyErr("Önce modeli kaydedin, sonra uygulayın.");
+      return;
+    }
+    const start = clampToWeekdayIso(utuPaketApplyStart);
+    const end = clampToWeekdayIso(utuPaketApplyEnd);
+    if (!start || !end || start > end) {
+      setUtuPaketApplyErr("Geçerli bir hafta içi tarih aralığı seçin.");
+      return;
+    }
+    setUtuPaketApplyBusy(true);
+    try {
+      const m = await getProductModel(editingId);
+      const { datesUpdated } = await applyUtuPaketSession({
+        modelId: editingId,
+        startDate: start,
+        endDate: end,
+        productName: m.productName,
+        productModel: m.modelCode,
+      });
+      setUtuPaketApplyMsg(
+        datesUpdated > 0
+          ? `${datesUpdated} iş günü ütü–paket ve Ekran5 için bu modele bağlandı.`
+          : "Aralıkta güncellenecek iş günü bulunamadı."
+      );
+    } catch (e) {
+      setUtuPaketApplyErr(e instanceof Error ? e.message : "Uygulanamadı");
+    } finally {
+      setUtuPaketApplyBusy(false);
     }
   }
 
@@ -432,7 +482,7 @@ export default function ProductModelsSection() {
                           Hedef {m.targetQuantity.toLocaleString("tr-TR")} adet
                         </span>
                       ) : null}
-                      {m.secondaryConsignmentId ? (
+                      {(m.primaryConsignmentId || m.secondaryConsignmentId) ? (
                         <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700 ring-1 ring-violet-200/80 dark:bg-violet-950/30 dark:text-violet-300 dark:ring-violet-800/50">
                           2 PO birleşik
                         </span>
@@ -552,6 +602,19 @@ export default function ProductModelsSection() {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Ana sevkiyat ID
+                      <span className="ml-1.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-600 dark:bg-violet-900/40 dark:text-violet-300">opsiyonel</span>
+                    </label>
+                    <input
+                      type="text" value={primaryConsignmentId}
+                      onChange={(e) => setPrimaryConsignmentId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="Örn. 258152"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-400">8000+4000 gibi bölünmüş siparişte birinci PO. Boş bırakılırsa .env birincili kullanılır.</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
                       İkincil sevkiyat ID
                       <span className="ml-1.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-600 dark:bg-violet-900/40 dark:text-violet-300">opsiyonel</span>
                     </label>
@@ -559,9 +622,9 @@ export default function ProductModelsSection() {
                       type="text" value={secondaryConsignmentId}
                       onChange={(e) => setSecondaryConsignmentId(e.target.value)}
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Örn. 261962"
+                      placeholder="Örn. 258154"
                     />
-                    <p className="mt-1 text-[11px] text-slate-400">İki PO aynı üretimse birleştir — paket + sipariş adedi toplanır.</p>
+                    <p className="mt-1 text-[11px] text-slate-400">İkinci PO (örn. 258154). Birden fazla: virgülle ayırın. Ana + ikincil birlikte toplanır.</p>
                   </div>
                 </div>
               </div>
@@ -607,6 +670,50 @@ export default function ProductModelsSection() {
                 <p className="mt-1.5 text-[11px] text-slate-400">Ekran 1 ve hedef özette «Biten» bu tarihten itibaren sayılır.</p>
               </div>
             )}
+
+            {/* ── Ütü–paket günlerine uygula (veri girişinden bağımsız) ── */}
+            {hasPermission("utuPaket") && typeof editingId === "number" ? (
+              <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+                <div className="mb-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-400">
+                    Ütü–Paket İçin Uygula
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Seçili günlere bu modeli ata; ütü–paket veri girişi, Takipsan paketleme ve Ekran5 bu modele göre çalışır (veri girişi modelinden bağımsız).
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <WeekdayDatePicker
+                    label="Başlangıç"
+                    value={utuPaketApplyStart}
+                    onChange={(v) => setUtuPaketApplyStart(coerceWeekdayPickerValue(v))}
+                    className="min-w-[10rem] flex-1"
+                  />
+                  <WeekdayDatePicker
+                    label="Bitiş"
+                    value={utuPaketApplyEnd}
+                    onChange={(v) => setUtuPaketApplyEnd(coerceWeekdayPickerValue(v))}
+                    className="min-w-[10rem] flex-1"
+                  />
+                  <button
+                    type="button"
+                    disabled={utuPaketApplyBusy}
+                    onClick={() => void handleUtuPaketApplyToDays()}
+                    className="flex items-center gap-1.5 rounded-lg border border-indigo-400 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                  >
+                    {utuPaketApplyBusy ? "Uygulanıyor…" : "Ütü–pakete uygula"}
+                  </button>
+                </div>
+                {utuPaketApplyMsg ? (
+                  <p className="mt-2.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800 dark:border-indigo-800/50 dark:bg-indigo-950/30 dark:text-indigo-200">
+                    ✓ {utuPaketApplyMsg}
+                  </p>
+                ) : null}
+                {utuPaketApplyErr ? (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {utuPaketApplyErr}</p>
+                ) : null}
+              </div>
+            ) : null}
 
             {/* ── Çalışılacak bölümler ── */}
             <div className="px-5 py-4">

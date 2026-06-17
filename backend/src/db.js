@@ -369,7 +369,9 @@ export function initDb() {
         ["takipsan_order_code", "TEXT NOT NULL DEFAULT ''"],
         ["target_quantity", "INTEGER NOT NULL DEFAULT 0"],
         ["session_start_date", "TEXT"],
+        ["utu_paket_session_start_date", "TEXT"],
         ["secondary_consignment_id", "TEXT"],
+        ["primary_consignment_id", "TEXT"],
         ["ekran5_target", "INTEGER"],
       ]) {
         if (!names.has(col[0])) {
@@ -798,6 +800,10 @@ export function initDb() {
       () => {}
     );
     db.run("ALTER TABLE utu_paket_meta ADD COLUMN takipsan_packages_json TEXT", () => {});
+    db.run("ALTER TABLE utu_paket_meta ADD COLUMN model_reference_date TEXT", () => {});
+    db.run("ALTER TABLE utu_paket_meta ADD COLUMN model_id INTEGER", () => {});
+    db.run("ALTER TABLE utu_paket_meta ADD COLUMN product_name TEXT NOT NULL DEFAULT ''", () => {});
+    db.run("ALTER TABLE utu_paket_meta ADD COLUMN product_model TEXT NOT NULL DEFAULT ''", () => {});
 
     // ek_sayim: optik ve ütü için elle girilen ek adet (saat toplamına eklenir)
     db.run(

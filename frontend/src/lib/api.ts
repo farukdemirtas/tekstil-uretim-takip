@@ -812,7 +812,9 @@ export type ProductModelListItem = {
   takipsanOrderCode?: string;
   targetQuantity?: number;
   sessionStartDate?: string | null;
+  utuPaketSessionStartDate?: string | null;
   secondaryConsignmentId?: string | null;
+  primaryConsignmentId?: string | null;
   isTakipsanLinked?: boolean;
 };
 
@@ -931,6 +933,25 @@ export async function setEkran5Target(modelId: number, value: number | null): Pr
     body: JSON.stringify({ value }),
   });
   if (!res.ok) throw new Error("Hedef kaydedilemedi");
+}
+
+export async function applyUtuPaketSession(payload: {
+  modelId: number;
+  startDate: string;
+  endDate: string;
+  productName?: string;
+  productModel?: string;
+}): Promise<{ ok: boolean; datesUpdated: number; sessionStartDate?: string }> {
+  const res = await apiFetch(`${apiBase()}/utu-paket/apply-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Ütü–paket oturumu uygulanamadı");
+  }
+  return res.json();
 }
 
 export async function applyHedefSession(payload: {
@@ -1512,7 +1533,7 @@ export async function refreshProductModelTarget(
 
 export async function saveUtuPaket(
   payload: Pick<UtuPaketDayPayload, "date" | "stages"> &
-    Partial<Pick<UtuPaketDayPayload, "beden" | "packagingTarget" | "stageEkSayim">>
+    Partial<Pick<UtuPaketDayPayload, "beden" | "packagingTarget" | "stageEkSayim" | "modelReferenceDate">>
 ): Promise<void> {
   const res = await apiFetch(`${apiBase()}/utu-paket`, {
     method: "PUT",

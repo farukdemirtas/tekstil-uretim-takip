@@ -103,8 +103,18 @@ export function sumGunPaketlenen(
   };
 }
 
+export type UtuPaketModelRef = {
+  modelId: number;
+  productName: string;
+  productModel: string;
+};
+
 export type UtuPaketDayPayload = {
   date: string;
+  /** @deprecated Ayarlardan utuPaketModel kullanın */
+  modelReferenceDate?: string;
+  /** Ayarlar → Ütü-paket için uygula ile atanan model */
+  utuPaketModel?: UtuPaketModelRef | null;
   stages: Record<UtuPaketStage, UtuPaketSlots>;
   /** Optik ve ütü için saat toplamına eklenen ek adet */
   stageEkSayim?: Partial<Record<Exclude<UtuPaketStage, "paketleme">, number>>;
@@ -185,6 +195,14 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
 
   return {
     date: raw.date,
+    modelReferenceDate: raw.modelReferenceDate ? String(raw.modelReferenceDate).trim() : raw.date,
+    utuPaketModel: raw.utuPaketModel?.modelId
+      ? {
+          modelId: Number(raw.utuPaketModel.modelId),
+          productName: String(raw.utuPaketModel.productName || ""),
+          productModel: String(raw.utuPaketModel.productModel || ""),
+        }
+      : null,
     stages,
     stageEkSayim,
     beden,
@@ -197,4 +215,17 @@ export function calcUtuPaketPercent(count: number, target: number): number {
   if (!Number.isFinite(target) || target <= 0) return 0;
   const pct = (count / target) * 100;
   return Math.max(0, Math.min(100, pct));
+}
+
+/** Model hedefi ile birleştirilmiş Takipsan sipariş hedefinin büyük olanı */
+export function resolveUtuPaketLineTarget(
+  payload: Pick<UtuPaketDayPayload, "packagingTarget" | "takipsan">,
+  productionTarget = 0
+): number {
+  const takipsanTarget = Math.max(
+    0,
+    Math.floor(Number(payload.takipsan?.orderQuantity) || Number(payload.packagingTarget) || 0)
+  );
+  const prod = Math.max(0, Math.floor(Number(productionTarget) || 0));
+  return Math.max(prod, takipsanTarget);
 }

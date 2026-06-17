@@ -68,6 +68,8 @@ import {
   bumpEkranRefreshSignal,
   getEkranRefreshSignal,
   applyHedefSessionToDailyMeta,
+  applyUtuPaketSessionToMeta,
+  getUtuPaketModelForDate,
   getRepairEntries,
   upsertRepairEntries,
   getRepairHistory,
@@ -78,6 +80,7 @@ import {
   getEkran1GenelIlerleme,
   refreshProductModelTargetsFromTakipsan,
   saveUtuPaketDay,
+  setUtuPaketModelReferenceDate,
   deleteUtuPaketDay,
   getProsesVeriRows,
   saveProsesVeriRows,
@@ -727,6 +730,46 @@ app.post("/api/hedef/apply-session", requirePermission("hedefTakip"), async (req
     res.json(result);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+app.post("/api/utu-paket/apply-session", requirePermission("utuPaket"), async (req, res) => {
+  const { modelId, startDate, endDate, productName, productModel } = req.body || {};
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid < 1) {
+    return res.status(400).json({ message: "modelId gerekli" });
+  }
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "startDate ve endDate zorunlu" });
+  }
+  try {
+    const m = await getProductModelWithBaselines(mid);
+    if (!m) return res.status(404).json({ message: "Model bulunamadı" });
+    const pn =
+      productName != null && String(productName).trim() !== ""
+        ? String(productName).trim()
+        : String(m.productName || "");
+    const pmd =
+      productModel != null && String(productModel).trim() !== ""
+        ? String(productModel).trim()
+        : String(m.modelCode || "");
+    const result = await applyUtuPaketSessionToMeta({
+      modelId: mid,
+      startDate: String(startDate),
+      endDate: String(endDate),
+      productName: pn,
+      productModel: pmd,
+    });
+    logActivity(req, "utu_paket_oturum_uygula", "utu_paket_meta", {
+      modelId: mid,
+      startDate,
+      endDate,
+      dates: result.datesUpdated,
+    });
+    void bumpEkranRefreshSignal().catch(() => {});
+    return res.json(result);
+  } catch (e) {
+    return res.status(400).json({ message: String(e.message || e) });
   }
 });
 
@@ -1604,14 +1647,32 @@ app.get("/api/utu-paket/ekran1-summary", requireAnyPermission(["ekran1", "utuPak
 });
 
 app.put("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
-  const { date, stages, beden, packagingTarget, stageEkSayim } = req.body || {};
+  const { date, stages, beden, packagingTarget, stageEkSayim, modelReferenceDate } = req.body || {};
   if (!date) return res.status(400).json({ message: "date zorunlu" });
   try {
-    await saveUtuPaketDay(String(date), { stages, beden, packagingTarget, stageEkSayim });
+    await saveUtuPaketDay(String(date), { stages, beden, packagingTarget, stageEkSayim, modelReferenceDate });
     logActivity(req, "utu_paket_kaydet", "utu_paket_slots", { date: String(date) });
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: "Ütü–paket verisi kaydedilemedi", error: String(err) });
+  }
+});
+
+app.put("/api/utu-paket/model-date", requirePermission("utuPaket"), async (req, res) => {
+  const { date, modelReferenceDate } = req.body || {};
+  if (!date || !modelReferenceDate) {
+    return res.status(400).json({ message: "date ve modelReferenceDate zorunlu" });
+  }
+  try {
+    const result = await setUtuPaketModelReferenceDate(String(date), String(modelReferenceDate));
+    logActivity(req, "utu_paket_model_tarih", "utu_paket_meta", {
+      date: String(date),
+      modelReferenceDate: result.modelReferenceDate,
+    });
+    void bumpEkranRefreshSignal().catch(() => {});
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ message: "Model tarihi kaydedilemedi", error: String(err) });
   }
 });
 

@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
   deleteUtuPaket,
-  getDayProductMeta,
   getTakipsanStatus,
   getUtuPaket,
   saveUtuPaket,
@@ -26,6 +25,7 @@ import {
   emptyUtuPaketStages,
   normalizeTakipsanPackages,
   normalizeUtuPaketPayload,
+  resolveUtuPaketLineTarget,
   sumGunPaketlenen,
   sumUtuPaketSlots,
   type UtuPaketDayPayload,
@@ -124,12 +124,18 @@ export default function UtuPaketPage() {
     setLoading(true);
     setSaveMsg(null);
     try {
-      const [raw, meta] = await Promise.all([
-        getUtuPaket(date),
-        getDayProductMeta(date).catch(() => null),
-      ]);
+      const raw = await getUtuPaket(date);
       setData(normalizeUtuPaketPayload({ ...raw, date }));
-      setDayMeta(meta);
+      setDayMeta(
+        raw.utuPaketModel
+          ? {
+              productName: raw.utuPaketModel.productName,
+              productModel: raw.utuPaketModel.productModel,
+              modelId: raw.utuPaketModel.modelId,
+              metaSource: "hedef" as const,
+            }
+          : null
+      );
       setDirty(false);
     } catch (e) {
       setData(
@@ -275,7 +281,8 @@ export default function UtuPaketPage() {
     data.takipsan?.packageCount ?? 0,
     takipsanStatus?.lastPackageCount ?? 0
   );
-  const paketOrderQty = data.takipsan?.orderQuantity ?? data.packagingTarget ?? 0;
+  const paketOrderQty = resolveUtuPaketLineTarget(data, 0);
+  const paketRemaining = Math.max(0, paketOrderQty - paketReadCount);
 
   const gunPaketOzeti = useMemo(
     () => sumGunPaketlenen(paketPackages, selectedDate),
@@ -448,16 +455,20 @@ export default function UtuPaketPage() {
         {mainTab === "entry" ? (
           <div className="flex flex-col gap-3 border-t border-slate-200/80 px-4 py-4 dark:border-slate-700/80 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
             <WeekdayDatePicker
-              label="Tarih"
+              label="Veri tarihi"
               className="w-full sm:w-auto sm:min-w-[16rem]"
               value={selectedDate}
               onChange={(d) => void handleDateChange(d)}
             />
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:justify-end">
-              {(dayMeta?.productName || dayMeta?.productModel) && (
+              {(dayMeta?.productName || dayMeta?.productModel) ? (
                 <p className="text-sm text-slate-700 dark:text-slate-300">
-                  <span className="font-medium text-slate-500 dark:text-slate-400">Ürün: </span>
+                  <span className="font-medium text-slate-500 dark:text-slate-400">Ütü–paket modeli: </span>
                   {[dayMeta.productName, dayMeta.productModel].filter(Boolean).join(" · ")}
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Bu gün için model atanmamış — Ayarlar → Ürün modelleri → «Ütü–pakete uygula»
                 </p>
               )}
               {saving || dirty ? (
@@ -506,6 +517,20 @@ export default function UtuPaketPage() {
               <div className="px-4 py-3">
                 {st === "paketleme" ? (
                   <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Hedef</p>
+                        <p className="text-lg font-black tabular-nums text-slate-800 dark:text-slate-100">
+                          {loading || paketOrderQty <= 0 ? "—" : paketOrderQty.toLocaleString("tr-TR")}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">Kalan</p>
+                        <p className="text-lg font-black tabular-nums text-amber-800 dark:text-amber-300">
+                          {loading || paketOrderQty <= 0 ? "—" : paketRemaining.toLocaleString("tr-TR")}
+                        </p>
+                      </div>
+                    </div>
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Toplam</p>
                       <p className="text-2xl font-black tabular-nums text-slate-900 dark:text-white">

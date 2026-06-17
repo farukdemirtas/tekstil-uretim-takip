@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  getDayProductMeta,
   getEkran1GenelIlerleme,
   getEkran5Target,
   getEkranRefreshSignal,
@@ -21,6 +20,7 @@ import {
   normalizeUtuPaketPayload,
   normalizeTakipsanPackages,
   sumGunPaketlenen,
+  resolveUtuPaketLineTarget,
   sumUtuPaketSlots,
 } from "@/lib/utuPaket";
 
@@ -191,27 +191,31 @@ function currentProductMatchesTakipsan(
   orderCode: string,
   modelCodes: string[] = []
 ): boolean {
-  const oc = orderCode.trim().toLowerCase();
-  if (!oc) return false;
+  const rawOc = orderCode.trim();
+  if (!rawOc) return false;
+  const orderParts = rawOc.split("+").map((p) => p.trim().toLowerCase()).filter(Boolean);
   const norm = (s: string) => s.replace(/[^a-z0-9]/g, "");
-  const ocNorm = norm(oc);
 
-  for (const raw of modelCodes) {
-    const code = raw.trim().toLowerCase();
-    if (!code) continue;
-    const codeNorm = norm(code);
-    if (oc.includes(code) || code.includes(oc) || (codeNorm && ocNorm.includes(codeNorm))) return true;
-  }
+  const matchesPart = (oc: string) => {
+    const ocNorm = norm(oc);
+    for (const raw of modelCodes) {
+      const code = raw.trim().toLowerCase();
+      if (!code) continue;
+      const codeNorm = norm(code);
+      if (oc.includes(code) || code.includes(oc) || (codeNorm && ocNorm.includes(codeNorm))) return true;
+    }
+    const pm = (meta?.productModel ?? "").trim().toLowerCase();
+    const pn = (meta?.productName ?? "").trim().toLowerCase();
+    if (pm && (oc.includes(pm) || pm.includes(oc) || ocNorm.includes(norm(pm)))) return true;
+    if (pn) {
+      const first = pn.split(/\s+/)[0] ?? "";
+      if (first.length >= 3 && oc.includes(first)) return true;
+    }
+    return false;
+  };
 
-  const pm = (meta?.productModel ?? "").trim().toLowerCase();
-  const pn = (meta?.productName ?? "").trim().toLowerCase();
-  if (!pm && !pn) return true;
-  if (pm && (oc.includes(pm) || pm.includes(oc) || ocNorm.includes(norm(pm)))) return true;
-  if (pn) {
-    const first = pn.split(/\s+/)[0] ?? "";
-    if (first.length >= 3 && oc.includes(first)) return true;
-  }
-  return false;
+  if (orderParts.length === 0) return false;
+  return orderParts.some((part) => matchesPart(part));
 }
 
 // ─── Stat kutu ───────────────────────────────────────────────────────────────
@@ -452,19 +456,18 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      // Önce meta'yı çek — model ID'si diğer çağrılara gerekiyor
-      const meta = await getDayProductMeta(date).catch(() => null);
-      const mid = meta?.modelId ?? null;
+      const date = dateIso || todayWeekdayIso();
+      const rawInitial = await getUtuPaket(date).catch(() => null);
+      const upm = rawInitial?.utuPaketModel ?? null;
+      const mid = upm?.modelId ?? null;
       if (mid !== modelId) setModelId(mid);
 
       const modelDetail = mid ? await getProductModel(mid).catch(() => null) : null;
 
-      // Aktif modelin kendi sevkiyatı varsa paket verisini güncelle (Bershka vb.)
-      if (modelDetail?.secondaryConsignmentId) {
+      if ((modelDetail?.primaryConsignmentId || modelDetail?.secondaryConsignmentId) && mid) {
         await syncTakipsan(date).catch(() => {});
       }
 
-      // Model ID'siyle paralel çağrı: genelOzet modele özgü session tarihini döndürür
       const [raw, genelOzet, ekran5Res] = await Promise.all([
         getUtuPaket(date),
         getEkran1GenelIlerleme(date, mid ?? undefined).catch(() => null),
@@ -472,6 +475,9 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       ]);
 
       const data = normalizeUtuPaketPayload({ ...raw, date });
+      const meta = upm
+        ? { productName: upm.productName, productModel: upm.productModel, modelId: upm.modelId }
+        : null;
       const todayOptik = sumUtuPaketSlots(data.stages.optik);
       const todayUtu   = sumUtuPaketSlots(data.stages.utu);
       setDisplayDate(date);
@@ -483,7 +489,12 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         modelDetail?.modelCode ?? "",
         modelDetail?.takipsanOrderCode ?? "",
       ];
-      const takipsanOk = currentProductMatchesTakipsan(meta, data.takipsan?.orderCode ?? "", modelCodes);
+      const usesModelConsignment = Boolean(
+        modelDetail?.primaryConsignmentId || modelDetail?.secondaryConsignmentId
+      );
+      const takipsanOk =
+        (usesModelConsignment && Boolean(data.takipsan?.syncedAt)) ||
+        currentProductMatchesTakipsan(meta, data.takipsan?.orderCode ?? "", modelCodes);
       if (takipsanOk) {
         setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
         const gunPkt = sumGunPaketlenen(data.takipsan?.packages, date);
@@ -499,17 +510,18 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
 
       const modelHedef = ekran5Res.targetQuantity ?? 0;
       const genelHedef = genelOzet?.target ?? 0;
-      const utuHedef = data.takipsan?.orderQuantity ?? data.packagingTarget ?? 0;
-      setApiTarget(
-        genelHedef > 0 ? genelHedef : modelHedef > 0 ? modelHedef : utuHedef
-      );
+      const productionTarget = genelHedef > 0 ? genelHedef : modelHedef > 0 ? modelHedef : 0;
+      setApiTarget(resolveUtuPaketLineTarget(data, productionTarget));
       setManualTarget(
         ekran5Res.ekran5Target != null && ekran5Res.ekran5Target > 0 ? ekran5Res.ekran5Target : null
       );
       setProductLabel([meta?.productName, meta?.productModel].filter(Boolean).join(" · "));
 
       // Modele özgü session başlangıcından bugüne analitik
-      const startDate = genelOzet?.dataStartDate ?? date;
+      const startDate =
+        modelDetail?.utuPaketSessionStartDate?.trim() ||
+        genelOzet?.dataStartDate ||
+        date;
       if (startDate && startDate <= date) {
         const analytics = await getUtuPaketAnalytics({ startDate, endDate: date }).catch(() => null);
         setOptikTotal(analytics?.periodTotals?.optik ?? todayOptik);
