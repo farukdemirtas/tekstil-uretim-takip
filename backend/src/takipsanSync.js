@@ -6,6 +6,8 @@ import {
   saveUtuPaketDay,
   refreshProductModelTargetsFromTakipsan,
   listProductModels,
+  getDayProductMeta,
+  getProductModelWithBaselines,
 } from "./queries.js";
 import { TakipsanClient, isTakipsanConfigured } from "./takipsanClient.js";
 import { splitTakipsanProductLabel, buildTakipsanProductLabel } from "./takipsanProduct.js";
@@ -122,6 +124,76 @@ export function getTakipsanClient() {
   return getSharedClient();
 }
 
+function normCode(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function codesMatch(a, b) {
+  const x = normCode(a);
+  const y = normCode(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const strip = (v) => v.replace(/[^a-z0-9]/g, "");
+  const nx = strip(x);
+  const ny = strip(y);
+  return nx.length > 0 && ny.length > 0 && (nx.includes(ny) || ny.includes(nx));
+}
+
+/**
+ * Günün veri girişi modeline göre hangi Takipsan sevkiyat(lar)ından okunacağını belirler.
+ * İkincil sevkiyat tanımlı model aktifse (ör. Bershka) yalnız o sevkiyat kullanılır.
+ */
+async function resolveSyncConsignments(date) {
+  const envPrimary = String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
+  const envSecondary = String(process.env.TAKIPSAN_SECONDARY_CONSIGNMENT_ID || "").trim();
+
+  let activeModelId = null;
+  let activeModel = null;
+  let meta = null;
+
+  try {
+    meta = await getDayProductMeta(date);
+    activeModelId = meta?.modelId ?? null;
+    if (activeModelId) {
+      activeModel = await getProductModelWithBaselines(activeModelId);
+    }
+  } catch {
+    // env varsayılanına düş
+  }
+
+  const modelSecondary = String(activeModel?.secondaryConsignmentId || "").trim();
+  const dayModelCode = meta?.productModel || activeModel?.modelCode || "";
+
+  if (modelSecondary && codesMatch(dayModelCode, activeModel?.modelCode)) {
+    return {
+      primaryId: modelSecondary,
+      secondaryId: null,
+      activeModelId,
+      mode: "model_consignment",
+    };
+  }
+
+  let secondaryId = envSecondary;
+  if (!secondaryId) {
+    try {
+      const models = await listProductModels();
+      const withSecondary = models.filter((m) => m.secondaryConsignmentId);
+      if (withSecondary.length === 1) {
+        secondaryId = String(withSecondary[0].secondaryConsignmentId).trim();
+      }
+    } catch {
+      // devam
+    }
+  }
+
+  return {
+    primaryId: envPrimary,
+    secondaryId: secondaryId || null,
+    activeModelId,
+    mode: "env_primary",
+  };
+}
+
 export async function syncTakipsanToUtuPaket(options = {}) {
   if (!isTakipsanConfigured()) {
     throw new Error("Takipsan entegrasyonu yapılandırılmamış (TAKIPSAN_ENABLED / kullanıcı / şifre / consignmentId)");
@@ -130,9 +202,11 @@ export async function syncTakipsanToUtuPaket(options = {}) {
   if (syncInFlight) return syncInFlight;
 
   syncInFlight = (async () => {
-    const consignmentId = String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
     const date = options.date || todayTurkeyIso();
     const syncedAt = new Date().toISOString();
+    const resolved = await resolveSyncConsignments(date);
+    const consignmentId = resolved.primaryId;
+    let secondaryConsignmentId = resolved.secondaryId;
 
     updateState({ enabled: true, lastSyncAt: syncedAt, lastError: null });
 
@@ -140,18 +214,14 @@ export async function syncTakipsanToUtuPaket(options = {}) {
       const client = getTakipsanClient();
       let data = await client.fetchConsignmentReadData(consignmentId);
 
-      // İkincil sevkiyat ID'sini belirle: önce .env, sonra DB'deki modelden oku
-      let secondaryConsignmentId = String(process.env.TAKIPSAN_SECONDARY_CONSIGNMENT_ID || "").trim();
-      if (!secondaryConsignmentId) {
+      // Birincil sevkiyat modunda: ikincil sevkiyatı sipariş kodu ile eşleştir
+      if (resolved.mode === "env_primary" && !secondaryConsignmentId) {
         try {
           const models = await listProductModels();
           const withSecondary = models.filter((m) => m.secondaryConsignmentId);
-
           if (withSecondary.length === 1) {
-            // Yalnızca bir model ikincil sevkiyat tanımlıysa doğrudan kullan
             secondaryConsignmentId = String(withSecondary[0].secondaryConsignmentId).trim();
           } else if (withSecondary.length > 1 && data.orderCode) {
-            // Birden fazla model varsa sipariş kodu ile eşleştir
             const dataOc = String(data.orderCode).trim().toLowerCase();
             const matched = withSecondary.find((m) => {
               const oc = String(m.takipsanOrderCode || "").trim().toLowerCase();
@@ -162,22 +232,28 @@ export async function syncTakipsanToUtuPaket(options = {}) {
             }
           }
         } catch {
-          // DB okuma başarısız — devam et
+          // devam
         }
       }
 
-      // İkincil sevkiyat varsa verileri birleştir
-      if (secondaryConsignmentId) {
+      // Birincil model gününde ikincil sevkiyat varsa birleştir (model kendi sevkiyatındaysa birleştirme yok)
+      if (resolved.mode === "env_primary" && secondaryConsignmentId) {
         try {
           const secondary = await client.fetchConsignmentReadData(secondaryConsignmentId);
           data = mergeConsignmentData(data, secondary);
-          console.log(`[TakipsanSync] İki sevkiyat birleştirildi: ${consignmentId} + ${secondaryConsignmentId} → toplam ${data.orderQuantity} adet / ${data.readCount} okunan`);
+          console.log(
+            `[TakipsanSync] İki sevkiyat birleştirildi: ${consignmentId} + ${secondaryConsignmentId} → toplam ${data.orderQuantity} adet / ${data.readCount} okunan`
+          );
         } catch (secondaryErr) {
           console.warn(
             `[TakipsanSync] İkincil sevkiyat (${secondaryConsignmentId}) alınamadı, yalnızca birincil kullanılıyor:`,
             String(secondaryErr?.message ?? secondaryErr)
           );
         }
+      } else if (resolved.mode === "model_consignment") {
+        console.log(
+          `[TakipsanSync] Aktif model sevkiyatı: ${consignmentId} → ${data.readCount} okunan / ${data.orderQuantity} hedef`
+        );
       }
 
       const slotKey = getCurrentUtuPaketSlotKey();
@@ -207,18 +283,22 @@ export async function syncTakipsanToUtuPaket(options = {}) {
         takipsanPackages: data.packages,
       });
 
-      await refreshProductModelTargetsFromTakipsan({
-        orderCode: data.orderCode,
-        orderQuantity: packagingTarget,
-        productLabel: data.productRef || data.productLabel || "",
-        productName: data.productName,
-        modelCode: data.modelCode,
-      }).catch(() => {});
+      await refreshProductModelTargetsFromTakipsan(
+        {
+          orderCode: data.orderCode,
+          orderQuantity: packagingTarget,
+          productLabel: data.productRef || data.productLabel || "",
+          productName: data.productName,
+          modelCode: data.modelCode,
+        },
+        resolved.activeModelId
+      ).catch(() => {});
 
       const result = {
         ok: true,
         date,
         consignmentId,
+        syncMode: resolved.mode,
         readCount: data.readCount,
         orderQuantity: packagingTarget,
         orderCode: data.orderCode,

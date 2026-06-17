@@ -1668,7 +1668,7 @@ app.get("/api/takipsan/status", requirePermission("utuPaket"), async (_req, res)
   });
 });
 
-app.post("/api/takipsan/sync", requirePermission("utuPaket"), async (req, res) => {
+app.post("/api/takipsan/sync", requireAnyPermission(["utuPaket", "ekran5"]), async (req, res) => {
   if (!isTakipsanConfigured()) {
     return res.status(400).json({
       message:

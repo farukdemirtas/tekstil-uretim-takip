@@ -12,6 +12,7 @@ import {
   getUtuPaketAnalytics,
   setAuthToken,
   setEkran5Target,
+  syncTakipsan,
   type PersonnelBirthdayRow,
 } from "@/lib/api";
 import { todayIsoTurkey, todayWeekdayIso } from "@/lib/businessCalendar";
@@ -457,6 +458,11 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       if (mid !== modelId) setModelId(mid);
 
       const modelDetail = mid ? await getProductModel(mid).catch(() => null) : null;
+
+      // Aktif modelin kendi sevkiyatı varsa paket verisini güncelle (Bershka vb.)
+      if (modelDetail?.secondaryConsignmentId) {
+        await syncTakipsan(date).catch(() => {});
+      }
 
       // Model ID'siyle paralel çağrı: genelOzet modele özgü session tarihini döndürür
       const [raw, genelOzet, ekran5Res] = await Promise.all([
