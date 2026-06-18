@@ -30,6 +30,42 @@ const SLIDE_COUNT = 3;
 const SLIDES = ["paketleme", "optik", "utu"] as const;
 type SlideKey = (typeof SLIDES)[number];
 
+const E5_FS_ACTIVE_KEY = "ekran5_fullscreen";
+const E5_RELOAD_FS_KEY = "ekran5_reload_fullscreen";
+const E5_NETWORK_RELOAD_AT_KEY = "ekran5_network_reload_at";
+const E5_NETWORK_RELOAD_COOLDOWN_MS = 45_000;
+
+function isNetworkFetchError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("load failed") ||
+    msg.includes("network request failed") ||
+    msg.includes("sunucuya bağlanılamadı") ||
+    (err.name === "TypeError" && msg.includes("fetch"))
+  );
+}
+
+/** Ağ hatasında sayfayı yenile; TV modunda tam ekranı geri yükle. Cooldown ile döngüyü engeller. */
+function reloadEkran5AfterNetworkError(restoreFullscreen: boolean): boolean {
+  if (typeof window === "undefined") return false;
+  const now = Date.now();
+  const last = Number(sessionStorage.getItem(E5_NETWORK_RELOAD_AT_KEY) || 0);
+  if (now - last < E5_NETWORK_RELOAD_COOLDOWN_MS) return false;
+
+  sessionStorage.setItem(E5_NETWORK_RELOAD_AT_KEY, String(now));
+  if (restoreFullscreen) {
+    sessionStorage.setItem(E5_RELOAD_FS_KEY, "1");
+    if (document.fullscreenElement) {
+      sessionStorage.setItem(E5_FS_ACTIVE_KEY, "1");
+    }
+  }
+  window.location.reload();
+  return true;
+}
+
 // ─── Renk / stil tanımları ───────────────────────────────────────────────────
 type BoxStyle = { box: string; label: string; value: string };
 type SlideMeta = {
@@ -448,6 +484,39 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     setHasToken(true);
   }, []);
 
+  /** Ağ kesintisi sonrası yenilemede tam ekranı geri al (TV / ekran5/icerik). */
+  useEffect(() => {
+    if (embedded || !hasToken) return;
+
+    const shouldRestore =
+      sessionStorage.getItem(E5_RELOAD_FS_KEY) === "1" ||
+      sessionStorage.getItem(E5_FS_ACTIVE_KEY) === "1";
+    sessionStorage.removeItem(E5_RELOAD_FS_KEY);
+    if (!shouldRestore) return;
+
+    const timer = window.setTimeout(() => {
+      const el = containerRef.current ?? document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        void el.requestFullscreen().catch(() => {});
+      }
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [embedded, hasToken]);
+
+  useEffect(() => {
+    if (embedded) return;
+    const onFullscreenChange = () => {
+      if (document.fullscreenElement) {
+        sessionStorage.setItem(E5_FS_ACTIVE_KEY, "1");
+      } else {
+        sessionStorage.removeItem(E5_FS_ACTIVE_KEY);
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, [embedded]);
+
   useEffect(() => { if (dateIso) setDisplayDate(dateIso); }, [dateIso]);
 
   const load = useCallback(async (silent = false) => {
@@ -532,11 +601,12 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       }
       setLastUpdated(formatClock());
     } catch (e) {
+      if (isNetworkFetchError(e) && reloadEkran5AfterNetworkError(!embedded)) return;
       setError(e instanceof Error ? e.message : "Veri alınamadı");
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [hasToken, dateIso, modelId]);
+  }, [hasToken, dateIso, modelId, embedded]);
 
   useEffect(() => {
     if (!hasToken) return;
@@ -659,8 +729,17 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   }
 
   function toggleFullscreen() {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else { const el = containerRef.current ?? document.documentElement; if (el.requestFullscreen) void el.requestFullscreen(); }
+    if (document.fullscreenElement) {
+      sessionStorage.removeItem(E5_FS_ACTIVE_KEY);
+      void document.exitFullscreen();
+    } else {
+      const el = containerRef.current ?? document.documentElement;
+      if (el.requestFullscreen) {
+        void el.requestFullscreen()
+          .then(() => sessionStorage.setItem(E5_FS_ACTIVE_KEY, "1"))
+          .catch(() => {});
+      }
+    }
   }
   function openTvWindow() {
     window.open(`${window.location.origin}/ekran5/icerik`, "ye tekstil utu paket", "popup=yes,width=1280,height=800");
