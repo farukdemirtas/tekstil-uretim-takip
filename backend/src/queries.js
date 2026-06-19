@@ -1188,14 +1188,91 @@ function genelTamamlananFromHedefTotals(totals) {
   return Math.max(0, Math.floor(Math.min(...stages.map((s) => Number(s.total) || 0))));
 }
 
-/** Seçilen aralıkta iş günü bazında genel tamamlanan (günün modeline göre) */
-export async function getGenelTamamlananDailyTrend(startDate, endDate) {
+/** Proses seçici için benzersiz anahtar (klasik 5 satır: sortOrder; model: bölüm+proses). */
+function hedefStageKey(stage) {
+  const tc = String(stage?.teamCode ?? "").trim();
+  const pn = String(stage?.processName ?? "").trim();
+  if (tc || pn) return `${tc}|${pn}`;
+  return `legacy:${Number(stage?.sortOrder) || 0}`;
+}
+
+function hedefStageLabel(stage) {
+  const tc = String(stage?.teamCode ?? "").trim();
+  const pn = String(stage?.processName ?? "").trim();
+  const tl = String(stage?.teamLabel ?? "").trim();
+  if (pn && tl) return `${tl} · ${pn}`;
+  if (pn) return pn;
+  if (tl) return tl;
+  return `Proses ${Number(stage?.sortOrder ?? 0) + 1}`;
+}
+
+function parseHedefStageFilter(raw) {
+  const key = String(raw ?? "").trim();
+  if (!key) return null;
+  if (key.startsWith("legacy:")) {
+    const sortOrder = Number(key.slice(7));
+    if (!Number.isFinite(sortOrder)) return null;
+    return { key, sortOrder, teamCode: "", processName: "" };
+  }
+  const sep = key.indexOf("|");
+  if (sep < 0) return null;
+  return {
+    key,
+    sortOrder: null,
+    teamCode: key.slice(0, sep),
+    processName: key.slice(sep + 1),
+  };
+}
+
+function totalForHedefStageFilter(totals, filter) {
+  const stages = totals?.stages ?? [];
+  if (!filter) return genelTamamlananFromHedefTotals(totals);
+  const row = stages.find((s) => hedefStageKey(s) === filter.key);
+  if (!row) return 0;
+  return Math.max(0, Math.floor(Number(row.total) || 0));
+}
+
+async function resolveArkaHalfForTeamProcess(modelId, teamCode, processName) {
+  const tc = String(teamCode ?? "").trim();
+  const pn = String(processName ?? "").trim();
+  if (modelId != null && Number.isFinite(Number(modelId)) && Number(modelId) > 0) {
+    const row = await dbGet(
+      `SELECT COALESCE(arka_half, 0) AS hf
+       FROM model_hedef_baselines
+       WHERE model_id = ? AND team_code = ? AND TRIM(COALESCE(process_name, '')) = TRIM(?)
+       LIMIT 1`,
+      [Number(modelId), tc, pn]
+    );
+    if (row) return Number(row.hf) === 1 ? 1 : 0;
+  }
+  const prow = await dbGet(
+    `SELECT COALESCE(hedef_arka_half, 0) AS hf
+     FROM processes
+     WHERE TRIM(COALESCE(name, '')) = TRIM(?)
+     LIMIT 1`,
+    [pn]
+  );
+  return Number(prow?.hf) === 1 ? 1 : 0;
+}
+
+/**
+ * Seçilen aralıkta iş günü bazında genel tamamlanan (günün modeline göre).
+ * teamCode+processName dolu: seçilen bölüm/proses satırının toplamı.
+ * Aksi halde stageKey veya genel minimum (hedef bölüm satırları).
+ * Toplamlar saat dilimleri + ek giriş (ek_sayim) birleşimini içerir.
+ */
+export async function getGenelTamamlananDailyTrend(startDate, endDate, options = {}) {
   const sd = String(startDate ?? "").trim();
   const ed = String(endDate ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(sd) || !/^\d{4}-\d{2}-\d{2}$/.test(ed)) {
     throw new Error("Geçersiz tarih aralığı");
   }
   if (sd > ed) throw new Error("Başlangıç bitişten sonra olamaz");
+
+  const teamCode = String(options?.teamCode ?? "").trim();
+  const processName = String(options?.processName ?? "").trim();
+  const useTeamProcess = Boolean(teamCode && processName);
+  const stageFilter = useTeamProcess ? null : parseHedefStageFilter(options?.stageKey);
 
   const weekdays = eachWeekdayIsoInRange(sd, ed);
   const metaRows = await dbAll(
@@ -1210,15 +1287,25 @@ export async function getGenelTamamlananDailyTrend(startDate, endDate) {
   const daily = [];
   for (const d of weekdays) {
     const mid = modelByDate[d] ?? null;
-    let totals;
-    try {
-      totals = await getHedefTakipStageTotals(d, d, mid);
-    } catch {
-      totals = { stages: [], dailySummaryStages: [] };
+    let genelTamamlanan = 0;
+    if (useTeamProcess) {
+      const hf = await resolveArkaHalfForTeamProcess(mid, teamCode, processName);
+      genelTamamlanan = Math.max(
+        0,
+        Math.floor(await sumProductionForBaselineRow(d, d, teamCode, processName, hf))
+      );
+    } else {
+      let totals;
+      try {
+        totals = await getHedefTakipStageTotals(d, d, mid);
+      } catch {
+        totals = { stages: [], dailySummaryStages: [] };
+      }
+      genelTamamlanan = totalForHedefStageFilter(totals, stageFilter);
     }
     daily.push({
       date: d,
-      genelTamamlanan: genelTamamlananFromHedefTotals(totals),
+      genelTamamlanan,
       modelId: mid,
     });
   }
@@ -1231,6 +1318,10 @@ export async function getGenelTamamlananDailyTrend(startDate, endDate) {
   return {
     startDate: sd,
     endDate: ed,
+    teamCode: useTeamProcess ? teamCode : "",
+    processName: useTeamProcess ? processName : "",
+    stageKey: stageFilter?.key ?? "",
+    includesEkSayim: true,
     daily,
     summary: { total, avgPerDay, daysWithData, workdayCount },
   };
