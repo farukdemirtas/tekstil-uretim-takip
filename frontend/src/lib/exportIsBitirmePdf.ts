@@ -1,5 +1,7 @@
 import type { JobCompletionResult } from "@/lib/jobCompletionCalc";
 import { formatHoursHuman } from "@/lib/jobCompletionCalc";
+import type { JobCostResult } from "@/lib/jobCompletionCost";
+import { formatMoneyTr } from "@/lib/jobCompletionCost";
 
 type SplitDays = { fullDays: number; remainderHours: number; hoursPerWorkday: number };
 
@@ -25,6 +27,10 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
   quantityLabel: string;
   referenceDate: string;
   hoursPerDayLabel: string;
+  costResult?: JobCostResult | null;
+  fasonUnitPriceLabel?: string;
+  workerCountLabel?: string;
+  personnelCostLabel?: string;
 }): Promise<void> {
   const {
     result,
@@ -35,6 +41,10 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
     quantityLabel,
     referenceDate,
     hoursPerDayLabel,
+    costResult,
+    fasonUnitPriceLabel = "",
+    workerCountLabel = "",
+    personnelCostLabel = "",
   } = params;
 
   const lineTp = Math.round(result.lineThroughputPerHour * 100) / 100;
@@ -93,6 +103,45 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
   const karsilastirmaHtml = modelPace
     ? `Ana süre, model geçmişindeki günlük ortalama genel tamamlanan ve çalışma saatine göre hesaplandı (<strong>${result.totalHoursBottleneck.toFixed(2)} sa</strong>). Ardışık aşama (her proses tüm Q’yu yalnız bitirir): <strong>${result.sequentialNoWipHours.toFixed(2)} sa</strong> (${escapeHtml(formatHoursHuman(result.sequentialNoWipHours))}) — yaklaşık <strong>${splitSeq.fullDays} gün + ${splitSeq.remainderHours.toFixed(2)} sa</strong>.`
     : `Ana süre, seçili personel saatlik verimleri toplamına göre (<strong>${result.totalHoursBottleneck.toFixed(2)} sa</strong>). Ardışık aşama: <strong>${result.sequentialNoWipHours.toFixed(2)} sa</strong> — yaklaşık <strong>${splitSeq.fullDays} gün + ${splitSeq.remainderHours.toFixed(2)} sa</strong>.`;
+
+  const costBadge =
+    costResult?.isProfit === true
+      ? "KAR"
+      : costResult?.isProfit === false
+        ? "ZARAR"
+        : costResult
+          ? "BAŞABAŞ"
+          : "";
+  const costBadgeBg =
+    costResult?.isProfit === true ? "#d1fae5" : costResult?.isProfit === false ? "#ffe4e6" : "#f1f5f9";
+  const costBadgeColor =
+    costResult?.isProfit === true ? "#065f46" : costResult?.isProfit === false ? "#9f1239" : "#334155";
+
+  const maliyetHtml = costResult
+    ? `<div style="border-radius:14px;border:1px solid #ddd6fe;overflow:hidden;margin-bottom:18px;box-shadow:0 1px 3px rgba(91,33,182,0.08);">
+        <div style="background:linear-gradient(90deg,#6d28d9,#7c3aed);color:#fff;padding:12px 16px;font-size:12px;font-weight:700;letter-spacing:0.04em;display:flex;justify-content:space-between;align-items:center;">
+          <span>Maliyet özeti</span>
+          <span style="background:${costBadgeBg};color:${costBadgeColor};padding:4px 10px;border-radius:999px;font-size:10px;font-weight:800;">${costBadge}</span>
+        </div>
+        <div style="padding:16px 18px;background:linear-gradient(180deg,#faf5ff,#ffffff);">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;font-size:12px;color:#334155;margin-bottom:14px;">
+            <div><span style="color:#64748b;">Fason birim fiyat</span><br/><span style="font-weight:600;">${safeText(fasonUnitPriceLabel || "—")} ₺/adet</span></div>
+            <div><span style="color:#64748b;">Çalışan sayısı</span><br/><span style="font-weight:600;">${escapeHtml(workerCountLabel || "—")}</span></div>
+            <div><span style="color:#64748b;">Personel gideri</span><br/><span style="font-weight:600;">${safeText(personnelCostLabel || "—")} ₺/işçi/iş günü</span></div>
+            <div><span style="color:#64748b;">Tahmini iş süresi</span><br/><span style="font-weight:600;">${costResult.jobWorkDays.toFixed(2)} iş günü</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            ${statCard("Gelir (Q × fason)", `${formatMoneyTr(costResult.revenue)} ₺`, "Fason birim fiyat × hedef adet")}
+            ${statCard("Personel gideri", `${formatMoneyTr(costResult.personnelCost)} ₺`, "İşçi × gün × iş günü süresi")}
+            ${statCard(
+              "Net (kar/zarar)",
+              `${costResult.margin >= 0 ? "+" : ""}${formatMoneyTr(costResult.margin)} ₺`,
+              `Adet başı: ${costResult.margin >= 0 ? "+" : ""}${formatMoneyTr(costResult.marginPerPiece)} ₺`
+            )}
+          </div>
+        </div>
+      </div>`
+    : "";
 
   const html = `
 <div class="is-bitirme-pdf-root" style="
@@ -164,10 +213,11 @@ export async function downloadIsBitirmeHesaplamaPdf(params: {
     </table>
   </div>
 
-  <div style="background:linear-gradient(180deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:14px;padding:16px 18px;font-size:11px;line-height:1.55;color:#475569;">
+  <div style="background:linear-gradient(180deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:14px;padding:16px 18px;font-size:11px;line-height:1.55;color:#475569;margin-bottom:18px;">
     <div style="font-weight:700;color:#334155;margin-bottom:6px;">Karşılaştırma</div>
     ${karsilastirmaHtml}
   </div>
+  ${maliyetHtml}
 </div>`.trim();
 
   const host = document.createElement("div");

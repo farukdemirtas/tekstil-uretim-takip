@@ -21,7 +21,9 @@ import {
   splitWorkingDays,
   type AssignmentInput,
 } from "@/lib/jobCompletionCalc";
+import { computeJobCost, formatMoneyTr } from "@/lib/jobCompletionCost";
 import { deriveWorkerHourlyRateForJobCalc } from "@/lib/jobCompletionWorkerRate";
+import CollapsibleSection from "@/components/CollapsibleSection";
 import { hasPermission } from "@/lib/permissions";
 import {
   buildProsesMapFromVeriRows,
@@ -98,7 +100,15 @@ function historicalEffPctForRow(
   return anyStation?.avgEfficiencyPercent ?? undefined;
 }
 
-function loadDraft(): { qty: string; hpd: string; modelCode?: string; rows: Row[] } | null {
+function loadDraft(): {
+  qty: string;
+  hpd: string;
+  modelCode?: string;
+  rows: Row[];
+  fasonUnitPrice?: string;
+  workerCount?: string;
+  personnelCostPerWorkerDay?: string;
+} | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -108,6 +118,9 @@ function loadDraft(): { qty: string; hpd: string; modelCode?: string; rows: Row[
       hpd?: string;
       modelCode?: string;
       rows?: unknown[];
+      fasonUnitPrice?: string;
+      workerCount?: string;
+      personnelCostPerWorkerDay?: string;
     };
     if (!j || typeof j !== "object") return null;
     const rows: Row[] = Array.isArray(j.rows)
@@ -140,6 +153,10 @@ function loadDraft(): { qty: string; hpd: string; modelCode?: string; rows: Row[
       hpd: typeof j.hpd === "string" ? j.hpd : String(j.hpd ?? ""),
       modelCode: typeof j.modelCode === "string" ? j.modelCode : undefined,
       rows,
+      fasonUnitPrice: typeof j.fasonUnitPrice === "string" ? j.fasonUnitPrice : undefined,
+      workerCount: typeof j.workerCount === "string" ? j.workerCount : undefined,
+      personnelCostPerWorkerDay:
+        typeof j.personnelCostPerWorkerDay === "string" ? j.personnelCostPerWorkerDay : undefined,
     };
   } catch {
     return null;
@@ -158,6 +175,9 @@ export default function IsBitirmeHesaplamaPage() {
   const [loadErr, setLoadErr] = useState<string>("");
   const [quantity, setQuantity] = useState("10000");
   const [hoursPerDay, setHoursPerDay] = useState("9");
+  const [fasonUnitPrice, setFasonUnitPrice] = useState("");
+  const [workerCount, setWorkerCount] = useState("");
+  const [personnelCostPerWorkerDay, setPersonnelCostPerWorkerDay] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [productionRows, setProductionRows] = useState<ProductionRow[]>([]);
   const [productionErr, setProductionErr] = useState<string>("");
@@ -183,6 +203,9 @@ export default function IsBitirmeHesaplamaPage() {
     if (draft) {
       if (draft.qty) setQuantity(draft.qty);
       if (draft.hpd) setHoursPerDay(draft.hpd);
+      if (draft.fasonUnitPrice) setFasonUnitPrice(draft.fasonUnitPrice);
+      if (draft.workerCount) setWorkerCount(draft.workerCount);
+      if (draft.personnelCostPerWorkerDay) setPersonnelCostPerWorkerDay(draft.personnelCostPerWorkerDay);
       if (draft.rows.length > 0) setRows(draft.rows);
     }
     void Promise.all([getWorkersForAnalytics(), getTeams(), getProcesses(), listProductModels()])
@@ -296,16 +319,44 @@ export default function IsBitirmeHesaplamaPage() {
     };
   }, [selectedModelCode, selectedModelId, efficiencyDateIso]);
 
-  const persist = useCallback((q: string, hpd: string, r: Row[], modelCode: string) => {
-    try {
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ qty: q, hpd, modelCode: modelCode || undefined, rows: r }),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  const persist = useCallback(
+    (
+      q: string,
+      hpd: string,
+      r: Row[],
+      modelCode: string,
+      cost?: { fasonUnitPrice: string; workerCount: string; personnelCostPerWorkerDay: string }
+    ) => {
+      try {
+        window.localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            qty: q,
+            hpd,
+            modelCode: modelCode || undefined,
+            rows: r,
+            fasonUnitPrice: cost?.fasonUnitPrice || undefined,
+            workerCount: cost?.workerCount || undefined,
+            personnelCostPerWorkerDay: cost?.personnelCostPerWorkerDay || undefined,
+          })
+        );
+      } catch {
+        /* ignore */
+      }
+    },
+    []
+  );
+
+  const persistAll = useCallback(
+    (q: string, hpd: string, r: Row[], modelCode: string) => {
+      persist(q, hpd, r, modelCode, {
+        fasonUnitPrice,
+        workerCount,
+        personnelCostPerWorkerDay,
+      });
+    },
+    [persist, fasonUnitPrice, workerCount, personnelCostPerWorkerDay]
+  );
 
   /**
    * Otomatik satırlar: yalnızca bu modelde günlük meta (model_id) + üretim kaydı olan personel
@@ -354,7 +405,7 @@ export default function IsBitirmeHesaplamaPage() {
         }
       }
       const next = [...modelRows, ...manual];
-      persist(quantity, hoursPerDay, next, selectedModelCode);
+      persistAll(quantity, hoursPerDay, next, selectedModelCode);
       return next;
     });
   }, [
@@ -364,6 +415,7 @@ export default function IsBitirmeHesaplamaPage() {
     modelMapLoading,
     workers,
     persist,
+    persistAll,
     modelStats,
     modelStatsLoading,
   ]);
@@ -460,6 +512,57 @@ export default function IsBitirmeHesaplamaPage() {
   const split = result ? splitWorkingDays(result.totalHoursBottleneck, hpdNum) : splitWorkingDays(0, hpdNum);
   const splitSeq = result ? splitWorkingDays(result.sequentialNoWipHours, hpdNum) : splitWorkingDays(0, hpdNum);
 
+  const jobWorkDays = useMemo(() => {
+    if (!result || !Number.isFinite(hpdNum) || hpdNum <= 0) return 0;
+    return result.totalHoursBottleneck / hpdNum;
+  }, [result, hpdNum]);
+
+  const workerCountNum = Number(String(workerCount).replace(/\s/g, "").replace(",", "."));
+
+  const fasonUnitNum = Number(String(fasonUnitPrice).replace(/\s/g, "").replace(",", "."));
+  const personnelDayNum = Number(String(personnelCostPerWorkerDay).replace(/\s/g, "").replace(",", "."));
+
+  const costResult = useMemo(
+    () =>
+      result
+        ? computeJobCost({
+            quantity: qtyNum,
+            fasonUnitPrice: fasonUnitNum,
+            workerCount: workerCountNum,
+            personnelCostPerWorkerDay: personnelDayNum,
+            jobWorkDays,
+          })
+        : null,
+    [result, qtyNum, fasonUnitNum, workerCountNum, personnelDayNum, jobWorkDays]
+  );
+
+  function onFasonUnitPriceChange(v: string) {
+    setFasonUnitPrice(v);
+    persist(quantity, hoursPerDay, rows, selectedModelCode, {
+      fasonUnitPrice: v,
+      workerCount,
+      personnelCostPerWorkerDay,
+    });
+  }
+
+  function onWorkerCountChange(v: string) {
+    setWorkerCount(v);
+    persist(quantity, hoursPerDay, rows, selectedModelCode, {
+      fasonUnitPrice,
+      workerCount: v,
+      personnelCostPerWorkerDay,
+    });
+  }
+
+  function onPersonnelCostChange(v: string) {
+    setPersonnelCostPerWorkerDay(v);
+    persist(quantity, hoursPerDay, rows, selectedModelCode, {
+      fasonUnitPrice,
+      workerCount,
+      personnelCostPerWorkerDay: v,
+    });
+  }
+
   const duplicateWorkers = useMemo(() => {
     const ids = assignments.map((a) => a.workerId);
     const s = new Set<number>();
@@ -474,7 +577,7 @@ export default function IsBitirmeHesaplamaPage() {
   function updateRow(id: string, patch: Partial<Row>) {
     setRows((prev) => {
       const next = prev.map((r) => (r.id === id ? { ...r, ...patch } : r));
-      persist(quantity, hoursPerDay, next, selectedModelCode);
+      persistAll(quantity, hoursPerDay, next, selectedModelCode);
       return next;
     });
   }
@@ -482,7 +585,7 @@ export default function IsBitirmeHesaplamaPage() {
   function addRow() {
     setRows((prev) => {
       const next = [...prev, newManualRow()];
-      persist(quantity, hoursPerDay, next, selectedModelCode);
+      persistAll(quantity, hoursPerDay, next, selectedModelCode);
       return next;
     });
   }
@@ -494,25 +597,25 @@ export default function IsBitirmeHesaplamaPage() {
         excludedModelWorkerIdsRef.current.add(row.workerId);
       }
       const next = prev.filter((r) => r.id !== id);
-      persist(quantity, hoursPerDay, next, selectedModelCode);
+      persistAll(quantity, hoursPerDay, next, selectedModelCode);
       return next;
     });
   }
 
   function onQuantityChange(v: string) {
     setQuantity(v);
-    persist(v, hoursPerDay, rows, selectedModelCode);
+    persistAll(v, hoursPerDay, rows, selectedModelCode);
   }
 
   function onHpdChange(v: string) {
     setHoursPerDay(v);
-    persist(quantity, v, rows, selectedModelCode);
+    persistAll(quantity, v, rows, selectedModelCode);
   }
 
   function onModelChange(code: string) {
     excludedModelWorkerIdsRef.current.clear();
     setSelectedModelCode(code);
-    persist(quantity, hoursPerDay, rows, code);
+    persistAll(quantity, hoursPerDay, rows, code);
   }
 
   async function handleDownloadResultPdf() {
@@ -528,6 +631,10 @@ export default function IsBitirmeHesaplamaPage() {
         quantityLabel: quantity,
         referenceDate: efficiencyDateIso,
         hoursPerDayLabel: hoursPerDay,
+        costResult,
+        fasonUnitPriceLabel: fasonUnitPrice,
+        workerCountLabel: workerCount,
+        personnelCostLabel: personnelCostPerWorkerDay,
       });
     } catch {
       /* kullanıcı iptal / tarayıcı engeli */
@@ -627,6 +734,54 @@ export default function IsBitirmeHesaplamaPage() {
             />
           </label>
         </div>
+        <div className="rounded-xl border border-violet-200/80 bg-gradient-to-br from-violet-50/80 via-white to-slate-50/50 p-4 dark:border-violet-900/40 dark:from-violet-950/30 dark:via-slate-900 dark:to-slate-950">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-violet-800 dark:text-violet-300">Maliyet / fason fiyat</h3>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+            Fason birim fiyatı, işçi sayısı ve iş günü başına personel gideri ile tahmini süreye göre gelir, gider ve kar/zarar
+            hesaplanır.
+          </p>
+          <div className="mt-4 flex flex-wrap items-end gap-4">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Fason birim fiyat (₺/adet)
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={fasonUnitPrice}
+                onChange={(e) => onFasonUnitPriceChange(e.target.value)}
+                placeholder="0"
+                className="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Çalışan sayısı
+              </span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={workerCount}
+                onChange={(e) => onWorkerCountChange(e.target.value)}
+                placeholder="0"
+                className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Personel gideri (₺/işçi/iş günü)
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={personnelCostPerWorkerDay}
+                onChange={(e) => onPersonnelCostChange(e.target.value)}
+                placeholder="0"
+                className="w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              />
+            </label>
+          </div>
+        </div>
         {modelStats && !modelStatsLoading ? (
           <p className="text-sm text-slate-700 dark:text-slate-200">
             <span className="text-slate-600 dark:text-slate-400">Bu modelde tamamlanan iş (genel):</span>{" "}
@@ -678,7 +833,213 @@ export default function IsBitirmeHesaplamaPage() {
             {pdfBusy ? "PDF hazırlanıyor…" : "Sonucu PDF indir"}
           </button>
         </div>
+
+        <div className="relative overflow-hidden rounded-2xl border border-violet-200/90 bg-gradient-to-br from-violet-50/90 via-white to-fuchsia-50/40 shadow-[0_4px_24px_-4px_rgba(91,33,182,0.12)] dark:border-violet-900/50 dark:from-violet-950/40 dark:via-slate-900 dark:to-fuchsia-950/20">
+          <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-violet-600 via-fuchsia-500 to-violet-600" aria-hidden />
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Maliyet özeti</h2>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  Gelir − personel gideri (işçi × gün × iş günü süresi)
+                </p>
+              </div>
+              {costResult ? (
+                <span
+                  className={`inline-flex rounded-full px-3 py-1 text-xs font-black uppercase tracking-wide ${
+                    costResult.isProfit === true
+                      ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200"
+                      : costResult.isProfit === false
+                        ? "bg-rose-100 text-rose-800 ring-1 ring-rose-300 dark:bg-rose-950/60 dark:text-rose-200"
+                        : "bg-slate-100 text-slate-700 ring-1 ring-slate-300 dark:bg-slate-800 dark:text-slate-200"
+                  }`}
+                >
+                  {costResult.isProfit === true ? "Kar" : costResult.isProfit === false ? "Zarar" : "Başabaş"}
+                </span>
+              ) : null}
+            </div>
+            {!result || !costResult ? (
+              <p className="mt-5 rounded-xl border border-dashed border-violet-200/80 bg-white/60 px-4 py-6 text-center text-sm text-slate-500 dark:border-violet-900/40 dark:bg-slate-900/30 dark:text-slate-400">
+                Süre hesabı, fason birim fiyatı, çalışan sayısı ve personel gideri girildiğinde kar/zarar burada görünür.
+              </p>
+            ) : (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Tahmini süre</p>
+                  <p className="mt-2 text-lg font-bold tabular-nums text-slate-900 dark:text-white">
+                    {jobWorkDays.toFixed(2)} <span className="text-sm font-semibold text-slate-500">iş günü</span>
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">{formatHoursHuman(result.totalHoursBottleneck)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Gelir (fason)</p>
+                  <p className="mt-2 text-lg font-bold tabular-nums text-slate-900 dark:text-white">
+                    {formatMoneyTr(costResult.revenue)} ₺
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {qtyNum.toLocaleString("tr-TR")} adet × {formatMoneyTr(fasonUnitNum)} ₺
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Personel gideri</p>
+                  <p className="mt-2 text-lg font-bold tabular-nums text-slate-900 dark:text-white">
+                    {formatMoneyTr(costResult.personnelCost)} ₺
+                  </p>
+                  <p className="mt-1 text-[11px] leading-snug text-slate-500">
+                    {workerCountNum} işçi × {formatMoneyTr(personnelDayNum)} ₺/gün × {jobWorkDays.toFixed(2)} gün
+                  </p>
+                </div>
+                <div
+                  className={`rounded-xl border p-4 ${
+                    costResult.isProfit === true
+                      ? "border-emerald-300/80 bg-emerald-50/90 dark:border-emerald-800 dark:bg-emerald-950/40"
+                      : costResult.isProfit === false
+                        ? "border-rose-300/80 bg-rose-50/90 dark:border-rose-900 dark:bg-rose-950/40"
+                        : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50"
+                  }`}
+                >
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Net sonuç
+                  </p>
+                  <p
+                    className={`mt-2 text-xl font-black tabular-nums ${
+                      costResult.isProfit === true
+                        ? "text-emerald-800 dark:text-emerald-200"
+                        : costResult.isProfit === false
+                          ? "text-rose-800 dark:text-rose-200"
+                          : "text-slate-800 dark:text-slate-200"
+                    }`}
+                  >
+                    {costResult.margin >= 0 ? "+" : ""}
+                    {formatMoneyTr(costResult.margin)} ₺
+                  </p>
+                  <p className="mt-1 text-[11px] tabular-nums text-slate-600 dark:text-slate-400">
+                    Adet başı: {formatMoneyTr(costResult.marginPerPiece)} ₺
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="grid gap-5 lg:grid-cols-2">
+          <div className="relative overflow-hidden rounded-2xl border border-teal-200/90 bg-gradient-to-br from-teal-50/90 via-white to-emerald-50/40 shadow-[0_4px_24px_-4px_rgba(13,148,136,0.1)] dark:border-teal-900/50 dark:from-teal-950/40 dark:via-slate-900 dark:to-emerald-950/20">
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-teal-600 via-emerald-500 to-teal-600"
+              aria-hidden
+            />
+            <div className="p-5 pt-6 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Model özeti</h2>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Seçili model ve geçmiş üretim verisi
+                  </p>
+                </div>
+                <span className="inline-flex shrink-0 items-center rounded-full bg-teal-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-teal-800 ring-1 ring-teal-600/15 dark:bg-teal-950/80 dark:text-teal-200 dark:ring-teal-500/30">
+                  Model
+                </span>
+              </div>
+              {!selectedModelCode ? (
+                <div className="mt-6 rounded-xl border border-dashed border-teal-200/80 bg-white/60 px-4 py-8 text-center dark:border-teal-900/40 dark:bg-slate-900/30">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Ürün modeli seçildiğinde özet burada görünür.</p>
+                </div>
+              ) : (
+                <div className="mt-5 space-y-4">
+                  <div className="rounded-xl border border-teal-200/70 bg-white/80 p-4 dark:border-teal-900/40 dark:bg-slate-900/50">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">Seçili model</p>
+                    <p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">{selectedModelLabel}</p>
+                    <p className="mt-0.5 font-mono text-xs text-slate-500 dark:text-slate-400">{selectedModelCode}</p>
+                    <dl className="mt-3 grid gap-2 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-slate-500 dark:text-slate-400">Hedef adet (Q)</dt>
+                        <dd className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+                          {qtyNum > 0 ? qtyNum.toLocaleString("tr-TR") : "—"}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-slate-500 dark:text-slate-400">Verim referans tarihi</dt>
+                        <dd className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">{efficiencyDateIso}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-slate-500 dark:text-slate-400">Gün başına çalışma</dt>
+                        <dd className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">{hpdNum} saat</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  {modelStatsLoading ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Model geçmişi yükleniyor…</p>
+                  ) : modelStats ? (
+                    <div className="rounded-xl border border-slate-200/90 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-800/40">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Geçmiş üretim (180 gün)
+                      </p>
+                      <ul className="mt-2 space-y-1.5 text-sm text-slate-800 dark:text-slate-200">
+                        <li className="flex justify-between gap-3">
+                          <span className="text-slate-500 dark:text-slate-400">Tamamlanan iş (genel)</span>
+                          <span className="font-semibold tabular-nums text-teal-800 dark:text-teal-200">
+                            {(modelStats.completedGenelTotal ?? 0).toLocaleString("tr-TR")} adet
+                          </span>
+                        </li>
+                        <li className="flex justify-between gap-3">
+                          <span className="text-slate-500 dark:text-slate-400">Kayıtlı iş günü</span>
+                          <span className="font-semibold tabular-nums">{modelStats.modelMetaDayCount ?? "—"}</span>
+                        </li>
+                        {modelStats.overallAvgEfficiencyPercent != null ? (
+                          <li className="flex justify-between gap-3">
+                            <span className="text-slate-500 dark:text-slate-400">Ort. verimlilik</span>
+                            <span className="font-semibold tabular-nums">%{modelStats.overallAvgEfficiencyPercent}</span>
+                          </li>
+                        ) : null}
+                        <li className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {modelStats.startDate} → {modelStats.endDate}
+                        </li>
+                      </ul>
+                    </div>
+                  ) : null}
+                  {result ? (
+                    <div className="rounded-xl border border-teal-200/80 bg-gradient-to-br from-teal-50/80 via-white to-emerald-50/60 p-4 dark:border-teal-800/50 dark:from-teal-950/40 dark:via-slate-900 dark:to-emerald-950/20">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
+                        Hesap kaynağı
+                      </p>
+                      {result.durationMode === "model_genel_pace" ? (
+                        <ul className="mt-2 space-y-1 text-sm text-slate-800 dark:text-slate-200">
+                          <li>
+                            <span className="text-slate-500 dark:text-slate-400">Günlük ort. genel:</span>{" "}
+                            <span className="font-semibold tabular-nums text-teal-800 dark:text-teal-200">
+                              {result.modelAvgDailyGenel != null
+                                ? `${result.modelAvgDailyGenel.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} adet/gün`
+                                : "—"}
+                            </span>
+                          </li>
+                          <li>
+                            <span className="text-slate-500 dark:text-slate-400">Personel ort. verim:</span>{" "}
+                            <span className="font-semibold tabular-nums">
+                              {result.modelOverallEfficiencyPercent != null
+                                ? `%${result.modelOverallEfficiencyPercent}`
+                                : "—"}
+                            </span>
+                          </li>
+                          <li className="pt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                            Süre tahmini, bu modelin geçmişteki günlük genel tamamlanan ortalamasına dayanır.
+                          </li>
+                        </ul>
+                      ) : (
+                        <p className="mt-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+                          Model geçmişi yetersiz; hız hesabı seçili personelin efektif adet/saat toplamına göre yapılır.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-5 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/20 dark:text-slate-400">
+                      Personel satırları hazır olunca hesap kaynağı burada görünür.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50/90 shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
             <div
               className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-teal-500 via-emerald-400 to-teal-600"
@@ -689,11 +1050,7 @@ export default function IsBitirmeHesaplamaPage() {
                 <div>
                   <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Sonuç</h2>
                   <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    {!result
-                      ? "Hedef adet ve hesap verisi girildiğinde yöntem burada görünür"
-                      : result.durationMode === "model_genel_pace"
-                        ? "Model geçmişi: günlük ortalama genel tamamlanan ÷ çalışma saati"
-                        : "Personel verimleri toplamı (model geçmişi yok)"}
+                    Tahmini süre, iş günü ve ortalama tempo
                   </p>
                 </div>
                 <span className="inline-flex shrink-0 items-center rounded-full bg-teal-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-teal-800 ring-1 ring-teal-600/15 dark:bg-teal-950/80 dark:text-teal-200 dark:ring-teal-500/30">
@@ -703,16 +1060,38 @@ export default function IsBitirmeHesaplamaPage() {
               {!result ? (
                 <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center dark:border-slate-700 dark:bg-slate-800/20">
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Geçerli hedef adet ve modele göre dk/personel satırları hazır olduğunda burada hat hızı, süre ve iş günü
-                    karşılığı görünür.
+                    Geçerli hedef adet ve personel satırları hazır olduğunda süre ve tempo burada görünür.
                   </p>
                 </div>
               ) : (
                 <div className="mt-5 space-y-4">
+                  <div className="relative overflow-hidden rounded-xl border border-teal-200/80 bg-gradient-to-br from-teal-50 via-white to-emerald-50/90 p-4 shadow-sm dark:border-teal-800/50 dark:from-teal-950/50 dark:via-slate-900 dark:to-emerald-950/30">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
+                      Tahmini bitiş süresi
+                    </p>
+                    <p className="mt-2 text-2xl font-black tabular-nums tracking-tight text-slate-900 dark:text-white">
+                      {split.fullDays}{" "}
+                      <span className="text-lg font-bold text-slate-600 dark:text-slate-300">iş günü</span>
+                      {split.remainderHours > 0.01 ? (
+                        <>
+                          {" "}
+                          + {split.remainderHours.toFixed(2)}{" "}
+                          <span className="text-lg font-bold text-slate-600 dark:text-slate-300">sa</span>
+                        </>
+                      ) : null}
+                    </p>
+                    <p className="mt-2 text-sm tabular-nums text-slate-600 dark:text-slate-400">
+                      {formatHoursHuman(result.totalHoursBottleneck)} · yaklaşık{" "}
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {(result.totalHoursBottleneck / split.hoursPerWorkday).toFixed(2)}
+                      </span>{" "}
+                      iş günü ({split.hoursPerWorkday} sa/gün)
+                    </p>
+                  </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Tahmini hat hızı
+                        Hat hızı
                       </p>
                       <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
                         {Math.round(result.lineThroughputPerHour * 100) / 100}
@@ -721,14 +1100,11 @@ export default function IsBitirmeHesaplamaPage() {
                     </div>
                     <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Günlük üretim
+                        Günlük ortalama
                       </p>
                       <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
                         {Math.round(result.lineThroughputPerHour * split.hoursPerWorkday * 100) / 100}
                         <span className="text-sm font-semibold text-slate-500 dark:text-slate-400"> adet/gün</span>
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                        Hat hızı × {split.hoursPerWorkday} sa/gün
                       </p>
                     </div>
                     <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
@@ -738,161 +1114,62 @@ export default function IsBitirmeHesaplamaPage() {
                       <p className="mt-1.5 text-xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-white">
                         {formatHoursHuman(result.totalHoursBottleneck)}
                       </p>
-                      <p className="mt-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
-                        {result.totalHoursBottleneck.toFixed(2)} saat
-                      </p>
                     </div>
                   </div>
-                  <div className="relative overflow-hidden rounded-xl border border-teal-200/80 bg-gradient-to-br from-teal-50 via-white to-emerald-50/90 p-4 shadow-sm dark:border-teal-800/50 dark:from-teal-950/50 dark:via-slate-900 dark:to-emerald-950/30">
-                    <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-teal-400/15 blur-2xl dark:bg-teal-500/10" aria-hidden />
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-                      Model özeti (hesap kaynağı)
+                  <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Ortalama çalışma temposu
                     </p>
                     {result.durationMode === "model_genel_pace" ? (
-                      <ul className="mt-2 space-y-1 text-sm text-slate-800 dark:text-slate-200">
-                        <li>
-                          <span className="text-slate-500 dark:text-slate-400">Yapılan iş (genel toplam):</span>{" "}
-                          <span className="font-semibold tabular-nums">
-                            {(result.modelCompletedGenelTotal ?? 0).toLocaleString("tr-TR")} adet
-                          </span>
-                        </li>
-                        <li>
-                          <span className="text-slate-500 dark:text-slate-400">Kayıtlı iş günü:</span>{" "}
-                          <span className="font-semibold tabular-nums">{result.modelMetaDayCount ?? "—"}</span>
-                        </li>
-                        <li>
-                          <span className="text-slate-500 dark:text-slate-400">Günlük ort. genel:</span>{" "}
-                          <span className="font-semibold tabular-nums text-teal-800 dark:text-teal-200">
-                            {result.modelAvgDailyGenel != null
-                              ? `${result.modelAvgDailyGenel.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} adet/gün`
-                              : "—"}
-                          </span>
-                        </li>
-                        <li>
-                          <span className="text-slate-500 dark:text-slate-400">Ortalama verimlilik (personel):</span>{" "}
-                          <span className="font-semibold tabular-nums">
-                            {result.modelOverallEfficiencyPercent != null
-                              ? `%${result.modelOverallEfficiencyPercent}`
-                              : "—"}
-                          </span>
-                        </li>
-                      </ul>
+                      <p className="mt-2">
+                        Hat, model geçmişindeki günlük ortalama genel tamamlanan hızına göre çalışır. Günde yaklaşık{" "}
+                        <strong className="font-semibold tabular-nums text-teal-800 dark:text-teal-200">
+                          {Math.round(result.lineThroughputPerHour * split.hoursPerWorkday * 100) / 100} adet
+                        </strong>{" "}
+                        üretim ve{" "}
+                        <strong className="font-semibold tabular-nums">{split.hoursPerWorkday} saat</strong> çalışma temposu
+                        varsayılır. {qtyNum.toLocaleString("tr-TR")} adetlik iş{" "}
+                        <strong className="font-semibold tabular-nums">{split.fullDays}</strong> tam iş günü
+                        {split.remainderHours > 0.01 ? (
+                          <> + {split.remainderHours.toFixed(2)} sa</>
+                        ) : null}{" "}
+                        içinde tamamlanır.
+                      </p>
                     ) : (
-                      <p className="mt-2 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-                        Bu model için yeterli günlük meta / genel tamamlanan özeti yok. Tahmini hız, seçili personel
-                        satırlarındaki efektif adet/saat değerlerinin <strong className="font-semibold">toplamı</strong>{" "}
-                        (paralel çalışma varsayımı) ile hesaplandı.
+                      <p className="mt-2">
+                        Seçili personelin toplam saatlik verimi ile paralel çalışma varsayımı kullanılır. Hat hızı{" "}
+                        <strong className="font-semibold tabular-nums">
+                          {Math.round(result.lineThroughputPerHour * 100) / 100} adet/sa
+                        </strong>
+                        , günde yaklaşık{" "}
+                        <strong className="font-semibold tabular-nums">
+                          {Math.round(result.lineThroughputPerHour * split.hoursPerWorkday * 100) / 100} adet
+                        </strong>{" "}
+                        üretim beklenir. İş{" "}
+                        <strong className="font-semibold tabular-nums">{split.fullDays}</strong> tam iş günü
+                        {split.remainderHours > 0.01 ? (
+                          <> + {split.remainderHours.toFixed(2)} sa</>
+                        ) : null}{" "}
+                        sürer.
                       </p>
                     )}
                   </div>
-                  <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-800/50">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      İş günü karşılığı
-                    </p>
-                    <p className="mt-2 text-lg font-bold tabular-nums text-slate-900 dark:text-white">
-                      {split.fullDays}{" "}
-                      <span className="text-base font-semibold text-slate-600 dark:text-slate-300">gün</span> +{" "}
-                      {split.remainderHours.toFixed(2)}{" "}
-                      <span className="text-base font-semibold text-slate-600 dark:text-slate-300">sa</span>
-                    </p>
-                    <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                      {split.hoursPerWorkday} sa/gün bazında · yaklaşık{" "}
-                      <span className="font-semibold tabular-nums text-slate-700 dark:text-slate-300">
-                        {(result.totalHoursBottleneck / split.hoursPerWorkday).toFixed(2)}
-                      </span>{" "}
-                      iş günü
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="relative overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/30 to-white shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-slate-500 via-slate-400 to-teal-500 opacity-90 dark:from-slate-600 dark:via-slate-500 dark:to-teal-600"
-              aria-hidden
-            />
-            <div className="p-5 pt-6 sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Proses detayı</h2>
-                  <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                    Liste referansı — ana süre yukarıdaki modele göre
-                  </p>
-                </div>
-                <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 ring-1 ring-slate-300/50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/50">
-                  {result ? `${result.processes.length} aşama` : "—"}
-                </span>
-              </div>
-              {!result ? (
-                <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/20 dark:text-slate-400">
-                  Hesap sonucu oluşunca proses listesi burada görünür.
-                </div>
-              ) : (
-                <>
-                  <ul className="mt-5 max-h-[min(28rem,55vh)] space-y-2.5 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
-                    {result.processes.map((p) => {
-                      const hoursOnly = result.quantity / p.totalRatePerHour;
-                      const rate = Math.round(p.totalRatePerHour * 100) / 100;
-                      return (
-                        <li
-                          key={p.processKey}
-                          className="relative overflow-hidden rounded-xl border border-slate-200/90 bg-white/90 pl-3.5 transition-shadow hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-slate-600"
-                        >
-                          <div
-                            className="absolute bottom-2 left-0 top-2 w-1 rounded-full bg-slate-200 dark:bg-slate-600"
-                            aria-hidden
-                          />
-                          <div className="py-3.5 pl-4 pr-3 sm:pl-5">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                                  {p.processKey}
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium">
-                                <span className="rounded-md bg-slate-100 px-2 py-1 tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                                  Σ {rate} /sa
-                                </span>
-                                <span className="rounded-md border border-slate-200/90 bg-white px-2 py-1 tabular-nums text-slate-600 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
-                                  {hoursOnly.toFixed(2)} sa
-                                </span>
-                              </div>
-                            </div>
-                            <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                              {p.lines.map((l, idx) => (
-                                <span key={`${p.processKey}-${idx}-${l.workerName}`}>
-                                  <span className="font-medium text-slate-600 dark:text-slate-300">{l.workerName}</span>
-                                  <span className="tabular-nums text-slate-400"> ({l.ratePerHour}/sa)</span>
-                                  {idx < p.lines.length - 1 ? (
-                                    <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
-                                  ) : null}
-                                </span>
-                              ))}
-                            </p>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  <div className="mt-5 rounded-xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 text-xs leading-relaxed text-slate-600 dark:border-slate-700 dark:from-slate-800/50 dark:to-slate-900/50 dark:text-slate-400">
+                  <div className="rounded-xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 text-xs leading-relaxed text-slate-600 dark:border-slate-700 dark:from-slate-800/50 dark:to-slate-900/50 dark:text-slate-400">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Karşılaştırma
                     </p>
                     <p className="mt-2">
                       {result.durationMode === "model_genel_pace" ? (
                         <>
-                          Ana süre, model geçmişindeki günlük ortalama genel tamamlanan ve sizin girdiğiniz çalışma saatine göre
-                          hesaplandı (
+                          Ana süre model geçmişine göre{" "}
                           <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
                             {result.totalHoursBottleneck.toFixed(2)} sa
                           </span>
-                          ). Ardışık aşama varsayımı (her proses tüm Q&apos;yu tek başına bitirir):{" "}
+                          . Ardışık aşama (her proses tüm Q&apos;yu tek başına bitirir):{" "}
                           <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
                             {result.sequentialNoWipHours.toFixed(2)} sa
                           </span>{" "}
-                          ({formatHoursHuman(result.sequentialNoWipHours)}) — yaklaşık{" "}
+                          — yaklaşık{" "}
                           <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
                             {splitSeq.fullDays} gün + {splitSeq.remainderHours.toFixed(2)} sa
                           </span>
@@ -900,11 +1177,11 @@ export default function IsBitirmeHesaplamaPage() {
                         </>
                       ) : (
                         <>
-                          Ana süre, seçili personellerin saatlik verimlerinin toplamına göre hesaplandı (
+                          Ana süre personel toplamına göre{" "}
                           <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
                             {result.totalHoursBottleneck.toFixed(2)} sa
                           </span>
-                          ). Ardışık aşama (her proses tüm Q):{" "}
+                          . Ardışık aşama:{" "}
                           <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-200">
                             {result.sequentialNoWipHours.toFixed(2)} sa
                           </span>{" "}
@@ -917,28 +1194,102 @@ export default function IsBitirmeHesaplamaPage() {
                       )}
                     </p>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
         </div>
+
+        <div className="relative mt-5 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/30 to-white shadow-[0_4px_24px_-4px_rgba(15,23,42,0.1)] dark:border-slate-700/90 dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 dark:shadow-black/25">
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-slate-500 via-slate-400 to-teal-500 opacity-90 dark:from-slate-600 dark:via-slate-500 dark:to-teal-600"
+            aria-hidden
+          />
+          <div className="p-5 pt-6 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Proses detayı</h2>
+                <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Aşama bazında süre ve personel verimleri
+                </p>
+              </div>
+              <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 ring-1 ring-slate-300/50 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/50">
+                {result ? `${result.processes.length} aşama` : "—"}
+              </span>
+            </div>
+            {!result ? (
+              <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/20 dark:text-slate-400">
+                Hesap sonucu oluşunca proses listesi burada görünür.
+              </div>
+            ) : (
+              <ul className="mt-5 max-h-[min(28rem,55vh)] space-y-2.5 overflow-y-auto pr-1 [scrollbar-gutter:stable]">
+                {result.processes.map((p) => {
+                  const hoursOnly = result.quantity / p.totalRatePerHour;
+                  const rate = Math.round(p.totalRatePerHour * 100) / 100;
+                  return (
+                    <li
+                      key={p.processKey}
+                      className="relative overflow-hidden rounded-xl border border-slate-200/90 bg-white/90 pl-3.5 transition-shadow hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-slate-600"
+                    >
+                      <div
+                        className="absolute bottom-2 left-0 top-2 w-1 rounded-full bg-slate-200 dark:bg-slate-600"
+                        aria-hidden
+                      />
+                      <div className="py-3.5 pl-4 pr-3 sm:pl-5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <span className="truncate text-sm font-bold text-slate-900 dark:text-white">{p.processKey}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium">
+                            <span className="rounded-md bg-slate-100 px-2 py-1 tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                              Σ {rate} /sa
+                            </span>
+                            <span className="rounded-md border border-slate-200/90 bg-white px-2 py-1 tabular-nums text-slate-600 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
+                              {hoursOnly.toFixed(2)} sa
+                            </span>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                          {p.lines.map((l, idx) => (
+                            <span key={`${p.processKey}-${idx}-${l.workerName}`}>
+                              <span className="font-medium text-slate-600 dark:text-slate-300">{l.workerName}</span>
+                              <span className="tabular-nums text-slate-400"> ({l.ratePerHour}/sa)</span>
+                              {idx < p.lines.length - 1 ? (
+                                <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+                              ) : null}
+                            </span>
+                          ))}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
       </section>
 
-      <section className="surface-card mb-6 space-y-3 p-5 dark:border-slate-700">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Bu modelde geçmiş verimler</h2>
+      <CollapsibleSection
+        title="Bu modelde geçmiş verimler"
+        description="Model meta günlerinde personel verim geçmişi — hesapta öncelikli kaynak."
+        badge={modelStats?.workers.length ? `${modelStats.workers.length} kayıt` : undefined}
+        defaultOpen={false}
+      >
+        <div className="space-y-3">
           {modelStats ? (
-            <span className="text-xs text-slate-500 dark:text-slate-400">
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
               {modelStats.startDate} → {modelStats.endDate} (bugüne kadar 180 gün)
             </span>
           ) : null}
-        </div>
-        <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-          Günlük ürün kaydında <strong className="font-medium text-slate-600 dark:text-slate-300">bu model_id</strong> ile işaretlenmiş
-          tarihlerde, aynı modelin dk tablosundaki bölüm+proses istasyonunda kaydı olan personel için ortalama verim (günlük adet ÷
-          dk×60×9) hesaplanır. Bu ortalama aşağıda listelenir; <strong className="font-medium">İş hesabında önce bu değer</strong>{" "}
-          kullanılır. Personelde geçmiş örnek yoksa bugünkü üretim verimliliği veya hedef hız devreye girer.
-        </p>
+          <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+            Günlük ürün kaydında{" "}
+            <strong className="font-medium text-slate-600 dark:text-slate-300">bu model_id</strong> ile işaretlenmiş
+            tarihlerde, aynı modelin dk tablosundaki bölüm+proses istasyonunda kaydı olan personel için ortalama verim (günlük adet ÷
+            dk×60×9) hesaplanır. Bu ortalama aşağıda listelenir;{" "}
+            <strong className="font-medium">İş hesabında önce bu değer</strong> kullanılır. Personelde geçmiş örnek yoksa bugünkü
+            üretim verimliliği veya hedef hız devreye girer.
+          </p>
         {modelStatsErr ? (
           <p className="text-xs text-amber-700 dark:text-amber-300">{modelStatsErr}</p>
         ) : null}
@@ -995,20 +1346,23 @@ export default function IsBitirmeHesaplamaPage() {
             </div>
           </div>
         ) : null}
-      </section>
+        </div>
+      </CollapsibleSection>
 
-      <section className="surface-card mb-6 p-5 dark:border-slate-700">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Personel ve prosesler</h2>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Otomatik satırlar yalnızca bu modelde günlük ürün kaydında model işaretli günlerde üretim kaydı olan personelden
-              gelir («Bu modelde geçmiş verimler» özetindeki küme; bugüne kadar 180 gün). «Ek personel satırı» ile
-              listeye başka personel ekleyebilir, bu modelde hesaba katılacak{" "}
-              <strong className="font-medium text-slate-600 dark:text-slate-300">bölüm ve proses</strong>i seçebilirsiniz; verim
-              seçtiğiniz istasyona göre hesaplanır.
-            </p>
-          </div>
+      <CollapsibleSection
+        title="Personel ve prosesler"
+        description="Otomatik satırlar model geçmişinden gelir; ek satırla bölüm ve proses seçebilirsiniz."
+        badge={rows.length ? `${rows.length} satır` : undefined}
+        defaultOpen={false}
+      >
+        <p className="mb-4 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+          Otomatik satırlar yalnızca bu modelde günlük ürün kaydında model işaretli günlerde üretim kaydı olan personelden gelir
+          («Bu modelde geçmiş verimler» özetindeki küme; bugüne kadar 180 gün). «Ek personel satırı» ile listeye başka personel
+          ekleyebilir, bu modelde hesaba katılacak{" "}
+          <strong className="font-medium text-slate-600 dark:text-slate-300">bölüm ve proses</strong>i seçebilirsiniz; verim
+          seçtiğiniz istasyona göre hesaplanır.
+        </p>
+        <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onClick={addRow}
@@ -1214,7 +1568,7 @@ export default function IsBitirmeHesaplamaPage() {
             ) : null}
           </>
         )}
-      </section>
+      </CollapsibleSection>
 
       {duplicateWorkers.size > 0 ? (
         <p className="mb-6 rounded-lg border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
