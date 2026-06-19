@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
-import { getGenelTamamlananTrend, getProcesses, getTeams, type GenelTamamlananTrend } from "@/lib/api";
+import { getGenelTamamlananTrend, getProcesses, type GenelTamamlananTrend } from "@/lib/api";
 import {
   addDaysToIso,
   calendarMonthWeekdayBounds,
@@ -121,9 +121,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
   const [preset, setPreset] = useState<Preset>("this_week");
   const [customStart, setCustomStart] = useState(addDaysToIso(today, -14));
   const [customEnd, setCustomEnd] = useState(today);
-  const [teamFilter, setTeamFilter] = useState("");
   const [processFilter, setProcessFilter] = useState("");
-  const [teamRows, setTeamRows] = useState<{ code: string; label: string }[]>([]);
   const [processRows, setProcessRows] = useState<{ name: string }[]>([]);
   const [data, setData] = useState<GenelTamamlananTrend | null>(null);
   const [weekCompare, setWeekCompare] = useState<CompareCard | null>(null);
@@ -137,12 +135,9 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
     [preset, customStart, customEnd, today]
   );
 
-  const processFilterActive = Boolean(teamFilter && processFilter);
+  const processFilterActive = Boolean(processFilter);
 
   useEffect(() => {
-    void getTeams()
-      .then((rows) => setTeamRows(rows.map((t) => ({ code: t.code, label: t.label }))))
-      .catch(() => {});
     void getProcesses()
       .then((rows) =>
         setProcessRows(
@@ -167,10 +162,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
       const prevMonth = previousCalendarMonthFromIso(today);
       const prevMonthBounds = calendarMonthWeekdayBounds(prevMonth.year, prevMonth.month1);
 
-      const trendParams =
-        teamFilter && processFilter
-          ? { teamCode: teamFilter, processName: processFilter }
-          : {};
+      const trendParams = processFilter ? { processName: processFilter } : {};
       const [main, curWeek, prevWeekData, curMonth, prevMonthData] = await Promise.all([
         getGenelTamamlananTrend({ startDate: start, endDate: end, ...trendParams }),
         getGenelTamamlananTrend({ startDate: thisWeekMon, endDate: today, ...trendParams }),
@@ -201,17 +193,16 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [chartRange, today, teamFilter, processFilter]);
+  }, [chartRange, today, processFilter]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const teamLabel = teamRows.find((t) => t.code === teamFilter)?.label ?? teamFilter;
-  const metricLabel = processFilterActive ? `${teamLabel} · ${processFilter}` : "Genel tamamlanan";
+  const metricLabel = processFilterActive ? processFilter : "Genel tamamlanan";
   const metricHint = processFilterActive
-    ? "Seçtiğiniz bölüm ve proses satırının günlük toplamı (saat + ek giriş)."
-    : "Bölüm ve proses seçilmediğinde tüm satırların minimumu — veri girişi günlük özeti ile aynı (saat + ek giriş).";
+    ? "Seçilen prosesin tüm bölümlerdeki günlük toplamı (saat + ek giriş)."
+    : "Proses seçilmediğinde tüm satırların minimumu — veri girişi günlük özeti ile aynı (saat + ek giriş).";
 
   const maxVal = useMemo(
     () => Math.max(1, ...(data?.daily.map((d) => d.genelTamamlanan) ?? [0])),
@@ -309,26 +300,8 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
           </div>
         ) : null}
 
-        <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 dark:border-slate-800 sm:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <label htmlFor="genel-tamamlanan-team" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Bölüm
-            </label>
-            <select
-              id="genel-tamamlanan-team"
-              value={teamFilter}
-              onChange={(e) => setTeamFilter(e.target.value)}
-              className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              <option value="">Seçin…</option>
-              {teamRows.map((t) => (
-                <option key={t.code} value={t.code}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
+        <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <div className="flex min-w-0 max-w-md flex-col gap-1.5">
             <label htmlFor="genel-tamamlanan-process" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Proses
             </label>
@@ -338,7 +311,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
               onChange={(e) => setProcessFilter(e.target.value)}
               className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
             >
-              <option value="">Seçin…</option>
+              <option value="">Genel tamamlanan (min.)</option>
               {processRows.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.name}
@@ -347,11 +320,6 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
             </select>
           </div>
         </div>
-        {(teamFilter && !processFilter) || (!teamFilter && processFilter) ? (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-            Tek satır görmek için hem bölüm hem proses seçin. Aksi halde genel tamamlanan (minimum) gösterilir.
-          </p>
-        ) : null}
       </div>
 
       <div className="p-5 md:p-7">
@@ -385,7 +353,10 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                   {data.summary.avgPerDay.toLocaleString("tr-TR")}
                 </p>
                 <p className="mt-1 text-xs text-teal-700/80 dark:text-teal-400/80">
-                  {data.summary.workdayCount} iş günü
+                  {data.summary.daysWithData} veri alınan iş günü
+                  {data.summary.workdayCount !== data.summary.daysWithData
+                    ? ` · dönemde ${data.summary.workdayCount} iş günü`
+                    : ""}
                 </p>
               </div>
               {weekCompare ? (

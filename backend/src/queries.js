@@ -1257,8 +1257,8 @@ async function resolveArkaHalfForTeamProcess(modelId, teamCode, processName) {
 
 /**
  * Seçilen aralıkta iş günü bazında genel tamamlanan (günün modeline göre).
- * teamCode+processName dolu: seçilen bölüm/proses satırının toplamı.
- * Aksi halde stageKey veya genel minimum (hedef bölüm satırları).
+ * processName dolu: o prosesin tüm bölümlerdeki toplamı.
+ * Boş: genel minimum (hedef bölüm satırları).
  * Toplamlar saat dilimleri + ek giriş (ek_sayim) birleşimini içerir.
  */
 export async function getGenelTamamlananDailyTrend(startDate, endDate, options = {}) {
@@ -1269,10 +1269,9 @@ export async function getGenelTamamlananDailyTrend(startDate, endDate, options =
   }
   if (sd > ed) throw new Error("Başlangıç bitişten sonra olamaz");
 
-  const teamCode = String(options?.teamCode ?? "").trim();
   const processName = String(options?.processName ?? "").trim();
-  const useTeamProcess = Boolean(teamCode && processName);
-  const stageFilter = useTeamProcess ? null : parseHedefStageFilter(options?.stageKey);
+  const useProcessFilter = Boolean(processName);
+  const stageFilter = useProcessFilter ? null : parseHedefStageFilter(options?.stageKey);
 
   const weekdays = eachWeekdayIsoInRange(sd, ed);
   const metaRows = await dbAll(
@@ -1288,11 +1287,10 @@ export async function getGenelTamamlananDailyTrend(startDate, endDate, options =
   for (const d of weekdays) {
     const mid = modelByDate[d] ?? null;
     let genelTamamlanan = 0;
-    if (useTeamProcess) {
-      const hf = await resolveArkaHalfForTeamProcess(mid, teamCode, processName);
+    if (useProcessFilter) {
       genelTamamlanan = Math.max(
         0,
-        Math.floor(await sumProductionForBaselineRow(d, d, teamCode, processName, hf))
+        Math.floor(await sumProductionForProcessName(d, d, processName, mid))
       );
     } else {
       let totals;
@@ -1313,13 +1311,12 @@ export async function getGenelTamamlananDailyTrend(startDate, endDate, options =
   const total = daily.reduce((s, x) => s + x.genelTamamlanan, 0);
   const daysWithData = daily.filter((x) => x.genelTamamlanan > 0).length;
   const workdayCount = weekdays.length;
-  const avgPerDay = workdayCount > 0 ? Math.round(total / workdayCount) : 0;
+  const avgPerDay = daysWithData > 0 ? Math.round(total / daysWithData) : 0;
 
   return {
     startDate: sd,
     endDate: ed,
-    teamCode: useTeamProcess ? teamCode : "",
-    processName: useTeamProcess ? processName : "",
+    processName: useProcessFilter ? processName : "",
     stageKey: stageFilter?.key ?? "",
     includesEkSayim: true,
     daily,
@@ -1452,6 +1449,46 @@ async function sumProductionForBaselineRow(startDate, endDate, teamCode, process
       AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
     `,
     [hf, startDate, endDate, teamCode, processName]
+  );
+  return Number(row?.total) || 0;
+}
+
+/** Proses adına göre tüm bölümlerdeki üretim toplamı (saat + ek giriş). */
+async function sumProductionForProcessName(startDate, endDate, processName, modelId) {
+  const line = hedefLineSumSql();
+  const pn = String(processName ?? "").trim();
+  const mid =
+    modelId != null && Number.isFinite(Number(modelId)) && Number(modelId) > 0 ? Number(modelId) : null;
+  const row = await dbGet(
+    mid != null
+      ? `
+    SELECT COALESCE(SUM(
+      (CASE WHEN COALESCE(mhb.arka_half, pr.hedef_arka_half, 0) = 1 THEN 0.5 ELSE 1.0 END) * (${line})
+    ), 0) AS total
+    FROM production_entries p
+    JOIN workers w ON w.id = p.worker_id
+    LEFT JOIN processes pr ON TRIM(COALESCE(pr.name, '')) = TRIM(COALESCE(w.process, ''))
+    LEFT JOIN model_hedef_baselines mhb
+      ON mhb.model_id = ? AND mhb.team_code = w.team
+      AND TRIM(COALESCE(mhb.process_name, '')) = TRIM(COALESCE(w.process, ''))
+    WHERE p.production_date BETWEEN ? AND ?
+      AND TRIM(COALESCE(w.process, '')) = TRIM(?)
+      AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+      AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+    `
+      : `
+    SELECT COALESCE(SUM(
+      (CASE WHEN COALESCE(pr.hedef_arka_half, 0) = 1 THEN 0.5 ELSE 1.0 END) * (${line})
+    ), 0) AS total
+    FROM production_entries p
+    JOIN workers w ON w.id = p.worker_id
+    LEFT JOIN processes pr ON TRIM(COALESCE(pr.name, '')) = TRIM(COALESCE(w.process, ''))
+    WHERE p.production_date BETWEEN ? AND ?
+      AND TRIM(COALESCE(w.process, '')) = TRIM(?)
+      AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+      AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+    `,
+    mid != null ? [mid, startDate, endDate, pn] : [startDate, endDate, pn]
   );
   return Number(row?.total) || 0;
 }

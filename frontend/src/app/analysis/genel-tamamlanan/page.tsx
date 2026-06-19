@@ -51,7 +51,7 @@ export default function GenelTamamlananAnalysisPage() {
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
                 Veri girişi günlük özetindeki <strong className="font-semibold text-slate-800 dark:text-slate-200">Genel tamamlanan</strong>{" "}
-                değerinin günlük, haftalık ve aylık görünümü. Bölüm ve proses listesinden istediğiniz satırı seçebilirsiniz.
+                değerinin günlük, haftalık ve aylık görünümü. Proses seçerek o prosesin toplamını da görebilirsiniz.
                 Ek giriş adetleri dahildir.
               </p>
             </div>

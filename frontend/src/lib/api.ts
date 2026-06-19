@@ -1083,7 +1083,6 @@ export type GenelTamamlananDailyPoint = {
 export type GenelTamamlananTrend = {
   startDate: string;
   endDate: string;
-  teamCode: string;
   processName: string;
   stageKey: string;
   includesEkSayim: boolean;
@@ -1099,19 +1098,14 @@ export type GenelTamamlananTrend = {
 export async function getGenelTamamlananTrend(params: {
   startDate: string;
   endDate: string;
-  teamCode?: string;
   processName?: string;
 }): Promise<GenelTamamlananTrend> {
   const queryParams: Record<string, string> = {
     startDate: params.startDate,
     endDate: params.endDate,
   };
-  const tc = params.teamCode?.trim();
   const pn = params.processName?.trim();
-  if (tc && pn) {
-    queryParams.teamCode = tc;
-    queryParams.processName = pn;
-  }
+  if (pn) queryParams.processName = pn;
   const query = new URLSearchParams(queryParams).toString();
   const response = await apiFetch(`${apiBase()}/analytics/genel-tamamlanan?${query}`, {
     cache: "no-store",

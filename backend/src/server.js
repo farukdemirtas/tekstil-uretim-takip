@@ -1390,21 +1390,11 @@ app.get(
   "/api/analytics/genel-tamamlanan",
   requireAnyPermission(["analysis", "ekran2", "ekran4"]),
   async (req, res) => {
-    const { startDate, endDate, stageKey, teamCode, processName } = req.query;
+    const { startDate, endDate, stageKey, processName } = req.query;
     if (!startDate || !endDate) {
       return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
     }
-    const tc = teamCode != null ? String(teamCode).trim() : "";
     const pn = processName != null ? String(processName).trim() : "";
-    if ((tc && !pn) || (!tc && pn)) {
-      return res.status(400).json({ message: "Bölüm ve proses birlikte seçilmelidir" });
-    }
-    if (tc) {
-      const codes = await listTeamCodes();
-      if (!codes.includes(tc)) {
-        return res.status(400).json({ message: "Geçersiz bölüm filtresi" });
-      }
-    }
     if (pn) {
       const pnames = await listProcessNames();
       if (!pnames.includes(pn)) {
@@ -1414,7 +1404,6 @@ app.get(
     try {
       const data = await getGenelTamamlananDailyTrend(String(startDate), String(endDate), {
         stageKey: stageKey != null ? String(stageKey) : "",
-        teamCode: tc,
         processName: pn,
       });
       return res.json(data);
