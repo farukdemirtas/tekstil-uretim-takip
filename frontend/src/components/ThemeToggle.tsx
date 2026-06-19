@@ -2,9 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
+import { useI18n } from "@/components/I18nProvider";
 import { THEME_CHANGE_EVENT } from "@/lib/permissions";
 
 type Theme = "light" | "dark";
+
+type Props = {
+  inline?: boolean;
+};
 
 function useEkran5EmbeddedView(): boolean {
   const [active, setActive] = useState(false);
@@ -18,8 +23,9 @@ function useEkran5EmbeddedView(): boolean {
   return active;
 }
 
-export default function ThemeToggle() {
+export default function ThemeToggle({ inline = false }: Props) {
   const pathname = usePathname();
+  const { t } = useI18n();
   const ekran5Embedded = useEkran5EmbeddedView();
   const [theme, setTheme] = useState<Theme>("light");
 
@@ -40,7 +46,10 @@ export default function ThemeToggle() {
     return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeFromLogin as EventListener);
   }, []);
 
-  const label = useMemo(() => (theme === "dark" ? "Açık Mod" : "Koyu Mod"), [theme]);
+  const label = useMemo(
+    () => (theme === "dark" ? t("theme.light") : t("theme.dark")),
+    [theme, t]
+  );
 
   if (
     pathname.startsWith("/ekran1") ||
@@ -65,7 +74,11 @@ export default function ThemeToggle() {
     <button
       onClick={toggleTheme}
       aria-label={label}
-      className="fixed right-4 top-4 z-50 rounded-full border border-slate-200/90 bg-white/90 px-4 py-2 text-xs font-medium text-slate-700 shadow-surface-sm backdrop-blur-md transition hover:border-teal-300/60 hover:bg-teal-50/90 hover:text-teal-900 active:scale-95 dark:border-slate-600 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:border-teal-700 dark:hover:bg-teal-950/50 dark:hover:text-teal-100"
+      className={
+        inline
+          ? "rounded-full border border-slate-200/90 bg-white/90 px-4 py-2 text-xs font-medium text-slate-700 shadow-surface-sm backdrop-blur-md transition hover:border-teal-300/60 hover:bg-teal-50/90 hover:text-teal-900 active:scale-95 dark:border-slate-600 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:border-teal-700 dark:hover:bg-teal-950/50 dark:hover:text-teal-100"
+          : "fixed right-4 top-4 z-50 rounded-full border border-slate-200/90 bg-white/90 px-4 py-2 text-xs font-medium text-slate-700 shadow-surface-sm backdrop-blur-md transition hover:border-teal-300/60 hover:bg-teal-50/90 hover:text-teal-900 active:scale-95 dark:border-slate-600 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:border-teal-700 dark:hover:bg-teal-950/50 dark:hover:text-teal-100"
+      }
       type="button"
     >
       {label}

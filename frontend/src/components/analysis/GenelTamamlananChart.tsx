@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
+import { useI18n } from "@/components/I18nProvider";
 import { getGenelTamamlananTrend, getProcesses, type GenelTamamlananTrend } from "@/lib/api";
 import {
   addDaysToIso,
@@ -15,13 +16,7 @@ import {
 
 type Preset = "this_week" | "last_week" | "this_month" | "last_month" | "custom";
 
-const PRESETS: { id: Preset; label: string }[] = [
-  { id: "this_week", label: "Bu hafta" },
-  { id: "last_week", label: "Geçen hafta" },
-  { id: "this_month", label: "Bu ay" },
-  { id: "last_month", label: "Geçen ay" },
-  { id: "custom", label: "Özel aralık" },
-];
+const PRESET_IDS: Preset[] = ["this_week", "last_week", "this_month", "last_month", "custom"];
 
 function previousCalendarMonthFromIso(iso: string): { year: number; month1: number } {
   const dt = parseIsoLocal(iso);
@@ -56,21 +51,13 @@ function rangeForPreset(preset: Preset, customStart: string, customEnd: string, 
   }
 }
 
-function formatShortDate(iso: string): string {
-  const dt = parseIsoLocal(iso);
-  if (!dt) return iso;
-  return dt.toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
-}
-
-function formatLongDate(iso: string): string {
-  const dt = parseIsoLocal(iso);
-  if (!dt) return iso;
-  return dt.toLocaleDateString("tr-TR", { weekday: "short", day: "numeric", month: "long" });
-}
-
-function formatRangeLabel(start: string, end: string): string {
-  if (start === end) return formatShortDate(start);
-  return `${formatShortDate(start)} – ${formatShortDate(end)}`;
+function formatRangeLabel(
+  start: string,
+  end: string,
+  formatShort: (iso: string) => string
+): string {
+  if (start === end) return formatShort(start);
+  return `${formatShort(start)} – ${formatShort(end)}`;
 }
 
 type CompareCard = {
@@ -80,11 +67,21 @@ type CompareCard = {
   previousLabel: string;
 };
 
-function CompareBadge({ delta, deltaPct }: { delta: number; deltaPct: number | null }) {
+function CompareBadge({
+  delta,
+  deltaPct,
+  t,
+  localeTag,
+}: {
+  delta: number;
+  deltaPct: number | null;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  localeTag: string;
+}) {
   if (delta === 0) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-        → Değişmedi
+        → {t("common.unchanged")}
       </span>
     );
   }
@@ -97,7 +94,7 @@ function CompareBadge({ delta, deltaPct }: { delta: number; deltaPct: number | n
           : "bg-rose-50 text-rose-700 ring-1 ring-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300"
       }`}
     >
-      {up ? "↑" : "↓"} {Math.abs(delta).toLocaleString("tr-TR")} adet
+      {up ? "↑" : "↓"} {t("genelTamamlanan.deltaPieces", { count: Math.abs(delta).toLocaleString(localeTag) })}
       {deltaPct != null ? ` (${up ? "+" : ""}${deltaPct}%)` : ""}
     </span>
   );
@@ -117,6 +114,7 @@ type Props = {
 };
 
 export default function GenelTamamlananChart({ pageMode = false }: Props) {
+  const { t, formatDate, formatTime, localeTag } = useI18n();
   const today = todayWorkdayIsoTurkey();
   const [preset, setPreset] = useState<Preset>("this_week");
   const [customStart, setCustomStart] = useState(addDaysToIso(today, -14));
@@ -133,6 +131,34 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
   const chartRange = useMemo(
     () => rangeForPreset(preset, customStart, customEnd, today),
     [preset, customStart, customEnd, today]
+  );
+
+  const presets = useMemo(
+    () =>
+      PRESET_IDS.map((id) => ({
+        id,
+        label: t(
+          id === "this_week"
+            ? "genelTamamlanan.presetThisWeek"
+            : id === "last_week"
+              ? "genelTamamlanan.presetLastWeek"
+              : id === "this_month"
+                ? "genelTamamlanan.presetThisMonth"
+                : id === "last_month"
+                  ? "genelTamamlanan.presetLastMonth"
+                  : "genelTamamlanan.presetCustom"
+        ),
+      })),
+    [t]
+  );
+
+  const formatShortDate = useCallback(
+    (iso: string) => formatDate(iso, { day: "numeric", month: "short" }),
+    [formatDate]
+  );
+  const formatLongDate = useCallback(
+    (iso: string) => formatDate(iso, { weekday: "short", day: "numeric", month: "long" }),
+    [formatDate]
   );
 
   const processFilterActive = Boolean(processFilter);
@@ -175,34 +201,32 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
       setWeekCompare({
         current: curWeek.summary.total,
         previous: prevWeekData.summary.total,
-        currentLabel: formatRangeLabel(thisWeekMon, today),
-        previousLabel: formatRangeLabel(prevWeek.start, prevWeek.end),
+        currentLabel: formatRangeLabel(thisWeekMon, today, formatShortDate),
+        previousLabel: formatRangeLabel(prevWeek.start, prevWeek.end, formatShortDate),
       });
       setMonthCompare({
         current: curMonth.summary.total,
         previous: prevMonthData.summary.total,
-        currentLabel: formatRangeLabel(thisMonthBounds.start, thisMonthEnd),
-        previousLabel: formatRangeLabel(prevMonthBounds.start, prevMonthBounds.end),
+        currentLabel: formatRangeLabel(thisMonthBounds.start, thisMonthEnd, formatShortDate),
+        previousLabel: formatRangeLabel(prevMonthBounds.start, prevMonthBounds.end, formatShortDate),
       });
-      setLoadedAt(new Date().toLocaleTimeString("tr-TR"));
+      setLoadedAt(formatTime(new Date()));
     } catch (e) {
       setData(null);
       setWeekCompare(null);
       setMonthCompare(null);
-      setError(e instanceof Error ? e.message : "Veri alınamadı");
+      setError(e instanceof Error ? e.message : t("common.dataLoadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [chartRange, today, processFilter]);
+  }, [chartRange, today, processFilter, formatShortDate, formatTime, t]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const metricLabel = processFilterActive ? processFilter : "Genel tamamlanan";
-  const metricHint = processFilterActive
-    ? "Seçilen prosesin tüm bölümlerdeki günlük toplamı (saat + ek giriş)."
-    : "Proses seçilmediğinde tüm satırların minimumu — veri girişi günlük özeti ile aynı (saat + ek giriş).";
+  const metricLabel = processFilterActive ? processFilter : t("genelTamamlanan.metricGeneral");
+  const metricHint = processFilterActive ? t("genelTamamlanan.hintProcess") : t("genelTamamlanan.hintGeneral");
 
   const maxVal = useMemo(
     () => Math.max(1, ...(data?.daily.map((d) => d.genelTamamlanan) ?? [0])),
@@ -248,17 +272,17 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
               </>
             ) : (
               <>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Dönem ve karşılaştırma</h2>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t("genelTamamlanan.periodTitle")}</h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {metricLabel} · {formatRangeLabel(chartRange.start, chartRange.end)}
-                  {loadedAt ? ` · Son güncelleme ${loadedAt}` : ""}
+                  {metricLabel} · {formatRangeLabel(chartRange.start, chartRange.end, formatShortDate)}
+                  {loadedAt ? ` · ${t("common.lastUpdated")} ${loadedAt}` : ""}
                 </p>
                 <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{metricHint}</p>
               </>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {PRESETS.map((p) => (
+            {presets.map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -278,7 +302,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
               disabled={loading}
               className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-100 disabled:opacity-50 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200"
             >
-              Yenile
+              {t("common.refresh")}
             </button>
           </div>
         </div>
@@ -286,13 +310,13 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
         {preset === "custom" ? (
           <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
             <WeekdayDatePicker
-              label="Başlangıç"
+              label={t("common.startDate")}
               className="min-w-[12rem]"
               value={customStart}
               onChange={(v) => setCustomStart(clampToWeekdayIso(v))}
             />
             <WeekdayDatePicker
-              label="Bitiş"
+              label={t("common.endDate")}
               className="min-w-[12rem]"
               value={customEnd}
               onChange={(v) => setCustomEnd(clampToWeekdayIso(v))}
@@ -303,7 +327,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
         <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
           <div className="flex min-w-0 max-w-md flex-col gap-1.5">
             <label htmlFor="genel-tamamlanan-process" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Proses
+              {t("common.process")}
             </label>
             <select
               id="genel-tamamlanan-process"
@@ -311,7 +335,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
               onChange={(e) => setProcessFilter(e.target.value)}
               className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
             >
-              <option value="">Genel tamamlanan (min.)</option>
+              <option value="">{t("genelTamamlanan.metricGeneralMin")}</option>
               {processRows.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.name}
@@ -339,33 +363,33 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
           <div className="space-y-8">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50 p-5 dark:border-slate-700 dark:from-slate-800/80 dark:to-slate-900/80">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Dönem toplamı</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{t("genelTamamlanan.periodTotal")}</p>
                 <p className="mt-2 text-3xl font-black tabular-nums tracking-tight text-slate-900 dark:text-white">
-                  {data.summary.total.toLocaleString("tr-TR")}
+                  {data.summary.total.toLocaleString(localeTag)}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">adet</p>
+                <p className="mt-1 text-xs text-slate-500">{t("common.pieces")}</p>
               </div>
               <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-br from-teal-50 to-emerald-50/50 p-5 dark:border-teal-900/50 dark:from-teal-950/30 dark:to-emerald-950/20">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-                  Günlük ortalama
+                  {t("genelTamamlanan.dailyAvg")}
                 </p>
                 <p className="mt-2 text-3xl font-black tabular-nums tracking-tight text-teal-800 dark:text-teal-100">
-                  {data.summary.avgPerDay.toLocaleString("tr-TR")}
+                  {data.summary.avgPerDay.toLocaleString(localeTag)}
                 </p>
                 <p className="mt-1 text-xs text-teal-700/80 dark:text-teal-400/80">
-                  {data.summary.daysWithData} veri alınan iş günü
+                  {t("genelTamamlanan.daysWithData", { count: data.summary.daysWithData })}
                   {data.summary.workdayCount !== data.summary.daysWithData
-                    ? ` · dönemde ${data.summary.workdayCount} iş günü`
+                    ? ` · ${t("common.workdaysInPeriod", { count: data.summary.workdayCount })}`
                     : ""}
                 </p>
               </div>
               {weekCompare ? (
                 <div className="rounded-2xl border border-slate-200/90 p-5 dark:border-slate-700">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Geçen haftaya göre</p>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{t("genelTamamlanan.vsLastWeek")}</p>
                   <p className="mt-2 text-xl font-black tabular-nums">
-                    {weekCompare.current.toLocaleString("tr-TR")}
-                    <span className="mx-1 text-sm font-normal text-slate-400">vs</span>
-                    {weekCompare.previous.toLocaleString("tr-TR")}
+                    {weekCompare.current.toLocaleString(localeTag)}
+                    <span className="mx-1 text-sm font-normal text-slate-400">{t("common.vs")}</span>
+                    {weekCompare.previous.toLocaleString(localeTag)}
                   </p>
                   <div className="mt-3">
                     <CompareBadge
@@ -375,17 +399,19 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                           ? Math.round(((weekCompare.current - weekCompare.previous) / weekCompare.previous) * 100)
                           : null
                       }
+                      t={t}
+                      localeTag={localeTag}
                     />
                   </div>
                 </div>
               ) : null}
               {monthCompare ? (
                 <div className="rounded-2xl border border-slate-200/90 p-5 dark:border-slate-700">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Geçen aya göre</p>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{t("genelTamamlanan.vsLastMonth")}</p>
                   <p className="mt-2 text-xl font-black tabular-nums">
-                    {monthCompare.current.toLocaleString("tr-TR")}
-                    <span className="mx-1 text-sm font-normal text-slate-400">vs</span>
-                    {monthCompare.previous.toLocaleString("tr-TR")}
+                    {monthCompare.current.toLocaleString(localeTag)}
+                    <span className="mx-1 text-sm font-normal text-slate-400">{t("common.vs")}</span>
+                    {monthCompare.previous.toLocaleString(localeTag)}
                   </p>
                   <div className="mt-3">
                     <CompareBadge
@@ -395,6 +421,8 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                           ? Math.round(((monthCompare.current - monthCompare.previous) / monthCompare.previous) * 100)
                           : null
                       }
+                      t={t}
+                      localeTag={localeTag}
                     />
                   </div>
                 </div>
@@ -402,7 +430,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
             </div>
 
             {data.daily.length === 0 ? (
-              <p className="py-16 text-center text-sm text-slate-500">Seçilen aralıkta iş günü yok.</p>
+              <p className="py-16 text-center text-sm text-slate-500">{t("genelTamamlanan.noWorkdays")}</p>
             ) : chartMetrics ? (
               <>
                 <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/40">
@@ -410,7 +438,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                     viewBox={`0 0 ${chartMetrics.width} ${chartMetrics.chartH + 40}`}
                     className="h-auto w-full min-w-[20rem]"
                     role="img"
-                    aria-label={`Günlük ${metricLabel} grafiği`}
+                    aria-label={t("genelTamamlanan.chartAria", { metric: metricLabel })}
                   >
                     <defs>
                       <linearGradient id="genel-area" x1="0" y1="0" x2="0" y2="1">
@@ -418,13 +446,13 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                         <stop offset="100%" stopColor="#14b8a6" stopOpacity="0.02" />
                       </linearGradient>
                     </defs>
-                    {[0.25, 0.5, 0.75, 1].map((t) => (
+                    {[0.25, 0.5, 0.75, 1].map((tick) => (
                       <line
-                        key={t}
+                        key={tick}
                         x1={0}
                         x2={chartMetrics.width}
-                        y1={chartMetrics.chartH - chartMetrics.chartH * t}
-                        y2={chartMetrics.chartH - chartMetrics.chartH * t}
+                        y1={chartMetrics.chartH - chartMetrics.chartH * tick}
+                        y2={chartMetrics.chartH - chartMetrics.chartH * tick}
                         stroke="currentColor"
                         className="text-slate-200 dark:text-slate-700"
                         strokeDasharray="4 4"
@@ -461,7 +489,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                             textAnchor="middle"
                             className="fill-slate-700 text-[10px] font-bold dark:fill-slate-200"
                           >
-                            {point.genelTamamlanan.toLocaleString("tr-TR")}
+                            {point.genelTamamlanan.toLocaleString(localeTag)}
                           </text>
                         ) : null}
                         <text
@@ -480,13 +508,13 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                 {pageMode ? (
                   <div className="overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-700">
                     <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/50">
-                      <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Günlük detay</h3>
+                      <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{t("genelTamamlanan.dailyDetail")}</h3>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[20rem] text-sm">
                         <thead>
                           <tr className="border-b border-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-500 dark:border-slate-800">
-                            <th className="px-4 py-3">Tarih</th>
+                            <th className="px-4 py-3">{t("genelTamamlanan.dateColumn")}</th>
                             <th className="px-4 py-3 text-right">{metricLabel}</th>
                           </tr>
                         </thead>
@@ -500,7 +528,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                                 {formatLongDate(row.date)}
                               </td>
                               <td className="px-4 py-2.5 text-right font-black tabular-nums text-teal-700 dark:text-teal-300">
-                                {row.genelTamamlanan.toLocaleString("tr-TR")}
+                                {row.genelTamamlanan.toLocaleString(localeTag)}
                               </td>
                             </tr>
                           ))}

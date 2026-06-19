@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "react-day-picker/style.css";
-import ThemeToggle from "@/components/ThemeToggle";
+import AppChrome from "@/components/AppChrome";
+import { I18nProvider } from "@/components/I18nProvider";
 import { SWRProvider } from "@/components/SWRProvider";
 
 export const metadata: Metadata = {
@@ -27,10 +28,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="tr">
+    <html lang="tr" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <ThemeToggle />
-        <SWRProvider>{children}</SWRProvider>
+        <I18nProvider>
+          <AppChrome />
+          <SWRProvider>{children}</SWRProvider>
+        </I18nProvider>
       </body>
     </html>
   );

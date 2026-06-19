@@ -6,8 +6,10 @@ import { setAuthToken } from "@/lib/api";
 import { hasPermission } from "@/lib/permissions";
 import AnalysisSubnav from "@/components/analysis/AnalysisSubnav";
 import GenelTamamlananChart from "@/components/analysis/GenelTamamlananChart";
+import { useI18n } from "@/components/I18nProvider";
 
 export default function GenelTamamlananAnalysisPage() {
+  const { t } = useI18n();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export default function GenelTamamlananAnalysisPage() {
   if (!ready) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <p className="text-sm text-slate-500">Yükleniyor…</p>
+        <p className="text-sm text-slate-500">{t("common.loading")}</p>
       </main>
     );
   }
@@ -42,17 +44,15 @@ export default function GenelTamamlananAnalysisPage() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-teal-700 ring-1 ring-teal-600/15 dark:bg-teal-950/50 dark:text-teal-300">
-                  Analiz
+                  {t("genelTamamlanan.badge")}
                 </span>
-                <span className="text-[11px] font-medium text-slate-400">Üretim özeti</span>
+                <span className="text-[11px] font-medium text-slate-400">{t("genelTamamlanan.section")}</span>
               </div>
               <h1 className="mt-3 text-balance text-2xl font-bold tracking-tight md:text-3xl">
-                Genel tamamlanan trendi
+                {t("genelTamamlanan.pageTitle")}
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                Veri girişi günlük özetindeki <strong className="font-semibold text-slate-800 dark:text-slate-200">Genel tamamlanan</strong>{" "}
-                değerinin günlük, haftalık ve aylık görünümü. Proses seçerek o prosesin toplamını da görebilirsiniz.
-                Ek giriş adetleri dahildir.
+                {t("genelTamamlanan.pageDesc")}
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
@@ -60,13 +60,13 @@ export default function GenelTamamlananAnalysisPage() {
                 href="/analysis"
                 className="inline-flex items-center justify-center rounded-xl border border-slate-200/90 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50/80 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               >
-                Genel analiz
+                {t("nav.generalAnalysis")}
               </Link>
               <Link
                 href="/"
                 className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-lg dark:from-teal-600 dark:to-emerald-600"
               >
-                Üretim ekranı
+                {t("nav.productionScreen")}
               </Link>
             </div>
           </div>

@@ -1,12 +1,14 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useI18n } from "@/components/I18nProvider";
 
 type LoginFormProps = {
   onLogin: (payload: { username: string; password: string }) => Promise<void>;
 };
 
 export default function LoginForm({ onLogin }: LoginFormProps) {
+  const { t } = useI18n();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,7 +21,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
     try {
       await onLogin({ username, password });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Giriş başarısız");
+      setError(err instanceof Error ? err.message : t("login.failed"));
     } finally {
       setLoading(false);
     }
@@ -68,26 +70,26 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
                   />
                 </div>
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-                  Yeşil İmaj Tekstil
+                  {t("app.name")}
                 </h1>
                 <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
-                  Üretim takip sistemi
+                  {t("app.productionSystem")}
                 </p>
               </div>
 
               <div className="mb-6">
                 <h2 className="text-center text-sm font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">
-                  Giriş
+                  {t("login.title")}
                 </h2>
                 <p className="mt-1 text-center text-xs text-slate-500 dark:text-slate-500">
-                  Devam etmek için hesabınızla oturum açın
+                  {t("login.subtitle")}
                 </p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-1.5">
                   <label htmlFor="login-username" className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-                    Kullanıcı adı
+                    {t("login.username")}
                   </label>
                   <input
                     id="login-username"
@@ -95,13 +97,13 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
                     autoComplete="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Kullanıcı adınızı girin"
+                    placeholder={t("login.usernamePlaceholder")}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-teal-400 dark:focus:bg-slate-800 dark:focus:ring-teal-400/20"
                   />
                 </div>
                 <div className="space-y-1.5">
                   <label htmlFor="login-password" className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-                    Şifre
+                    {t("login.password")}
                   </label>
                   <input
                     id="login-password"
@@ -129,7 +131,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
                   disabled={loading}
                   className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-teal-900/25 transition hover:from-teal-500 hover:to-emerald-500 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-slate-900"
                 >
-                  <span className="relative z-10">{loading ? "Giriş yapılıyor…" : "Giriş yap"}</span>
+                  <span className="relative z-10">{loading ? t("login.submitting") : t("login.submit")}</span>
                   <span
                     className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/15 to-white/0 opacity-0 transition group-hover:opacity-100"
                     aria-hidden

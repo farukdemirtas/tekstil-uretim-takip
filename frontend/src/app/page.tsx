@@ -70,6 +70,7 @@ import {
 import { ProductionRow } from "@/lib/types";
 import type * as XLSX from "xlsx";
 import { loadXlsx } from "@/lib/xlsxLazy";
+import { useI18n } from "@/components/I18nProvider";
 
 const EXPORT_TEAM_FALLBACK = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
 
@@ -133,6 +134,7 @@ function rowsByTeamSections(
 }
 
 export default function HomePage() {
+  const { t } = useI18n();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<string>("");
   const [role, setRole] = useState<string>("data_entry");
@@ -968,10 +970,10 @@ export default function HomePage() {
             />
             <div>
               <h1 className="text-base font-extrabold tracking-tight text-slate-900 sm:text-lg dark:text-white">
-                Yeşil İmaj Tekstil
+                {t("app.name")}
               </h1>
               <p className="text-[11px] font-medium uppercase tracking-widest text-teal-600 dark:text-teal-400">
-                Üretim Takip
+                {t("app.tagline")}
               </p>
             </div>
           </div>
@@ -989,7 +991,7 @@ export default function HomePage() {
               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
-              Çıkış
+              {t("common.logout")}
             </button>
           </div>
         </div>
@@ -1029,7 +1031,7 @@ export default function HomePage() {
               title={useIntradayEfficiency ? "Anlık saat ortalaması" : "Günlük verimlilik"}
             >
               <svg className={`h-4 w-4 shrink-0 ${personnelEfficiencyLive.count > 0 && prevAvgEfficiency != null ? personnelEfficiencyLive.avg > prevAvgEfficiency ? "text-emerald-600" : "text-rose-500" : "text-slate-400"}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Verimlilik</span>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t("nav.efficiency")}</span>
               {personnelEfficiencyLive.count > 0 ? (
                 <span className={`text-sm font-black tabular-nums ${prevAvgEfficiency == null || personnelEfficiencyLive.avg === prevAvgEfficiency ? "text-slate-800 dark:text-slate-100" : personnelEfficiencyLive.avg > prevAvgEfficiency ? "text-emerald-800 dark:text-emerald-200" : "text-rose-700 dark:text-rose-300"}`}>
                   %{personnelEfficiencyLive.avg}
@@ -1062,11 +1064,11 @@ export default function HomePage() {
               aria-haspopup="dialog"
               onClick={() => setAnalysisMenuOpen(true)}
             >
-              Analiz
+              {t("nav.analysis")}
             </button>
           ) : null}
           {hasPermission("veriSayfasi") ? (
-            <Link href="/genel-verimlilik" className="btn-nav shrink-0">Genel Verimlilik</Link>
+            <Link href="/genel-verimlilik" className="btn-nav shrink-0">{t("nav.generalEfficiency")}</Link>
           ) : null}
           {hasPermission("prosesKontrol") ? (
             <Link href="/proses-kontrol" className="btn-nav shrink-0">Proses Kontrol</Link>
@@ -1101,7 +1103,7 @@ export default function HomePage() {
             <Link href="/tamir-orani" className="btn-nav shrink-0">Tamir Oranı</Link>
           ) : null}
           {hasPermission("ayarlar") || isAdminRole() ? (
-            <Link href="/ayarlar" className="btn-nav shrink-0">Ayarlar</Link>
+            <Link href="/ayarlar" className="btn-nav shrink-0">{t("nav.settings")}</Link>
           ) : null}
         </div>
         </div>
@@ -1432,23 +1434,23 @@ export default function HomePage() {
           >
             <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-4 text-white shadow-md">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/85">Raporlar</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/85">{t("analysisHub.reports")}</p>
                 <h2 id="analysis-hub-title" className="text-lg font-bold tracking-tight">
-                  Analiz merkezi
+                  {t("analysisHub.title")}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setAnalysisMenuOpen(false)}
                 className="rounded-xl p-2 text-white/90 transition hover:bg-white/15 hover:text-white"
-                aria-label="Kapat"
+                aria-label={t("common.close")}
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <nav className="flex flex-col gap-2.5 p-4" aria-label="Analiz sayfaları">
+            <nav className="flex flex-col gap-2.5 p-4" aria-label={t("analysisHub.navLabel")}>
               {hasPermission("analysis") ? (
                 <Link
                   href="/analysis"
@@ -1456,9 +1458,9 @@ export default function HomePage() {
                   className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-teal-400 hover:bg-teal-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-teal-500 dark:hover:bg-teal-950/50"
                 >
                   <span className="min-w-0">
-                    <span className="block text-base font-bold text-slate-900 dark:text-white">Analiz sayfası</span>
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("analysisHub.generalAnalysisTitle")}</span>
                     <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                      Üretim ve personel verimliliği özeti
+                      {t("analysisHub.generalAnalysisDesc")}
                     </span>
                   </span>
                   <span className="shrink-0 rounded-lg bg-teal-100 p-2 text-teal-700 dark:bg-teal-900/80 dark:text-teal-200">
@@ -1475,9 +1477,9 @@ export default function HomePage() {
                   className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-emerald-400 hover:bg-emerald-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/50"
                 >
                   <span className="min-w-0">
-                    <span className="block text-base font-bold text-slate-900 dark:text-white">Genel tamamlanan</span>
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("analysisHub.generalCompletedTitle")}</span>
                     <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                      Günlük özet üretim trendi ve haftalık/aylık karşılaştırma
+                      {t("analysisHub.generalCompletedDesc")}
                     </span>
                   </span>
                   <span className="shrink-0 rounded-lg bg-emerald-100 p-2 text-emerald-700 dark:bg-emerald-900/80 dark:text-emerald-200">
@@ -1494,9 +1496,9 @@ export default function HomePage() {
                   className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-teal-400 hover:bg-teal-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-teal-500 dark:hover:bg-teal-950/50"
                 >
                   <span className="min-w-0">
-                    <span className="block text-base font-bold text-slate-900 dark:text-white">Kişi analizi</span>
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("analysisHub.personAnalysisTitle")}</span>
                     <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                      Günlük üretim ve verim — kişi bazında
+                      {t("analysisHub.personAnalysisDesc")}
                     </span>
                   </span>
                   <span className="shrink-0 rounded-lg bg-teal-100 p-2 text-teal-700 dark:bg-teal-900/80 dark:text-teal-200">
@@ -1513,9 +1515,9 @@ export default function HomePage() {
                   className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-teal-400 hover:bg-teal-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-teal-500 dark:hover:bg-teal-950/50"
                 >
                   <span className="min-w-0">
-                    <span className="block text-base font-bold text-slate-900 dark:text-white">Model analizi</span>
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("analysisHub.modelAnalysisTitle")}</span>
                     <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                      Ürün modeline göre günlük ve proses özeti
+                      {t("analysisHub.modelAnalysisDesc")}
                     </span>
                   </span>
                   <span className="shrink-0 rounded-lg bg-teal-100 p-2 text-teal-700 dark:bg-teal-900/80 dark:text-teal-200">
@@ -1532,9 +1534,9 @@ export default function HomePage() {
                   className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-teal-400 hover:bg-teal-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-teal-500 dark:hover:bg-teal-950/50"
                 >
                   <span className="min-w-0">
-                    <span className="block text-base font-bold text-slate-900 dark:text-white">Karşılaştırma</span>
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("analysisHub.comparisonTitle")}</span>
                     <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
-                      İki personelin üretim karşılaştırması
+                      {t("analysisHub.comparisonDesc")}
                     </span>
                   </span>
                   <span className="shrink-0 rounded-lg bg-teal-100 p-2 text-teal-700 dark:bg-teal-900/80 dark:text-teal-200">
@@ -1679,7 +1681,7 @@ export default function HomePage() {
       {loading ? (
         <div className="surface-card flex flex-col items-center justify-center gap-3 py-16">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-teal-500 dark:border-slate-700 dark:border-t-teal-400" />
-          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Veriler yükleniyor…</span>
+          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{t("home.loadingData")}</span>
         </div>
       ) : (
         <ProductionTable
