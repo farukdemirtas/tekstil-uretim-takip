@@ -1181,6 +1181,61 @@ export function getTopWorkersAnalytics({ startDate, endDate, team = "", process 
   });
 }
 
+/** Veri girişi / günlük özet «Genel tamamlanan»: hedef bölüm satırlarının minimumu */
+function genelTamamlananFromHedefTotals(totals) {
+  const stages = totals?.stages ?? [];
+  if (!stages.length) return 0;
+  return Math.max(0, Math.floor(Math.min(...stages.map((s) => Number(s.total) || 0))));
+}
+
+/** Seçilen aralıkta iş günü bazında genel tamamlanan (günün modeline göre) */
+export async function getGenelTamamlananDailyTrend(startDate, endDate) {
+  const sd = String(startDate ?? "").trim();
+  const ed = String(endDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sd) || !/^\d{4}-\d{2}-\d{2}$/.test(ed)) {
+    throw new Error("Geçersiz tarih aralığı");
+  }
+  if (sd > ed) throw new Error("Başlangıç bitişten sonra olamaz");
+
+  const weekdays = eachWeekdayIsoInRange(sd, ed);
+  const metaRows = await dbAll(
+    `SELECT production_date AS d, model_id AS modelId
+     FROM daily_product_meta WHERE production_date BETWEEN ? AND ?`,
+    [sd, ed]
+  );
+  const modelByDate = Object.fromEntries(
+    (metaRows || []).map((r) => [String(r.d), r.modelId != null ? Number(r.modelId) : null])
+  );
+
+  const daily = [];
+  for (const d of weekdays) {
+    const mid = modelByDate[d] ?? null;
+    let totals;
+    try {
+      totals = await getHedefTakipStageTotals(d, d, mid);
+    } catch {
+      totals = { stages: [], dailySummaryStages: [] };
+    }
+    daily.push({
+      date: d,
+      genelTamamlanan: genelTamamlananFromHedefTotals(totals),
+      modelId: mid,
+    });
+  }
+
+  const total = daily.reduce((s, x) => s + x.genelTamamlanan, 0);
+  const daysWithData = daily.filter((x) => x.genelTamamlanan > 0).length;
+  const workdayCount = weekdays.length;
+  const avgPerDay = workdayCount > 0 ? Math.round(total / workdayCount) : 0;
+
+  return {
+    startDate: sd,
+    endDate: ed,
+    daily,
+    summary: { total, avgPerDay, daysWithData, workdayCount },
+  };
+}
+
 export function getDailyTrendAnalytics({ startDate, endDate, team = "", process = "", hourColumn = "" }) {
   const productionExpr = getHourExpression(hourColumn);
   return new Promise((resolve, reject) => {

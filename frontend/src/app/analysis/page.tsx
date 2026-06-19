@@ -37,6 +37,7 @@ import {
 import { todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
 import type * as XLSX from "xlsx";
 import { loadXlsx } from "@/lib/xlsxLazy";
+import AnalysisSubnav from "@/components/analysis/AnalysisSubnav";
 
 const AUTO_REFRESH_MS = 30_000;
 /** Personel verimlilik grafiğinde en fazla gösterilecek satır (üst sıra). */
@@ -432,6 +433,12 @@ export default function AnalysisPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
+              href="/analysis/genel-tamamlanan"
+              className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-950/50 dark:text-emerald-200 dark:hover:bg-emerald-900/40"
+            >
+              Genel tamamlanan
+            </Link>
+            <Link
               href="/analysis/person"
               className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800/50 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-900/40"
             >
@@ -580,6 +587,8 @@ export default function AnalysisPage() {
           {error}
         </div>
       )}
+
+      <AnalysisSubnav />
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

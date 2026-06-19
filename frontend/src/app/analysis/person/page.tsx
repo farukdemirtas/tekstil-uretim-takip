@@ -8,6 +8,7 @@ import {
   formatTurkishPeriodDescription,
   PersonOnePageSummaryReport,
 } from "@/components/person-analysis/PersonOnePageSummaryReport";
+import AnalysisSubnav from "@/components/analysis/AnalysisSubnav";
 import {
   getTeams,
   getTopWorkersAnalytics,
@@ -848,6 +849,12 @@ export default function PersonAnalysisPage() {
             </div>
             <div className="flex shrink-0 flex-wrap gap-2 md:flex-col md:items-stretch lg:flex-row">
               <Link
+                href="/analysis/genel-tamamlanan"
+                className="inline-flex items-center justify-center rounded-xl border border-emerald-200/90 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+              >
+                Genel tamamlanan
+              </Link>
+              <Link
                 href="/analysis"
                 className="inline-flex items-center justify-center rounded-xl border border-slate-200/90 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-teal-300/80 hover:bg-teal-50/80 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:bg-teal-950/50"
               >
@@ -862,6 +869,8 @@ export default function PersonAnalysisPage() {
             </div>
           </div>
         </header>
+
+        <AnalysisSubnav />
 
         <section className="mb-8 rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-[0_4px_24px_rgb(0,0,0,0.04)] backdrop-blur-sm dark:border-slate-700/80 dark:bg-slate-800/60 dark:shadow-none">
             <div className="mb-5 border-b border-slate-100 pb-4 dark:border-slate-700/80">

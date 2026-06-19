@@ -1074,6 +1074,43 @@ export async function getDailyTrendAnalytics(params: {
   return response.json();
 }
 
+export type GenelTamamlananDailyPoint = {
+  date: string;
+  genelTamamlanan: number;
+  modelId: number | null;
+};
+
+export type GenelTamamlananTrend = {
+  startDate: string;
+  endDate: string;
+  daily: GenelTamamlananDailyPoint[];
+  summary: {
+    total: number;
+    avgPerDay: number;
+    daysWithData: number;
+    workdayCount: number;
+  };
+};
+
+export async function getGenelTamamlananTrend(params: {
+  startDate: string;
+  endDate: string;
+}): Promise<GenelTamamlananTrend> {
+  const query = new URLSearchParams({
+    startDate: params.startDate,
+    endDate: params.endDate,
+  }).toString();
+  const response = await apiFetch(`${apiBase()}/analytics/genel-tamamlanan?${query}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const d = (await response.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Genel tamamlanan trendi alınamadı");
+  }
+  return response.json() as Promise<GenelTamamlananTrend>;
+}
+
 export async function getWorkerProductionDailyDetail(params: {
   workerId: number;
   startDate: string;

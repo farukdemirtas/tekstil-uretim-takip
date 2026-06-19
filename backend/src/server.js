@@ -22,6 +22,7 @@ import {
   getDayProductMeta,
   upsertDayProductMeta,
   getDailyTrendAnalytics,
+  getGenelTamamlananDailyTrend,
   getRangeStageTotals,
   getHedefTakipStageTotals,
   getWorkerComparisonData,
@@ -1384,6 +1385,25 @@ app.get("/api/analytics/daily-trend", requireAnyPermission(["analysis", "ekran2"
     return res.status(500).json({ message: "Trend verisi alınamadı", error: String(error) });
   }
 });
+
+app.get(
+  "/api/analytics/genel-tamamlanan",
+  requireAnyPermission(["analysis", "ekran2", "ekran4"]),
+  async (req, res) => {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: "startDate ve endDate zorunlu (YYYY-MM-DD)" });
+    }
+    try {
+      const data = await getGenelTamamlananDailyTrend(String(startDate), String(endDate));
+      return res.json(data);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const status = /geçersiz|sonra olamaz/i.test(msg) ? 400 : 500;
+      return res.status(status).json({ message: msg || "Genel tamamlanan verisi alınamadı" });
+    }
+  }
+);
 
 app.get("/api/analytics/worker-daily", requireAnyPermission(["analysis", "ekran2"]), async (req, res) => {
   const { startDate, endDate, team = "", process = "", hour = "" } = req.query;

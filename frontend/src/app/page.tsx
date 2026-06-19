@@ -1468,6 +1468,25 @@ export default function HomePage() {
                   </span>
                 </Link>
               ) : null}
+              {hasPermission("analysis") ? (
+                <Link
+                  href="/analysis/genel-tamamlanan"
+                  onClick={() => setAnalysisMenuOpen(false)}
+                  className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-emerald-400 hover:bg-emerald-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/50"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">Genel tamamlanan</span>
+                    <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Günlük özet üretim trendi ve haftalık/aylık karşılaştırma
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-emerald-100 p-2 text-emerald-700 dark:bg-emerald-900/80 dark:text-emerald-200">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                </Link>
+              ) : null}
               {hasPermission("analysis") || hasPermission("ekran2") ? (
                 <Link
                   href="/analysis/person"
