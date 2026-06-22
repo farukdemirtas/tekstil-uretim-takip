@@ -38,6 +38,7 @@ import { todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
 import type * as XLSX from "xlsx";
 import { loadXlsx } from "@/lib/xlsxLazy";
 import AnalysisSubnav from "@/components/analysis/AnalysisSubnav";
+import { useI18n } from "@/components/I18nProvider";
 
 const AUTO_REFRESH_MS = 30_000;
 /** Personel verimlilik grafiğinde en fazla gösterilecek satır (üst sıra). */
@@ -67,6 +68,7 @@ function hourlyToProductionRow(worker: TopWorkerAnalytics, h: WorkerHourlyBreakd
 }
 
 export default function AnalysisPage() {
+  const { t } = useI18n();
   const [startDate, setStartDate] = useState(todayWeekdayIso());
   const [endDate, setEndDate] = useState(todayWeekdayIso());
   const [teamFilter, setTeamFilter] = useState<Team | "">("");
@@ -92,12 +94,12 @@ export default function AnalysisPage() {
   const [processRows, setProcessRows] = useState<Array<{ name: string }>>([]);
 
   function resolveTeamLabel(team: Team | "") {
-    if (team === "") return "TÜM GRUPLAR";
-    return teamRows.find((t) => t.code === team)?.label ?? team;
+    if (team === "") return t("analysisPage.allGroups");
+    return teamRows.find((row) => row.code === team)?.label ?? team;
   }
 
   function resolveProcessFilterLabel() {
-    if (processFilter === "") return "TÜM PROSESLER";
+    if (processFilter === "") return t("analysisPage.allProcesses");
     return processFilter;
   }
 
@@ -421,13 +423,13 @@ export default function AnalysisPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">Analiz — Üretim ve personel verimliliği</h1>
+            <h1 className="text-xl font-semibold">{t("analysisPage.title")}</h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              İşçiler üretime göre sıralanır; ayrıca dönem verimliliği (hedefe göre %) analiz edilir.
+              {t("analysisPage.subtitle")}
             </p>
             {lastUpdated && (
               <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
-                Son güncelleme: {lastUpdated} &nbsp;·&nbsp; Her 30 sn otomatik yenilenir
+                {t("common.lastUpdated")}: {lastUpdated} &nbsp;·&nbsp; {t("analysisPage.autoRefresh")}
               </p>
             )}
           </div>
@@ -436,13 +438,13 @@ export default function AnalysisPage() {
               href="/analysis/genel-tamamlanan"
               className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800/50 dark:bg-emerald-950/50 dark:text-emerald-200 dark:hover:bg-emerald-900/40"
             >
-              Genel tamamlanan
+              {t("analysisSubnav.generalCompletedLabel")}
             </Link>
             <Link
               href="/analysis/person"
               className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800/50 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-900/40"
             >
-              Kişi analizi
+              {t("analysisSubnav.personAnalysisLabel")}
             </Link>
             <Link
               href="/ekran2"
@@ -457,7 +459,7 @@ export default function AnalysisPage() {
               EKRAN3
             </Link>
             <Link href="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-700">
-              Üretim Ekranı
+              {t("analysisPage.productionScreen")}
             </Link>
           </div>
         </div>
@@ -465,19 +467,19 @@ export default function AnalysisPage() {
 
       <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <WeekdayDatePicker label="Başlangıç" value={startDate} onChange={setStartDate} />
-          <WeekdayDatePicker label="Bitiş" value={endDate} onChange={setEndDate} />
+          <WeekdayDatePicker label={t("common.startDate")} value={startDate} onChange={setStartDate} />
+          <WeekdayDatePicker label={t("common.endDate")} value={endDate} onChange={setEndDate} />
         </div>
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-sm font-medium">Grup</label>
+              <label className="text-sm font-medium">{t("analysisPage.group")}</label>
               <select
                 value={teamFilter}
                 onChange={(e) => setTeamFilter(e.target.value as Team | "")}
                 className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
               >
-                <option value="">TÜM GRUPLAR</option>
+                <option value="">{t("analysisPage.allGroups")}</option>
                 {teamRows.map((t) => (
                   <option key={t.code} value={t.code}>
                     {t.label}
@@ -486,7 +488,7 @@ export default function AnalysisPage() {
               </select>
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-sm font-medium">Proses</label>
+              <label className="text-sm font-medium">{t("common.process")}</label>
               <select
                 value={processFilter}
                 onChange={(e) => {
@@ -495,7 +497,7 @@ export default function AnalysisPage() {
                 }}
                 className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
               >
-                <option value="">TÜM PROSESLER</option>
+                <option value="">{t("analysisPage.allProcesses")}</option>
                 {processRows.map((p) => (
                   <option key={p.name} value={p.name}>
                     {p.name}
@@ -515,25 +517,23 @@ export default function AnalysisPage() {
             />
             <span
               className={`min-w-0 leading-snug ${processFilter !== "" ? "text-slate-400" : ""}`}
-              title="Tüm prosesler seçiliyken: proses blokları, proses içi sıra ve tercil renkleri"
+              title={t("analysisPage.groupByProcessTitle")}
             >
-              <span className="sm:hidden">Proseslere göre grupla</span>
-              <span className="hidden sm:inline">
-                Proseslere göre grupla (prosesler arası sıralama + proses içi tercil renkleri)
-              </span>
+              <span className="sm:hidden">{t("analysisPage.groupByProcessShort")}</span>
+              <span className="hidden sm:inline">{t("analysisPage.groupByProcessLong")}</span>
             </span>
           </label>
 
           <div className="flex min-w-0 flex-col gap-1.5">
-            <span className="text-sm font-medium">Saat</span>
+            <span className="text-sm font-medium">{t("common.hour")}</span>
             <div
               className="grid w-full min-w-0 grid-cols-5 gap-1 sm:gap-1.5"
               role="group"
-              aria-label="Saat filtresi"
+              aria-label={t("analysisPage.hourFilterAria")}
             >
               {(
                 [
-                  { key: "" as HourFilter, label: "Tümü" },
+                  { key: "" as HourFilter, label: t("common.all") },
                   { key: "t1000" as const, label: DISPLAY_SLOT_FILTER_LABELS[0] },
                   { key: "t1300" as const, label: DISPLAY_SLOT_FILTER_LABELS[1] },
                   { key: "t1600" as const, label: DISPLAY_SLOT_FILTER_LABELS[2] },
@@ -562,21 +562,21 @@ export default function AnalysisPage() {
               onClick={exportExcel}
               className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
             >
-              Excel
+              {t("nav.excel")}
             </button>
             <button
               type="button"
               onClick={exportPdf}
               className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
             >
-              PDF
+              {t("common.pdf")}
             </button>
             <button
               type="button"
               onClick={() => void loadData()}
               className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
             >
-              Analizi Getir
+              {t("analysisPage.fetchAnalysis")}
             </button>
           </div>
         </div>
@@ -593,29 +593,29 @@ export default function AnalysisPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold">
-            Grafik
+            {t("common.chart")}
             {rows.length > 0 && (
               <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
-                ({rows.length} işçi)
+                ({t("analysisPage.workerCount", { count: rows.length })})
               </span>
             )}
           </h2>
           {rows.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-emerald-500" /> Üst üçte bir</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-blue-500" /> Orta üçte bir</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-red-500" /> Alt üçte bir</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-emerald-500" /> {t("analysisPage.topTercile")}</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-blue-500" /> {t("analysisPage.middleTercile")}</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-3 w-5 rounded bg-red-500" /> {t("analysisPage.bottomTercile")}</span>
               {groupByProcess && (
-                <span className="text-slate-600 dark:text-slate-300">· Terciller her proses grubunda ayrı</span>
+                <span className="text-slate-600 dark:text-slate-300">· {t("analysisPage.tercilePerProcess")}</span>
               )}
-              <span className="hidden italic opacity-70 sm:inline">Satıra tıkla → detay</span>
+              <span className="hidden italic opacity-70 sm:inline">{t("analysisPage.clickRowHint")}</span>
             </div>
           )}
         </div>
         {loading ? (
-          <div className="text-sm text-slate-600">Yükleniyor...</div>
+          <div className="text-sm text-slate-600">{t("common.loading")}</div>
         ) : rows.length === 0 ? (
-          <div className="text-sm text-slate-600">Seçilen aralıkta veri bulunamadı.</div>
+          <div className="text-sm text-slate-600">{t("analysisPage.noDataInRange")}</div>
         ) : (
           <div className="space-y-1.5">
             {displayRows.map((row, index) => {
@@ -655,7 +655,7 @@ export default function AnalysisPage() {
                   <span className="text-right text-xs font-semibold sm:text-sm">{row.totalProduction}</span>
                   <span
                     className="text-right text-[10px] font-semibold tabular-nums text-slate-600 dark:text-slate-300 sm:text-xs"
-                    title={hourFilter !== "" ? "Saat filtresi açıkken verimlilik hesaplanmaz" : "Dönem verimliliği (%)"}
+                    title={hourFilter !== "" ? t("analysisPage.periodEfficiencyHourHint") : t("analysisPage.periodEfficiencyTitle")}
                   >
                     {eff !== null ? `${eff}%` : "—"}
                   </span>
@@ -739,7 +739,7 @@ export default function AnalysisPage() {
                 className="mb-3 flex w-full items-center justify-between text-xs text-slate-400 sm:hidden"
                 onClick={() => setHoveredId(null)}
               >
-                <span className="font-medium text-slate-600 dark:text-slate-300">Detay</span>
+                <span className="font-medium text-slate-600 dark:text-slate-300">{t("analysisPage.detail")}</span>
                 <span className="text-lg leading-none">✕</span>
               </button>
             )}
@@ -759,15 +759,15 @@ export default function AnalysisPage() {
             <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
               <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30">
                 <div className="text-lg font-bold text-emerald-600 dark:text-emerald-300">{worker.totalProduction}</div>
-                <div className="text-xs text-slate-500">Toplam</div>
+                <div className="text-xs text-slate-500">{t("common.total")}</div>
               </div>
               <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30">
                 <div className="text-lg font-bold text-blue-600 dark:text-blue-300">{worker.activeDays}</div>
-                <div className="text-xs text-slate-500">Çalışılan Gün</div>
+                <div className="text-xs text-slate-500">{t("analysisPage.activeDays")}</div>
               </div>
               <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30">
                 <div className="text-lg font-bold text-violet-600 dark:text-violet-300">{avg}</div>
-                <div className="text-xs text-slate-500">Günlük Ort.</div>
+                <div className="text-xs text-slate-500">{t("analysisPage.dailyAvgShort")}</div>
               </div>
               <div
                 className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900/30"
@@ -782,7 +782,7 @@ export default function AnalysisPage() {
                 <div className="text-lg font-bold text-amber-600 dark:text-amber-300">
                   {tooltipEff !== null ? `${tooltipEff}%` : "—"}
                 </div>
-                <div className="text-xs text-slate-500">Verimlilik</div>
+                <div className="text-xs text-slate-500">{t("nav.efficiency")}</div>
               </div>
             </div>
 
@@ -824,10 +824,10 @@ export default function AnalysisPage() {
             {/* Saatlik bar grafik */}
             <div>
               <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                Saatlik Üretim (seçili tarih aralığı toplamı)
+                {t("analysisPage.hourlyProduction")}
               </div>
               {hourlyLoading ? (
-                <div className="text-xs text-slate-400">Yükleniyor...</div>
+                <div className="text-xs text-slate-400">{t("common.loading")}</div>
               ) : hourlyData ? (() => {
                 const agg = aggregateDisplaySlots(hourlyData);
                 const slots = [
@@ -858,7 +858,7 @@ export default function AnalysisPage() {
                   </div>
                 );
               })() : (
-                <div className="text-xs text-slate-400">Veri bulunamadı.</div>
+                <div className="text-xs text-slate-400">{t("analysisPage.noHourlyData")}</div>
               )}
             </div>
           </div>
@@ -866,9 +866,9 @@ export default function AnalysisPage() {
       })()}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-        <h2 className="mb-3 text-base font-semibold">Günlük Trend Çizgisi</h2>
+        <h2 className="mb-3 text-base font-semibold">{t("analysisPage.trendTitle")}</h2>
         {trendRows.length === 0 ? (
-          <div className="text-sm text-slate-600">Trend verisi bulunamadı.</div>
+          <div className="text-sm text-slate-600">{t("analysisPage.noTrendData")}</div>
         ) : (
           <div className="space-y-3">
             <svg viewBox="0 0 800 220" className="h-56 w-full rounded border border-slate-200 bg-white">
@@ -893,35 +893,31 @@ export default function AnalysisPage() {
       <section className="rounded-lg border border-indigo-100 bg-gradient-to-br from-indigo-50/80 via-white to-emerald-50/50 p-4 shadow-sm dark:border-indigo-900/40 dark:from-indigo-950/40 dark:via-slate-900 dark:to-emerald-950/20 dark:text-slate-100">
         <div className="mb-4 flex flex-col gap-2 border-b border-indigo-100/80 pb-3 dark:border-indigo-900/50 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Personel verimlilik analizi</h2>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">{t("analysisPage.effSectionTitle")}</h2>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Proses hedefi (dk×60×9) üzerinden ortalama günlük üretim oranı; üretim sıralamasından bağımsız verim
-              sırası.
+              {t("analysisPage.effSectionDesc")}
             </p>
           </div>
         </div>
 
         {!personnelEfficiencyAnalysis.active ? (
           <p className="text-sm font-medium text-amber-900 dark:text-amber-200/90">
-            Personel verimlilik sıralaması ve özet kutuları ancak{" "}
-            <span className="font-semibold">saat filtresinde «Tümü»</span> seçiliyken kullanılabilir — kısmi saat için
-            hedef tam günlük olduğundan yüzde yanılıcı olur.
+            {t("analysisPage.effNeedsAllHours")}
           </p>
         ) : loading && rows.length === 0 ? (
-          <div className="text-sm text-slate-500">Yükleniyor…</div>
+          <div className="text-sm text-slate-500">{t("common.loading")}</div>
         ) : personnelEfficiencyAnalysis.withTarget === 0 && personnelEfficiencyAnalysis.withoutTarget === 0 ? (
-          <p className="text-sm text-slate-600 dark:text-slate-400">Bu aralıkta işçi kaydı yok.</p>
+          <p className="text-sm text-slate-600 dark:text-slate-400">{t("analysisPage.noWorkersInRange")}</p>
         ) : personnelEfficiencyAnalysis.withTarget === 0 ? (
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Seçili personel için tanımlı proses hedefi (Genel Verimlilik) bulunamadı. Hedef girildiğinde verimlilik
-            hesaplanır.
+            {t("analysisPage.noTargetsFound")}
           </p>
         ) : (
           <>
             <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
               <div className="rounded-xl border border-emerald-100 bg-white/90 p-4 shadow-sm dark:border-emerald-900/40 dark:bg-slate-800/80">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                  Ortalama verim
+                  {t("analysisPage.avgEfficiency")}
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-200">
                   {personnelEfficiencyAnalysis.avg !== null ? `%${personnelEfficiencyAnalysis.avg}` : "—"}
@@ -929,7 +925,7 @@ export default function AnalysisPage() {
               </div>
               <div className="rounded-xl border border-slate-100 bg-white/90 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800/80">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Medyan verim
+                  {t("analysisPage.medianEfficiency")}
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
                   {personnelEfficiencyAnalysis.median !== null ? `%${personnelEfficiencyAnalysis.median}` : "—"}
@@ -937,34 +933,34 @@ export default function AnalysisPage() {
               </div>
               <div className="rounded-xl border border-violet-100 bg-white/90 p-4 shadow-sm dark:border-violet-900/40 dark:bg-slate-800/80">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-300">
-                  Hedefi olan
+                  {t("analysisPage.withTarget")}
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-violet-800 dark:text-violet-100">
                   {personnelEfficiencyAnalysis.withTarget}
                 </p>
-                <p className="mt-0.5 text-[10px] text-slate-500">kişi kaydı</p>
+                <p className="mt-0.5 text-[10px] text-slate-500">{t("analysisPage.personRecords")}</p>
               </div>
               <div className="rounded-xl border border-amber-100 bg-white/90 p-4 shadow-sm dark:border-amber-900/40 dark:bg-slate-800/80">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                  {"<"}%75
+                  {t("analysisPage.below75")}
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-amber-800 dark:text-amber-100">
                   {personnelEfficiencyAnalysis.below75}
                 </p>
-                <p className="mt-0.5 text-[10px] text-slate-500">kişi</p>
+                <p className="mt-0.5 text-[10px] text-slate-500">{t("analysisPage.peopleShort")}</p>
               </div>
             </div>
 
             {personnelEfficiencyAnalysis.withoutTarget > 0 ? (
               <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-                {personnelEfficiencyAnalysis.withoutTarget} kayıtta proses dk hedefi yok; listeye dahil edilmedi.
+                {t("analysisPage.excludedNoTarget", { count: personnelEfficiencyAnalysis.withoutTarget })}
               </p>
             ) : null}
 
             {personnelEfficiencyAnalysis.sorted.length > 0 ? (
               <>
                 <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  Verim sırası — özet grafik (ilk {Math.min(EFF_VIZ_TOP, personnelEfficiencyAnalysis.sorted.length)} kişi)
+                  {t("analysisPage.effRankChart", { count: Math.min(EFF_VIZ_TOP, personnelEfficiencyAnalysis.sorted.length) })}
                 </h3>
                 <div className="mb-6 space-y-2 rounded-xl border border-slate-100 bg-white/60 p-3 dark:border-slate-700 dark:bg-slate-900/40">
                   {personnelEfficiencyAnalysis.sorted.slice(0, EFF_VIZ_TOP).map(({ row, eff }, index) => {
@@ -1015,19 +1011,19 @@ export default function AnalysisPage() {
                 </div>
 
                 <h3 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  Tam verim sıralaması ({personnelEfficiencyAnalysis.sorted.length} kayıt)
+                  {t("analysisPage.fullEffRank", { count: personnelEfficiencyAnalysis.sorted.length })}
                 </h3>
                 <div className="max-h-80 overflow-auto rounded-lg border border-slate-200 dark:border-slate-600">
                   <table className="w-full min-w-[760px] border-collapse text-xs sm:text-sm">
                     <thead className="sticky top-0 z-[1] bg-indigo-50 text-left shadow-sm dark:bg-indigo-950/70">
                       <tr>
                         <th className="px-3 py-2 font-semibold">#</th>
-                        <th className="px-3 py-2 font-semibold">Ad Soyad</th>
-                        <th className="px-3 py-2 font-semibold">Grup</th>
-                        <th className="px-3 py-2 font-semibold">Proses</th>
-                        <th className="px-3 py-2 text-right font-semibold">Gün</th>
-                        <th className="px-3 py-2 text-right font-semibold">Toplam üretim</th>
-                        <th className="px-3 py-2 text-right font-semibold">Verim %</th>
+                        <th className="px-3 py-2 font-semibold">{t("workerForm.name")}</th>
+                        <th className="px-3 py-2 font-semibold">{t("analysisPage.group")}</th>
+                        <th className="px-3 py-2 font-semibold">{t("common.process")}</th>
+                        <th className="px-3 py-2 text-right font-semibold">{t("analysisPage.tableDays")}</th>
+                        <th className="px-3 py-2 text-right font-semibold">{t("analysisPage.tableTotalProduction")}</th>
+                        <th className="px-3 py-2 text-right font-semibold">{t("analysisPage.tableEfficiency")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1061,13 +1057,13 @@ export default function AnalysisPage() {
       </section>
 
       <section className="overflow-auto rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
-        <h2 className="mb-3 text-base font-semibold">Top İşçi Tablosu</h2>
+        <h2 className="mb-3 text-base font-semibold">{t("analysisPage.topWorkersTable")}</h2>
         <p className="mb-3 text-sm text-slate-600">
-          Gösterilen üretim: {displaySlotLabelForHourFilter(hourFilter)}
-          {groupByProcess && " · Sıra ve renkler proses grubuna göre"}
+          {t("analysisPage.productionShown", { label: displaySlotLabelForHourFilter(hourFilter) })}
+          {groupByProcess && t("analysisPage.groupByProcessNote")}
           {hourFilter !== "" ? (
             <span className="mt-1 block text-xs text-amber-800 dark:text-amber-200/90">
-              Saat filtresi açıkken verimlilik hesaplanmaz (hedef tam güne göredir).
+              {t("analysisPage.hourFilterEffWarning")}
             </span>
           ) : null}
         </p>
@@ -1075,13 +1071,13 @@ export default function AnalysisPage() {
           <thead className="bg-slate-100">
             <tr>
               <th className="px-2 py-2 text-left">#</th>
-              {groupMeta && <th className="px-2 py-2 text-left">Genel</th>}
-              <th className="px-2 py-2 text-left">Ad Soyad</th>
-              <th className="px-2 py-2 text-left">Grup</th>
-              <th className="px-2 py-2 text-left">Proses</th>
-              <th className="px-2 py-2 text-right">Çalışılan Gün</th>
-              <th className="px-2 py-2 text-right">Toplam Üretim</th>
-              <th className="px-2 py-2 text-right">Verimlilik %</th>
+              {groupMeta && <th className="px-2 py-2 text-left">{t("common.globalRank")}</th>}
+              <th className="px-2 py-2 text-left">{t("workerForm.name")}</th>
+              <th className="px-2 py-2 text-left">{t("analysisPage.group")}</th>
+              <th className="px-2 py-2 text-left">{t("common.process")}</th>
+              <th className="px-2 py-2 text-right">{t("analysisPage.activeDays")}</th>
+              <th className="px-2 py-2 text-right">{t("analysisPage.tableTotalProduction")}</th>
+              <th className="px-2 py-2 text-right">{t("nav.efficiency")} %</th>
             </tr>
           </thead>
           <tbody>
@@ -1113,26 +1109,26 @@ export default function AnalysisPage() {
 
       <section className="overflow-auto rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <h2 className="text-base font-semibold">İşçi Bazlı Günlük Verim</h2>
+          <h2 className="text-base font-semibold">{t("analysisPage.dailyEffSection")}</h2>
           <input
             value={workerSearch}
             onChange={(e) => setWorkerSearch(e.target.value)}
-            placeholder="İşçi adına göre ara..."
+            placeholder={t("analysisPage.workerSearchPlaceholder")}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm md:w-72 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
           />
         </div>
         {filteredWorkerDailyRows.length === 0 ? (
-          <div className="text-sm text-slate-600 dark:text-slate-300">Seçilen aralıkta veri bulunamadı.</div>
+          <div className="text-sm text-slate-600 dark:text-slate-300">{t("analysisPage.noDataInRange")}</div>
         ) : (
           <table className="w-full min-w-[920px] border-collapse text-sm">
             <thead className="bg-slate-100 dark:bg-slate-700">
               <tr>
-                <th className="px-2 py-2 text-left">Tarih</th>
-                <th className="px-2 py-2 text-left">Ad Soyad</th>
-                <th className="px-2 py-2 text-left">Grup</th>
-                <th className="px-2 py-2 text-left">Proses</th>
-                <th className="px-2 py-2 text-right">Üretim</th>
-                <th className="px-2 py-2 text-right">Verimlilik %</th>
+                <th className="px-2 py-2 text-left">{t("common.date")}</th>
+                <th className="px-2 py-2 text-left">{t("workerForm.name")}</th>
+                <th className="px-2 py-2 text-left">{t("analysisPage.group")}</th>
+                <th className="px-2 py-2 text-left">{t("common.process")}</th>
+                <th className="px-2 py-2 text-right">{t("common.production")}</th>
+                <th className="px-2 py-2 text-right">{t("nav.efficiency")} %</th>
               </tr>
             </thead>
             <tbody>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useI18n } from "@/components/I18nProvider";
 
 export type HedefStageLine = {
   sortOrder: number;
@@ -50,6 +51,7 @@ function stageLabel(s: HedefStageLine): string {
 }
 
 export default function AdminPanel({ workerCount, stageTotals, stageError, ekran1TotalCompleted, ekran1TodayProduced, ekran1Stages, ekran1DailySummaryStages, secondaryStages, secondaryModelLabel }: AdminPanelProps) {
+  const { t, localeTag } = useI18n();
   const stages = stageTotals.stages ?? [];
   const daily = stageTotals.dailySummaryStages ?? [];
 
@@ -77,11 +79,11 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
       {/* Başlık */}
       <div className="flex items-center justify-between px-5 py-4">
         <h2 className="text-sm font-extrabold tracking-tight text-slate-800 dark:text-slate-100">
-          Günlük Özet
+          {t("adminPanel.title")}
         </h2>
         {stageError && (
           <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
-            ⚠ Veri hatası
+            ⚠ {t("common.dataError")}
           </span>
         )}
       </div>
@@ -92,7 +94,7 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700">
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-              Çalışan
+              {t("adminPanel.workers")}
             </p>
             <p className="mt-1 text-3xl font-black tabular-nums text-slate-700 dark:text-slate-200">
               {safeNum(workerCount)}
@@ -100,18 +102,18 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
           </div>
           <div className="rounded-2xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200 dark:bg-emerald-950/30 dark:ring-emerald-800/50">
             <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-500">
-              Genel tamamlanan
+              {t("adminPanel.generalCompleted")}
             </p>
             <p className="mt-1 text-3xl font-black tabular-nums text-emerald-700 dark:text-emerald-300">
-              {safeNum(genelTamamlanan).toLocaleString("tr-TR")}
+              {safeNum(genelTamamlanan).toLocaleString(localeTag)}
             </p>
           </div>
           <div className="rounded-2xl bg-sky-50 px-4 py-3 ring-1 ring-sky-200 dark:bg-sky-950/30 dark:ring-sky-800/50">
             <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600 dark:text-sky-500">
-              Bugün tamamlanan
+              {t("adminPanel.todayCompleted")}
             </p>
             <p className="mt-1 text-3xl font-black tabular-nums text-sky-700 dark:text-sky-300">
-              {todayProduced != null ? safeNum(todayProduced).toLocaleString("tr-TR") : "—"}
+              {todayProduced != null ? safeNum(todayProduced).toLocaleString(localeTag) : "—"}
             </p>
           </div>
         </div>
@@ -131,11 +133,11 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
                     {stageLabel(s)}
                   </p>
                   <p className="mt-1.5 text-2xl font-black tabular-nums text-teal-600 dark:text-teal-300">
-                    {safeNum(s.total).toLocaleString("tr-TR")}
+                    {safeNum(s.total).toLocaleString(localeTag)}
                   </p>
                   {cumTotal != null && (
                     <p className="mt-0.5 text-[11px] font-semibold tabular-nums text-teal-500/80 dark:text-teal-400/70">
-                      Toplam {cumTotal.toLocaleString("tr-TR")}
+                      {t("common.cumulativeTotal", { count: cumTotal.toLocaleString(localeTag) })}
                     </p>
                   )}
                 </div>
@@ -156,7 +158,7 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
                   {s.processName ? `${s.teamLabel} · ${s.processName}` : s.teamLabel}
                 </p>
                 <p className="mt-1.5 text-2xl font-black tabular-nums text-violet-600 dark:text-violet-300">
-                  {safeNum(s.total).toLocaleString("tr-TR")}
+                  {safeNum(s.total).toLocaleString(localeTag)}
                 </p>
                 {secondaryModelLabel && (
                   <p className="mt-0.5 truncate text-[10px] font-semibold text-violet-400/80 dark:text-violet-500/70">
@@ -183,11 +185,11 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
                     {stageLabel(s)}
                   </p>
                   <p className="mt-1.5 text-2xl font-black tabular-nums text-violet-600 dark:text-violet-300">
-                    {safeNum(s.total).toLocaleString("tr-TR")}
+                    {safeNum(s.total).toLocaleString(localeTag)}
                   </p>
                   {cumTotal != null && (
                     <p className="mt-0.5 text-[11px] font-semibold tabular-nums text-violet-500/80 dark:text-violet-400/70">
-                      Toplam {cumTotal.toLocaleString("tr-TR")}
+                      {t("common.cumulativeTotal", { count: cumTotal.toLocaleString(localeTag) })}
                     </p>
                   )}
                 </div>
@@ -197,7 +199,7 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
         )}
 
         {stages.length === 0 && daily.length === 0 && !secondaryStages?.length && (
-          <p className="py-2 text-center text-xs text-slate-400 dark:text-slate-500">Veri bekleniyor…</p>
+          <p className="py-2 text-center text-xs text-slate-400 dark:text-slate-500">{t("common.waitingData")}</p>
         )}
 
         {/* Renk açıklaması */}
@@ -205,18 +207,18 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
           <div className="flex flex-wrap items-center gap-3 pt-1">
             {stages.length > 0 && (
               <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
-                <span className="h-2 w-2 rounded-full bg-teal-400" /> Bölüm aşaması
+                <span className="h-2 w-2 rounded-full bg-teal-400" /> {t("adminPanel.stageSection")}
               </span>
             )}
             {daily.length > 0 && (
               <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
-                <span className="h-2 w-2 rounded-full bg-violet-400" /> Özet proses
+                <span className="h-2 w-2 rounded-full bg-violet-400" /> {t("adminPanel.summaryProcess")}
               </span>
             )}
             {secondaryStages && secondaryStages.length > 0 && (
               <span className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
                 <span className="flex h-3 w-3 items-center justify-center rounded-full bg-violet-500 text-[7px] font-black text-white">2</span>
-                {secondaryModelLabel ?? "Ek model"}
+                {secondaryModelLabel ?? t("adminPanel.secondaryModel")}
               </span>
             )}
           </div>

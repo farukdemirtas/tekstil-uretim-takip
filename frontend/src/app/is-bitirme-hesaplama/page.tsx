@@ -21,7 +21,7 @@ import {
   splitWorkingDays,
   type AssignmentInput,
 } from "@/lib/jobCompletionCalc";
-import { computeJobCost, formatMoneyTr } from "@/lib/jobCompletionCost";
+import { computeJobCost, formatMoneyTr, getJobCostMissingFields } from "@/lib/jobCompletionCost";
 import { deriveWorkerHourlyRateForJobCalc } from "@/lib/jobCompletionWorkerRate";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import { hasPermission } from "@/lib/permissions";
@@ -522,6 +522,28 @@ export default function IsBitirmeHesaplamaPage() {
   const fasonUnitNum = Number(String(fasonUnitPrice).replace(/\s/g, "").replace(",", "."));
   const personnelDayNum = Number(String(personnelCostPerWorkerDay).replace(/\s/g, "").replace(",", "."));
 
+  const uniqueAssignmentWorkers = useMemo(() => new Set(assignments.map((a) => a.workerId)).size, [assignments]);
+
+  const costMissingFields = useMemo(
+    () =>
+      getJobCostMissingFields({
+        quantity: qtyNum,
+        jobWorkDays,
+        fasonUnitPrice: fasonUnitNum,
+        workerCount: workerCountNum,
+        personnelCostPerWorkerDay: personnelDayNum,
+      }),
+    [qtyNum, jobWorkDays, fasonUnitNum, workerCountNum, personnelDayNum]
+  );
+
+  const costMissingLabel: Record<(typeof costMissingFields)[number], string> = {
+    quantity: "Hedef adet (Q)",
+    duration: "Süre hesabı (personel veya model geçmişi)",
+    fasonUnitPrice: "Fason birim fiyat",
+    workerCount: "Çalışan sayısı",
+    personnelCostPerWorkerDay: "Personel gideri (₺/işçi/iş günü)",
+  };
+
   const costResult = useMemo(
     () =>
       result
@@ -651,27 +673,28 @@ export default function IsBitirmeHesaplamaPage() {
   const workerById = useMemo(() => new Map(workers.map((w) => [w.id, w])), [workers]);
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl px-4 py-8 text-slate-800 dark:text-slate-100">
-      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">İş Hesaplama</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-            Hedef adedi girin; <strong className="font-semibold text-slate-800 dark:text-slate-200">ürün modeli</strong> seçin —
-            <strong className="font-semibold text-slate-800 dark:text-slate-200"> Bu modelde</strong> günlük kayıtta model seçilmiş günlerde üretim girişi olan
-            personel otomatik listelenir (aşağıdaki özet tablo ile aynı küme); başka personel için{" "}
-            <strong className="font-semibold text-slate-800 dark:text-slate-200">Ek personel satırı</strong> kullanın. Önce{" "}
-            <strong className="font-semibold text-slate-800 dark:text-slate-200">            günlük meta bu modele işaretlenmiş</strong> geçmiş
-            günlerdeki ortalama verim kullanılır (özet tablo); yoksa bugünkü üretim satırı veya %100 hedef. Süre, bu modelde
-            yapılan iş (günlük ortalama genel tamamlanan) ve ortalama verim verisine göre belirlenir; model geçmişi yoksa
-            listelenen personelin saatlik verimleri toplanır.
-          </p>
+    <main className="mx-auto min-h-screen max-w-6xl px-4 py-6 pb-12 text-slate-800 md:px-6 md:py-8 dark:text-slate-100">
+      <header className="mb-8 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-700/70 dark:bg-slate-900/85">
+        <div className="h-1 w-full bg-gradient-to-r from-violet-600 via-teal-500 to-emerald-500" aria-hidden />
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between md:p-6">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">
+              Üretim planlama
+            </p>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">İş Hesaplama</h1>
+            <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+              Hedef adet, model geçmişi ve personel verimlerine göre <strong className="font-semibold text-slate-800 dark:text-slate-200">tahmini süre</strong>;
+              fason fiyat ve personel gideri ile <strong className="font-semibold text-slate-800 dark:text-slate-200">kar / zarar</strong> analizi.
+              Model meta günlerindeki ortalama genel tamamlanan önceliklidir; yoksa seçili personelin saatlik verimleri kullanılır.
+            </p>
+          </div>
+          <Link
+            href="/"
+            className="shrink-0 self-start rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-white dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Üretim ekranı
+          </Link>
         </div>
-        <Link
-          href="/"
-          className="shrink-0 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          Üretim ekranı
-        </Link>
       </header>
 
       {loadErr ? (
@@ -685,8 +708,24 @@ export default function IsBitirmeHesaplamaPage() {
         </p>
       ) : null}
 
-      <section className="surface-card mb-6 space-y-4 p-5 dark:border-slate-700">
-        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Genel</h2>
+      <section className="surface-card mb-6 space-y-5 p-5 md:p-6 dark:border-slate-700">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4 dark:border-slate-800">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Girdiler</h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Model, hedef adet ve maliyet parametreleri</p>
+          </div>
+          {result ? (
+            <span
+              className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ring-1 ${
+                result.durationMode === "model_genel_pace"
+                  ? "bg-teal-50 text-teal-800 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-200 dark:ring-teal-800"
+                  : "bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-800"
+              }`}
+            >
+              {result.durationMode === "model_genel_pace" ? "Süre: model geçmişi" : "Süre: personel toplamı"}
+            </span>
+          ) : null}
+        </div>
         {productModels.length === 0 ? (
           <p className="text-sm text-amber-800 dark:text-amber-200">
             Henüz tanımlı ürün modeli yok. Dk tabloları için sistemde model oluşturulmalı (Ayarlar / Model arşivi).
@@ -734,12 +773,23 @@ export default function IsBitirmeHesaplamaPage() {
             />
           </label>
         </div>
-        <div className="rounded-xl border border-violet-200/80 bg-gradient-to-br from-violet-50/80 via-white to-slate-50/50 p-4 dark:border-violet-900/40 dark:from-violet-950/30 dark:via-slate-900 dark:to-slate-950">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-violet-800 dark:text-violet-300">Maliyet / fason fiyat</h3>
-          <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-            Fason birim fiyatı, işçi sayısı ve iş günü başına personel gideri ile tahmini süreye göre gelir, gider ve kar/zarar
-            hesaplanır.
-          </p>
+        <div className="rounded-2xl border border-violet-200/80 bg-gradient-to-br from-violet-50/90 via-white to-fuchsia-50/30 p-5 dark:border-violet-900/40 dark:from-violet-950/30 dark:via-slate-900 dark:to-fuchsia-950/10">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-violet-800 dark:text-violet-300">
+                Maliyet parametreleri
+              </h3>
+              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                Gelir = Q × fason birim fiyat · Gider = işçi × ₺/gün × tahmini iş günü · Net = gelir − gider
+              </p>
+            </div>
+            {uniqueAssignmentWorkers > 0 ? (
+              <p className="rounded-lg bg-white/80 px-3 py-1.5 text-[11px] text-slate-600 ring-1 ring-violet-200/60 dark:bg-slate-900/60 dark:text-slate-400 dark:ring-violet-900/40">
+                Listede <span className="font-bold tabular-nums text-violet-800 dark:text-violet-300">{uniqueAssignmentWorkers}</span>{" "}
+                benzersiz personel — çalışan sayısını buna göre girin
+              </p>
+            ) : null}
+          </div>
           <div className="mt-4 flex flex-wrap items-end gap-4">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -859,9 +909,25 @@ export default function IsBitirmeHesaplamaPage() {
               ) : null}
             </div>
             {!result || !costResult ? (
-              <p className="mt-5 rounded-xl border border-dashed border-violet-200/80 bg-white/60 px-4 py-6 text-center text-sm text-slate-500 dark:border-violet-900/40 dark:bg-slate-900/30 dark:text-slate-400">
-                Süre hesabı, fason birim fiyatı, çalışan sayısı ve personel gideri girildiğinde kar/zarar burada görünür.
-              </p>
+              <div className="mt-5 space-y-3">
+                <p className="rounded-xl border border-dashed border-violet-200/80 bg-white/60 px-4 py-5 text-center text-sm text-slate-500 dark:border-violet-900/40 dark:bg-slate-900/30 dark:text-slate-400">
+                  {!result
+                    ? "Önce geçerli hedef adet ve en az bir personel satırı (veya model geçmişi) ile süre hesabı oluşmalı."
+                    : "Maliyet için aşağıdaki alanları doldurun:"}
+                </p>
+                {result && costMissingFields.length > 0 ? (
+                  <ul className="flex flex-wrap justify-center gap-2 text-xs">
+                    {costMissingFields.map((f) => (
+                      <li
+                        key={f}
+                        className="rounded-full bg-amber-50 px-3 py-1 font-medium text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900/50"
+                      >
+                        {costMissingLabel[f]}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
             ) : (
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/50">
@@ -877,7 +943,7 @@ export default function IsBitirmeHesaplamaPage() {
                     {formatMoneyTr(costResult.revenue)} ₺
                   </p>
                   <p className="mt-1 text-[11px] text-slate-500">
-                    {qtyNum.toLocaleString("tr-TR")} adet × {formatMoneyTr(fasonUnitNum)} ₺
+                    {qtyNum.toLocaleString("tr-TR")} × {formatMoneyTr(fasonUnitNum)} ₺
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-200/90 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/50">
@@ -886,7 +952,7 @@ export default function IsBitirmeHesaplamaPage() {
                     {formatMoneyTr(costResult.personnelCost)} ₺
                   </p>
                   <p className="mt-1 text-[11px] leading-snug text-slate-500">
-                    {workerCountNum} işçi × {formatMoneyTr(personnelDayNum)} ₺/gün × {jobWorkDays.toFixed(2)} gün
+                    {workerCountNum} × {formatMoneyTr(personnelDayNum)} ₺ × {jobWorkDays.toFixed(2)} gün
                   </p>
                 </div>
                 <div

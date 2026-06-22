@@ -26,6 +26,7 @@ import {
   GENEL_PROSES_UPDATED_EVENT,
   type ProsesMap,
 } from "@/lib/prosesVeri";
+import { useI18n } from "@/components/I18nProvider";
 
 type ProductionTableProps = {
   rows: ProductionRow[];
@@ -120,6 +121,7 @@ export default function ProductionTable({
   onSaveNote,
   canDeleteWorkers,
 }: ProductionTableProps) {
+  const { t } = useI18n();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingProcess, setEditingProcess] = useState<string>("");
   const [editingTeam, setEditingTeam] = useState<string>("");
@@ -204,7 +206,7 @@ export default function ProductionTable({
       return (
         <span
           className="inline-flex min-w-[3rem] justify-center rounded-md border border-transparent bg-transparent px-2 py-0.5 text-xs font-bold tabular-nums text-slate-400 dark:text-slate-500"
-          title="Sahada yok"
+          title={t("production.absentTitle")}
           aria-hidden
         >
           —
@@ -215,7 +217,7 @@ export default function ProductionTable({
       return (
         <span
           className="inline-flex min-w-[3rem] justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold tabular-nums text-slate-400 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-500"
-          title="Bu bölüm — proses için dk hedefi tanımlı değil (Genel verimlilik)"
+          title={t("production.noDkTarget")}
         >
           —
         </span>
@@ -230,8 +232,8 @@ export default function ProductionTable({
         className={`inline-flex min-w-[3rem] justify-center rounded-md border px-2 py-0.5 text-xs font-black tabular-nums shadow-sm ${tone}`}
         title={
           useIntradayEfficiency
-            ? `Bugün (dilimlere göre anlık): %${pct}`
-            : `Seçili günde günlük hedefe göre: %${pct}`
+            ? `${t("nav.intradayEfficiency")}: %${pct}`
+            : `${t("nav.dailyEfficiency")}: %${pct}`
         }
       >
         %{pct}
@@ -335,7 +337,7 @@ export default function ProductionTable({
           className={`${btnClass} text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/40`}
         >
           <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
-          Taşı
+          {t("production.move")}
         </button>
         <button
           type="button"
@@ -348,7 +350,7 @@ export default function ProductionTable({
           className={`${btnClass} text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40`}
         >
           <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-          Dk Adet Düzenle
+          {t("production.editDk")}
         </button>
         {onSaveNote ? (
           <button
@@ -361,7 +363,7 @@ export default function ProductionTable({
             className={`${btnClass} text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40`}
           >
             <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
-            {row.note ? "Açıklamayı düzenle" : "Açıklama ekle"}
+            {row.note ? t("production.editNote") : t("production.addNote")}
           </button>
         ) : null}
         {absent && onUnhideWorkerForDay ? (
@@ -374,7 +376,7 @@ export default function ProductionTable({
             className={`${btnClass} text-teal-700 hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40`}
           >
             <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-            Bugün var
+            {t("production.presentToday")}
           </button>
         ) : null}
         {!absent && onHideWorkerForDay ? (
@@ -387,7 +389,7 @@ export default function ProductionTable({
             className={`${btnClass} text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40`}
           >
             <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-            Bugün yok
+            {t("production.absentToday")}
           </button>
         ) : null}
         {canDelete ? (
@@ -402,7 +404,7 @@ export default function ProductionTable({
               className={`${btnClass} text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40`}
             >
               <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-              Sil
+              {t("common.delete")}
             </button>
           </>
         ) : null}
@@ -530,7 +532,7 @@ export default function ProductionTable({
               type="search"
               value={nameSearch}
               onChange={(e) => setNameSearch(e.target.value)}
-              placeholder="Personel ara…"
+              placeholder={t("production.searchPlaceholder")}
               autoComplete="off"
               className="w-full rounded-xl border border-slate-200/90 bg-white py-2.5 pl-9 pr-9 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600/90 dark:bg-slate-800/90 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-teal-500 dark:focus:ring-teal-400/25"
             />
@@ -539,7 +541,7 @@ export default function ProductionTable({
                 type="button"
                 onClick={() => setNameSearch("")}
                 className="absolute inset-y-0 right-1.5 my-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-                aria-label="Aramayı temizle"
+                aria-label={t("production.clearSearch")}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -553,7 +555,7 @@ export default function ProductionTable({
               ? "bg-teal-50 text-teal-700 ring-1 ring-teal-200/80 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-800/50"
               : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
           }`}>
-            {nameSearch.trim() ? `${displayRows.length} / ${rows.length}` : `${rows.length} kişi`}
+            {nameSearch.trim() ? t("production.peopleFiltered", { filtered: displayRows.length, total: rows.length }) : t("production.peopleBadge", { count: rows.length })}
           </span>
         </div>
       ) : null}
@@ -591,14 +593,13 @@ export default function ProductionTable({
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="mb-1 text-sm font-semibold text-slate-900 dark:text-white">
-              Dk Adet Düzenle
+              {t("production.editDkTitle")}
             </h3>
             <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-              <span className="font-medium text-slate-700 dark:text-slate-300">{dkEditProcess}</span> prosesine ait
-              dakikalık adet — aynı bölüm ve prosesteki tüm personel etkilenir.
+              {t("production.editDkDesc", { process: dkEditProcess ?? "" })}
             </p>
             <div className="mb-4 flex flex-col gap-1">
-              <label className="text-xs font-medium text-amber-600 dark:text-amber-400">Dk Adet</label>
+              <label className="text-xs font-medium text-amber-600 dark:text-amber-400">{t("production.editDkLabel")}</label>
               <input
                 type="number"
                 min={0}
@@ -621,14 +622,14 @@ export default function ProductionTable({
             {dkEditValue && Number(dkEditValue) > 0 && (
               <div className="mb-4 flex gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-800">
                 <div className="flex-1 text-center">
-                  <p className="text-[10px] font-medium text-sky-600 dark:text-sky-400">Saat Adet</p>
+                  <p className="text-[10px] font-medium text-sky-600 dark:text-sky-400">{t("production.hourlyPreview")}</p>
                   <p className="text-base font-bold text-sky-800 dark:text-sky-300">
                     {Math.round(Number(dkEditValue) * 60 * 100) / 100}
                   </p>
                 </div>
                 <div className="w-px bg-slate-200 dark:bg-slate-700" />
                 <div className="flex-1 text-center">
-                  <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Günlük Adet</p>
+                  <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">{t("production.dailyPreview")}</p>
                   <p className="text-base font-bold text-emerald-800 dark:text-emerald-300">
                     {Math.round(Number(dkEditValue) * 60 * 9 * 100) / 100}
                   </p>
@@ -640,7 +641,7 @@ export default function ProductionTable({
                 type="button"
                 onClick={() => setDkEditProcess(null)}
                 className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
-              >İptal</button>
+              >{t("common.cancel")}</button>
               <button
                 type="button"
                 onClick={() => {
@@ -650,7 +651,7 @@ export default function ProductionTable({
                   setDkEditProcess(null);
                 }}
                 className="rounded-xl border border-emerald-500 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-              >Kaydet</button>
+              >{t("common.save")}</button>
             </div>
           </div>
         </div>
@@ -673,7 +674,7 @@ export default function ProductionTable({
           <thead>
             <tr className="bg-slate-900 text-white dark:bg-slate-950">
               <th className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">No</th>
-              <th className="px-3 py-3 text-left text-xs font-bold">Ad Soyad · verim</th>
+              <th className="px-3 py-3 text-left text-xs font-bold">{t("production.nameAndEfficiency")}</th>
               {timeFields.map((f) => (
                 <th
                   key={f.key}
@@ -682,11 +683,11 @@ export default function ProductionTable({
                   {f.label}
                 </th>
               ))}
-              <th className="px-1 py-3 text-center text-xs font-bold">Toplam</th>
-              <th className="px-1 py-3 text-center text-[11px] font-semibold text-amber-400" title="Proses Veri Sayfasından dakikalık adet">Dk</th>
-              <th className="px-1 py-3 text-center text-[11px] font-semibold text-sky-400" title="Saatlik adet = dakikalık × 60">Saat</th>
-              <th className="px-1 py-3 text-center text-[11px] font-semibold text-emerald-400" title="Günlük adet = saatlik × 9">Günlük</th>
-              <th className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">İşlem</th>
+              <th className="px-1 py-3 text-center text-xs font-bold">{t("common.total")}</th>
+              <th className="px-1 py-3 text-center text-[11px] font-semibold text-amber-400" title={t("production.editDkLabel")}>{t("production.dkShort")}</th>
+              <th className="px-1 py-3 text-center text-[11px] font-semibold text-sky-400" title={t("production.hourlyPreview")}>{t("production.hourlyShort")}</th>
+              <th className="px-1 py-3 text-center text-[11px] font-semibold text-emerald-400" title={t("production.dailyPreview")}>{t("production.dailyShort")}</th>
+              <th className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t("production.actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -714,7 +715,7 @@ export default function ProductionTable({
                               </svg>
                               <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{group.name}</span>
                               <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
-                                {group.rows.length} proses
+                                {t("production.processCount", { count: group.rows.length })}
                               </span>
                             </div>
                           </td>
@@ -786,22 +787,22 @@ export default function ProductionTable({
                                     {efficiencyBadge(absent, rowEffPct)}
                                     {absent ? (
                                       <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                                        Sahada yok
+                                        {t("production.absentBadge")}
                                       </span>
                                     ) : null}
                                   </div>
                                   {noteEditingId === row.workerId ? (
                                     <div className="mt-1.5 flex flex-col gap-1">
-                                      <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Açıklama yazın…" rows={2}
+                                      <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder={t("production.notePlaceholder")} rows={2}
                                         className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                                       />
                                       <div className="flex gap-1">
                                         <button type="button" onClick={() => void saveNote(row.workerId)} disabled={saving}
                                           className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                                        >Kaydet</button>
+                                        >{t("common.save")}</button>
                                         <button type="button" onClick={cancelNoteEdit} disabled={saving}
                                           className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300"
-                                        >İptal</button>
+                                        >{t("common.cancel")}</button>
                                       </div>
                                     </div>
                                   ) : row.note ? (
@@ -818,23 +819,23 @@ export default function ProductionTable({
                                     {efficiencyBadge(absent, rowEffPct)}
                                     {absent ? (
                                       <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                                        Sahada yok
+                                        {t("production.absentBadge")}
                                       </span>
                                     ) : null}
                                   </div>
                                   <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{row.process}</p>
                                   {noteEditingId === row.workerId ? (
                                     <div className="mt-1.5 flex flex-col gap-1">
-                                      <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Açıklama yazın…" rows={2}
+                                      <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder={t("production.notePlaceholder")} rows={2}
                                         className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                                       />
                                       <div className="flex gap-1">
                                         <button type="button" onClick={() => void saveNote(row.workerId)} disabled={saving}
                                           className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                                        >Kaydet</button>
+                                        >{t("common.save")}</button>
                                         <button type="button" onClick={cancelNoteEdit} disabled={saving}
                                           className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300"
-                                        >İptal</button>
+                                        >{t("common.cancel")}</button>
                                       </div>
                                     </div>
                                   ) : row.note ? (
@@ -850,7 +851,7 @@ export default function ProductionTable({
                                   min={0}
                                   disabled={absent}
                                   aria-disabled={absent}
-                                  title={absent ? "Sahada yok — önce Bugün var ile açın" : undefined}
+                                  title={absent ? t("production.absentCellHint") : undefined}
                                   value={cellInputValue(row[key as keyof ProductionRow] as number)}
                                   onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
                                   className={`w-full rounded px-1 py-1.5 text-center text-[14px] font-semibold tabular-nums outline-none transition ${
@@ -884,17 +885,17 @@ export default function ProductionTable({
                                 <div className="flex items-center justify-center gap-1">
                                   <button onClick={() => void saveEdit(row.workerId)} disabled={saving}
                                     className="rounded border border-emerald-400 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                                  >Kaydet</button>
+                                  >{t("common.save")}</button>
                                   <button onClick={cancelEdit} disabled={saving}
                                     className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
-                                  >İptal</button>
+                                  >{t("common.cancel")}</button>
                                 </div>
                               ) : (
                                 <div className="relative flex justify-center">
                                   <button
                                     type="button"
                                     data-row-action-trigger
-                                    title="İşlemler"
+                                    title={t("production.actions")}
                                     onClick={(e) => openRowMenu(row, e.currentTarget)}
                                     className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                   >
@@ -938,7 +939,7 @@ export default function ProductionTable({
                       </svg>
                       <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{group.name}</span>
                       <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
-                        {group.rows.length} proses
+                        {t("production.processCount", { count: group.rows.length })}
                       </span>
                     </div>
                   )}
@@ -975,7 +976,7 @@ export default function ProductionTable({
                               {efficiencyBadge(absent, rowEffPctMob)}
                               {absent ? (
                                 <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                                  Sahada yok
+                                  {t("production.absentBadge")}
                                 </span>
                               ) : null}
                             </div>
@@ -984,16 +985,16 @@ export default function ProductionTable({
                             )}
                             {noteEditingId === row.workerId ? (
                               <div className="mt-1.5 flex flex-col gap-1">
-                                <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Açıklama yazın…" rows={2}
+                                <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder={t("production.notePlaceholder")} rows={2}
                                   className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                                 />
                                 <div className="flex gap-1">
                                   <button type="button" onClick={() => void saveNote(row.workerId)} disabled={saving}
                                     className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                                  >Kaydet</button>
+                                  >{t("common.save")}</button>
                                   <button type="button" onClick={cancelNoteEdit} disabled={saving}
                                     className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300"
-                                  >İptal</button>
+                                  >{t("common.cancel")}</button>
                                 </div>
                               </div>
                             ) : row.note && !isEditing ? (
@@ -1016,7 +1017,7 @@ export default function ProductionTable({
                             ) : null}
                           </div>
                           <div className="shrink-0 text-right">
-                            <span className="text-xs text-slate-500">Toplam</span>
+                            <span className="text-xs text-slate-500">{t("common.total")}</span>
                             <p className="text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{total}</p>
                           </div>
                         </div>
@@ -1046,15 +1047,15 @@ export default function ProductionTable({
                           return (
                             <div className="mb-2 flex items-center gap-2">
                               <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-amber-700/60 dark:bg-amber-950/30">
-                                <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Dk</span>
+                                <span className="text-xs font-medium text-amber-700 dark:text-amber-300">{t("production.dkShort")}</span>
                                 <span className="text-sm font-bold text-amber-800 dark:text-amber-200">{result ? prosesMap[mobileProsesKey] : "—"}</span>
                               </div>
                               <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 dark:border-sky-800/50 dark:bg-sky-950/30">
-                                <span className="text-xs font-medium text-sky-700 dark:text-sky-300">Saat</span>
+                                <span className="text-xs font-medium text-sky-700 dark:text-sky-300">{t("production.hourlyShort")}</span>
                                 <span className="text-sm font-bold text-sky-800 dark:text-sky-300">{result ? result.saatlik : "—"}</span>
                               </div>
                               <div className="flex flex-1 items-center justify-between gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-800/50 dark:bg-emerald-950/30">
-                                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Günlük</span>
+                                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">{t("production.dailyShort")}</span>
                                 <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{result ? result.gunluk : "—"}</span>
                               </div>
                             </div>
@@ -1066,10 +1067,10 @@ export default function ProductionTable({
                             <>
                               <button onClick={() => void saveEdit(row.workerId)} disabled={saving}
                                 className="flex-1 rounded-lg border border-emerald-400 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-600 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                              >Kaydet</button>
+                              >{t("common.save")}</button>
                               <button onClick={cancelEdit} disabled={saving}
                                 className="flex-1 rounded-lg border border-slate-300 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-500 dark:text-slate-300 dark:hover:bg-slate-600"
-                              >İptal</button>
+                              >{t("common.cancel")}</button>
                             </>
                           ) : (
                             <div className="relative w-full">
@@ -1082,7 +1083,7 @@ export default function ProductionTable({
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                                   <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
                                 </svg>
-                                İşlemler
+                                {t("production.actions")}
                               </button>
                             </div>
                           )}
@@ -1110,10 +1111,10 @@ export default function ProductionTable({
             </svg>
           </div>
           <p className="text-center text-sm font-medium text-slate-700 dark:text-slate-200">
-            Eşleşen personel yok
+            {t("production.noSearchResults")}
           </p>
           <p className="max-w-sm text-center text-xs text-slate-500 dark:text-slate-400">
-            &quot;{nameSearch.trim()}&quot; için sonuç bulunamadı. Yazımı kontrol edin veya aramayı temizleyin.
+            {t("production.noSearchHint", { query: nameSearch.trim() })}
           </p>
         </div>
       ) : null}

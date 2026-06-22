@@ -1005,17 +1005,17 @@ export default function HomePage() {
           {/* Tarih seçici */}
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 dark:border-slate-600 dark:bg-slate-800">
             <svg className="h-4 w-4 shrink-0 text-teal-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            <label htmlFor="date" className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tarih</label>
+            <label htmlFor="date" className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t("common.date")}</label>
             <WeekdayDatePicker id="date" value={selectedDate} onChange={setSelectedDate} />
           </div>
 
           {/* Genel tamamlanan chip */}
           <div
             className="flex items-center gap-1.5 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-1.5 dark:border-emerald-900/40 dark:from-emerald-950/50 dark:to-teal-950/40"
-            title="Hedef Takip: modeldeki bölüm satırları toplamlarının minimumu"
+            title={t("nav.completedHint")}
           >
             <svg className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" aria-hidden><polyline points="20 6 9 17 4 12"/></svg>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tamamlanan</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t("nav.completed")}</span>
             <span className="text-sm font-black tabular-nums text-emerald-800 dark:text-emerald-200">{genelTamamlanan}</span>
           </div>
           {/* Verimlilik chip */}
@@ -1030,23 +1030,23 @@ export default function HomePage() {
                       : "border-rose-300/90 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/35"
                   : "border-dashed border-slate-300/90 bg-slate-50/80 dark:border-slate-600 dark:bg-slate-900/60"
               }`}
-              title={useIntradayEfficiency ? "Anlık saat ortalaması" : "Günlük verimlilik"}
+              title={useIntradayEfficiency ? t("nav.intradayEfficiency") : t("nav.dailyEfficiency")}
             >
               <svg className={`h-4 w-4 shrink-0 ${personnelEfficiencyLive.count > 0 && prevAvgEfficiency != null ? personnelEfficiencyLive.avg > prevAvgEfficiency ? "text-emerald-600" : "text-rose-500" : "text-slate-400"}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t("nav.efficiency")}</span>
               {personnelEfficiencyLive.count > 0 ? (
                 <span className={`text-sm font-black tabular-nums ${prevAvgEfficiency == null || personnelEfficiencyLive.avg === prevAvgEfficiency ? "text-slate-800 dark:text-slate-100" : personnelEfficiencyLive.avg > prevAvgEfficiency ? "text-emerald-800 dark:text-emerald-200" : "text-rose-700 dark:text-rose-300"}`}>
                   %{personnelEfficiencyLive.avg}
-                  <span className="ml-1 text-xs font-normal opacity-70">({personnelEfficiencyLive.count} kişi)</span>
+                  <span className="ml-1 text-xs font-normal opacity-70">({t("common.peopleCount", { count: personnelEfficiencyLive.count })})</span>
                   {prevAvgEfficiency != null && personnelEfficiencyLive.avg !== prevAvgEfficiency && (
                     <span className="ml-1.5 text-xs font-semibold">
-                      {personnelEfficiencyLive.avg > prevAvgEfficiency ? "↑" : "↓"} önceki %{prevAvgEfficiency}
+                      {personnelEfficiencyLive.avg > prevAvgEfficiency ? "↑" : "↓"} {t("nav.prevEfficiency", { pct: prevAvgEfficiency })}
                     </span>
                   )}
                 </span>
               ) : (
                 <span className="text-sm text-slate-400 dark:text-slate-500">
-                  {personnelEfficiencyLive.presentCount === 0 && personnelEfficiencyLive.withTarget === 0 ? "Sahada yok" : personnelEfficiencyLive.withTarget === 0 ? "Hedef yok" : "—"}
+                  {personnelEfficiencyLive.presentCount === 0 && personnelEfficiencyLive.withTarget === 0 ? t("nav.absent") : personnelEfficiencyLive.withTarget === 0 ? t("nav.noTarget") : "—"}
                 </span>
               )}
             </div>
@@ -1056,7 +1056,7 @@ export default function HomePage() {
         <div className="border-t border-slate-100 px-4 py-2.5 dark:border-slate-700/50 md:px-5">
         <div className="flex flex-wrap items-center gap-1.5">
           {hasPermission("utuPaket") || isAdminRole() ? (
-            <Link href="/utu-paket" className="btn-nav-utu-paket">Ütü–Paket</Link>
+            <Link href="/utu-paket" className="btn-nav-utu-paket">{t("nav.ironPack")}</Link>
           ) : null}
           {hasPermission("analysis") || hasPermission("ekran2") || hasPermission("karsilastirma") || hasPermission("modelAnalizi") ? (
             <button
@@ -1073,14 +1073,14 @@ export default function HomePage() {
             <Link href="/genel-verimlilik" className="btn-nav shrink-0">{t("nav.generalEfficiency")}</Link>
           ) : null}
           {hasPermission("prosesKontrol") ? (
-            <Link href="/proses-kontrol" className="btn-nav shrink-0">Proses Kontrol</Link>
+            <Link href="/proses-kontrol" className="btn-nav shrink-0">{t("nav.processControl")}</Link>
           ) : null}
           {hasPermission("isBitirmeHesaplama") ? (
-            <Link href="/is-bitirme-hesaplama" className="btn-nav shrink-0">İş Hesaplama</Link>
+            <Link href="/is-bitirme-hesaplama" className="btn-nav shrink-0">{t("nav.jobCalc")}</Link>
           ) : null}
           {hasPermission("ekran1") || hasPermission("ekran2") || hasPermission("ekran3") || hasPermission("ekran4") ? (
             <Link href="/ekran1" className="btn-nav shrink-0">
-              TV Ekranları
+              {t("nav.tvScreens")}
             </Link>
           ) : null}
           <button
@@ -1088,7 +1088,7 @@ export default function HomePage() {
             onClick={() => { setExcelPanelOpen((v) => !v); if (!bulkExportStart) setBulkExportStart(selectedDate); if (!bulkExportEnd) setBulkExportEnd(selectedDate); }}
             className="btn-nav shrink-0"
           >
-            Excel
+            {t("nav.excel")}
           </button>
           {role === "admin" ? (
             <ExcelImportPanel
@@ -1102,7 +1102,7 @@ export default function HomePage() {
             />
           ) : null}
           {hasPermission("tamirOrani") || isAdminRole() ? (
-            <Link href="/tamir-orani" className="btn-nav shrink-0">Tamir Oranı</Link>
+            <Link href="/tamir-orani" className="btn-nav shrink-0">{t("nav.repairRate")}</Link>
           ) : null}
           {hasPermission("ayarlar") || isAdminRole() ? (
             <Link href="/ayarlar" className="btn-nav shrink-0">{t("nav.settings")}</Link>
@@ -1114,16 +1114,16 @@ export default function HomePage() {
       {/* ── Ürün bilgisi bandı ────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/85 md:px-5">
         <svg className="h-4 w-4 shrink-0 text-teal-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
-        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Çalışılan ürün</span>
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t("home.productWorked")}</span>
         <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
           {formatProductDisplayLine(productName, productModel)}
         </span>
         {productMetaSource === "hedef" ? (
           <span className="ml-auto rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-800 dark:bg-teal-950/50 dark:text-teal-300">
-            Hedef Takip
+            {t("home.targetTracking")}
           </span>
         ) : (
-          <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">Excel / manuel</span>
+          <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500">{t("home.excelManual")}</span>
         )}
       </div>
 
@@ -1147,15 +1147,15 @@ export default function HomePage() {
                   ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-200"
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
               }`}
-              title="Ek giriş (günlük özete yansır; saat toplamına eklenmez)"
-              aria-label="Ek giriş: personel ve adet"
+              title={t("nav.extraEntryHint")}
+              aria-label={t("nav.extraEntry")}
               aria-expanded={ekSayimOpen}
             >
               <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M8.25 6.75h12M8.25 12h12M8.25 17.25h12" />
                 <path d="M3.75 6.75h.01v.01H3.75V6.75zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0zM3.75 12h.01v.01H3.75V12zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0zM3.75 17.25h.01v.01H3.75v-.01zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0z" />
               </svg>
-              Ek giriş
+              {t("nav.extraEntry")}
             </button>
 
             {/* Diğer günlere aktar */}
@@ -1170,7 +1170,7 @@ export default function HomePage() {
                   <path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3" />
                   <path d="M12 3v12m-4-4l4 4 4-4" />
                 </svg>
-                {copyRosterBusy ? "Aktarılıyor…" : "Diğer günlere aktar"}
+                {copyRosterBusy ? t("nav.copyRosterBusy") : t("nav.copyRoster")}
               </button>
             ) : null}
 
@@ -1185,23 +1185,21 @@ export default function HomePage() {
                 <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
                 </svg>
-                {clearingAllWorkers ? "Siliniyor…" : "Tüm personeli sil"}
+                {clearingAllWorkers ? t("nav.deleting") : t("nav.deleteAllWorkers")}
               </button>
             ) : null}
           </div>
           {ekSayimOpen ? (
             <div className="mt-3 space-y-3 rounded-xl border border-slate-200/90 bg-slate-50/40 p-4 dark:border-slate-600/50 dark:bg-slate-800/20">
               <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                Aşağıdaki adetler kaydedildiğinde alttaki <strong className="font-medium text-slate-700 dark:text-slate-300">Günlük Özet</strong> kutularındaki
-                aşama toplamları ve <strong className="font-medium text-slate-700 dark:text-slate-300">Genel tamamlanan</strong> anında güncellenir (üretim
-                saatleri + bu ek adetler). Ana tablodaki saat toplamı ve analizler buna göre değişmez.
+                {t("home.extraEntryDesc")}
               </p>
               <div className="overflow-x-auto overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100">
                 <table className="w-full min-w-[280px] border-collapse text-sm">
                   <thead className="bg-slate-800 text-white">
                     <tr>
-                      <th className="px-3 py-2.5 text-left text-sm font-bold">Ad Soyad</th>
-                      <th className="w-[5.5rem] px-2 py-2.5 text-center text-sm font-bold">Adet</th>
+                      <th className="px-3 py-2.5 text-left text-sm font-bold">{t("workerForm.name")}</th>
+                      <th className="w-[5.5rem] px-2 py-2.5 text-center text-sm font-bold">{t("common.quantity")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1234,7 +1232,7 @@ export default function HomePage() {
                                   </span>
                                   {disabled ? (
                                     <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                                      Sahada yok
+                                      {t("production.absentBadge")}
                                     </span>
                                   ) : null}
                                 </div>
@@ -1288,9 +1286,9 @@ export default function HomePage() {
             <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
               {(
                 [
-                  { key: "export", label: "Dışa aktar" },
-                  { key: "bulk", label: "Toplu export" },
-                  ...(role === "admin" ? [{ key: "import", label: "İçe aktar" }] : []),
+                  { key: "export" as const, label: t("home.excelExportTab") },
+                  { key: "bulk" as const, label: t("home.excelBulkTab") },
+                  ...(role === "admin" ? [{ key: "import" as const, label: t("home.excelImportTab") }] : []),
                 ] as { key: "export" | "bulk" | "import"; label: string }[]
               ).map((tab) => (
                 <button
@@ -1321,7 +1319,7 @@ export default function HomePage() {
           {excelPanelTab === "export" && (
             <div>
               <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-                Seçili tarihin ({selectedDate}) üretim verisini Excel dosyası olarak indir.
+                {t("home.excelExportDesc", { date: selectedDate })}
               </p>
               <button
                 type="button"
@@ -1331,7 +1329,7 @@ export default function HomePage() {
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                İndir ({selectedDate})
+                {t("home.excelDownloadWithDate", { date: selectedDate })}
               </button>
             </div>
           )}
@@ -1339,11 +1337,11 @@ export default function HomePage() {
           {excelPanelTab === "bulk" && (
             <div>
               <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-                Seçilen tarih aralığındaki her iş günü ayrı bir sayfa olarak tek Excel dosyasına aktarılır.
+                {t("home.excelBulkDesc")}
               </p>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Başlangıç</label>
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("common.startDate")}</label>
                   <input
                     type="date"
                     value={bulkExportStart}
@@ -1352,7 +1350,7 @@ export default function HomePage() {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Bitiş</label>
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("common.endDate")}</label>
                   <input
                     type="date"
                     value={bulkExportEnd}
@@ -1371,15 +1369,18 @@ export default function HomePage() {
                     <>
                       <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                       {bulkExportProgress
-                        ? `${bulkExportProgress.done} / ${bulkExportProgress.total} gün…`
-                        : "Hazırlanıyor…"}
+                        ? t("home.excelDaysProgress", {
+                            done: bulkExportProgress.done,
+                            total: bulkExportProgress.total,
+                          })
+                        : t("home.excelPreparing")}
                     </>
                   ) : (
                     <>
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                       </svg>
-                      İndir
+                      {t("home.excelDownload")}
                     </>
                   )}
                 </button>
@@ -1387,7 +1388,12 @@ export default function HomePage() {
               {bulkExporting && bulkExportProgress && (
                 <div className="mt-3">
                   <div className="mb-1 flex justify-between text-xs text-slate-500">
-                    <span>{bulkExportProgress.done} / {bulkExportProgress.total} gün işlendi</span>
+                    <span>
+                      {t("home.excelDaysProcessed", {
+                        done: bulkExportProgress.done,
+                        total: bulkExportProgress.total,
+                      })}
+                    </span>
                     <span>{Math.round((bulkExportProgress.done / bulkExportProgress.total) * 100)}%</span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
@@ -1574,20 +1580,19 @@ export default function HomePage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="bulk-remove-title" className="text-base font-semibold text-slate-900 dark:text-white">
-              Tüm personeli sil
+              {t("home.bulkRemoveTitle")}
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              <span className="font-medium text-slate-800 dark:text-slate-200">{selectedDate}</span> için listede{" "}
-              <span className="font-semibold tabular-nums">{rows.length}</span> kişi var. Nasıl uygulansın?
+              {t("home.bulkRemoveQuestion", { date: selectedDate, count: rows.length })}
             </p>
             <ul className="list-inside list-disc space-y-2 text-sm text-slate-600 dark:text-slate-400">
               <li>
-                <strong className="text-slate-800 dark:text-slate-200">Yalnızca bugün:</strong> Seçili günde sahada yok
-                işareti (satırlar soluk, hücreler kilitli); sonraki iş günlerinde normal. Üretim kayıtları silinmez.
+                <strong className="text-slate-800 dark:text-slate-200">{t("home.bulkRemoveOnlyDayTitle")}</strong>{" "}
+                {t("home.bulkRemoveOnlyDayDesc")}
               </li>
               <li>
-                <strong className="text-slate-800 dark:text-slate-200">Bugün ve sonrası:</strong> Seçili tarihten
-                itibaren silinir (pasif; listede görünmez); geçmiş günler ve analizler etkilenmez.
+                <strong className="text-slate-800 dark:text-slate-200">{t("home.bulkRemoveFromDayTitle")}</strong>{" "}
+                {t("home.bulkRemoveFromDayDesc")}
               </li>
             </ul>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
@@ -1596,7 +1601,7 @@ export default function HomePage() {
                 className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                 onClick={() => setBulkRemoveOpen(false)}
               >
-                İptal
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -1604,7 +1609,7 @@ export default function HomePage() {
                 className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/60"
                 onClick={() => confirmThenBulkRemove("only_day")}
               >
-                Yalnızca bugün
+                {t("home.bulkRemoveOnlyDayBtn")}
               </button>
               <button
                 type="button"
@@ -1612,7 +1617,7 @@ export default function HomePage() {
                 className="rounded-xl border border-red-300 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50 dark:border-red-800 dark:bg-red-800 dark:hover:bg-red-700"
                 onClick={() => confirmThenBulkRemove("from_day")}
               >
-                Bugün ve sonrası
+                {t("home.bulkRemoveFromDayBtn")}
               </button>
             </div>
           </div>
@@ -1633,21 +1638,16 @@ export default function HomePage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="copy-roster-title" className="text-base font-semibold text-slate-900 dark:text-white">
-              Personeli diğer günlere aktar
+              {t("home.copyRosterTitle")}
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              <span className="font-medium text-slate-800 dark:text-slate-200">Kaynak tarih (seçili):</span>{" "}
-              {selectedDate} — listede {rows.length} kişi.
+              {t("home.copyRosterSourceLine", { date: selectedDate, count: rows.length })}
             </p>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              <strong className="font-medium text-slate-800 dark:text-slate-200">Kaynak (seçili) gün hariç</strong>, bitiş
-              tarihi <strong className="font-medium text-slate-800 dark:text-slate-200">dahil</strong> olacak şekilde
-              aralıktaki her hafta içi güne kopyalanır. Örneğin verinin 27 Nisan’da görünmesi için bitiş en az 27 Nisan
-              olmalı; tek iş günü mesajı alıyorsanız o gün, aralıktaki yegâne hafta içi gündür (27 dışında bir güne
-              yazılmış olabilir). Tamamlandığında hedef günler mesajda listelenir ve ilk hedef gün takvimde açılır.
+              {t("home.copyRosterDesc")}
             </p>
             <WeekdayDatePicker
-              label="Bitiş tarihi (hafta içi)"
+              label={t("home.copyRosterEndLabel")}
               value={copyRosterEndDate}
               onChange={setCopyRosterEndDate}
               className="w-full"
@@ -1659,7 +1659,7 @@ export default function HomePage() {
                 className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                 onClick={() => !copyRosterBusy && setCopyRosterOpen(false)}
               >
-                İptal
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -1667,7 +1667,7 @@ export default function HomePage() {
                 className="rounded-xl border border-teal-600 bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500"
                 onClick={() => void runCopyRosterToFuture()}
               >
-                {copyRosterBusy ? "Aktarılıyor…" : "Aktar"}
+                {copyRosterBusy ? t("home.copyRosterTransferring") : t("home.copyRosterTransfer")}
               </button>
             </div>
           </div>
@@ -1676,7 +1676,7 @@ export default function HomePage() {
 
       {error && (
         <div className="rounded-2xl border border-red-200/90 bg-red-50/90 p-4 text-sm text-red-800 shadow-surface-sm dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
-          Hata: {error}
+          {t("common.errorPrefix")} {error}
         </div>
       )}
 
