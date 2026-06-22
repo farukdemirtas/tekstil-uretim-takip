@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { getProcesses, getTeams, getProsesVeriRowsFromServer, saveProsesVeriRowsToServer } from "@/lib/api";
 import { ProductionRow } from "@/lib/types";
 import { todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
@@ -130,6 +131,11 @@ export default function ProductionTable({
   const [processNames, setProcessNames] = useState<string[]>([]);
   const [prosesMap, setProsesMapState] = useState<ProsesMap>({});
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+    placement: "above" | "below";
+  } | null>(null);
   const [dkEditTeam, setDkEditTeam] = useState<string>("");
   const [dkEditProcess, setDkEditProcess] = useState<string | null>(null);
   const [dkEditValue, setDkEditValue] = useState("");
@@ -245,6 +251,163 @@ export default function ProductionTable({
       GENEL_VERIMLILIK_MODEL_CODE,
       getStoredGenelRowsForServerSave(),
     ).catch(() => {});
+  }
+
+  function closeRowMenu() {
+    setOpenMenuId(null);
+    setMenuPosition(null);
+  }
+
+  function openRowMenu(row: ProductionRow, button: HTMLButtonElement) {
+    if (openMenuId === row.workerId) {
+      closeRowMenu();
+      return;
+    }
+    const rect = button.getBoundingClientRect();
+    const menuHeight = 320;
+    const gap = 6;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const placement = spaceBelow >= menuHeight || spaceBelow >= spaceAbove ? "below" : "above";
+    setMenuPosition({
+      top: placement === "below" ? rect.bottom + gap : rect.top - gap,
+      left: rect.right,
+      placement,
+    });
+    setOpenMenuId(row.workerId);
+  }
+
+  function scrollRowIntoView(workerId: number) {
+    requestAnimationFrame(() => {
+      document.getElementById(`production-row-${workerId}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }
+
+  const openMenuRow = useMemo(
+    () => (openMenuId !== null ? rows.find((r) => r.workerId === openMenuId) ?? null : null),
+    [openMenuId, rows],
+  );
+
+  useLayoutEffect(() => {
+    if (openMenuId === null) return;
+    function reposition() {
+      const rowEl = document.getElementById(`production-row-${openMenuId}`);
+      const btn = rowEl?.querySelector<HTMLButtonElement>("[data-row-action-trigger]");
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const menuHeight = 320;
+      const gap = 6;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const placement = spaceBelow >= menuHeight || spaceBelow >= spaceAbove ? "below" : "above";
+      setMenuPosition({
+        top: placement === "below" ? rect.bottom + gap : rect.top - gap,
+        left: rect.right,
+        placement,
+      });
+    }
+    reposition();
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [openMenuId]);
+
+  function renderRowActionMenu(row: ProductionRow, compact = false) {
+    const absent = Boolean(row.absentForDay);
+    const btnClass = compact
+      ? "flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+      : "flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40";
+    const iconSize = compact ? 15 : 13;
+
+    return (
+      <>
+        <button
+          type="button"
+          disabled={absent}
+          onClick={() => {
+            closeRowMenu();
+            startEdit(row);
+            scrollRowIntoView(row.workerId);
+          }}
+          className={`${btnClass} text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/40`}
+        >
+          <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
+          Taşı
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            closeRowMenu();
+            setDkEditTeam(row.team);
+            setDkEditProcess(row.process);
+            setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? "");
+          }}
+          className={`${btnClass} text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40`}
+        >
+          <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          Dk Adet Düzenle
+        </button>
+        {onSaveNote ? (
+          <button
+            type="button"
+            onClick={() => {
+              closeRowMenu();
+              startNoteEdit(row);
+              scrollRowIntoView(row.workerId);
+            }}
+            className={`${btnClass} text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40`}
+          >
+            <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+            {row.note ? "Açıklamayı düzenle" : "Açıklama ekle"}
+          </button>
+        ) : null}
+        {absent && onUnhideWorkerForDay ? (
+          <button
+            type="button"
+            onClick={() => {
+              closeRowMenu();
+              onUnhideWorkerForDay(row.workerId, row.name);
+            }}
+            className={`${btnClass} text-teal-700 hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40`}
+          >
+            <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+            Bugün var
+          </button>
+        ) : null}
+        {!absent && onHideWorkerForDay ? (
+          <button
+            type="button"
+            onClick={() => {
+              closeRowMenu();
+              onHideWorkerForDay(row.workerId, row.name);
+            }}
+            className={`${btnClass} text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40`}
+          >
+            <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+            Bugün yok
+          </button>
+        ) : null}
+        {canDelete ? (
+          <>
+            <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+            <button
+              type="button"
+              onClick={() => {
+                closeRowMenu();
+                onDeleteWorker(row.workerId, row.name);
+              }}
+              className={`${btnClass} text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40`}
+            >
+              <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              Sil
+            </button>
+          </>
+        ) : null}
+      </>
+    );
   }
 
   const canDelete = Boolean(canDeleteWorkers);
@@ -396,9 +559,26 @@ export default function ProductionTable({
       ) : null}
 
       <div className="text-slate-900 dark:text-slate-100">
-      {openMenuId !== null && (
-        <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
-      )}
+      {openMenuId !== null && openMenuRow && menuPosition && typeof document !== "undefined"
+        ? createPortal(
+            <>
+              <div className="fixed inset-0 z-[80]" onClick={closeRowMenu} aria-hidden />
+              <div
+                role="menu"
+                className="fixed z-[90] min-w-[148px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800"
+                style={{
+                  left: menuPosition.left,
+                  top: menuPosition.top,
+                  transform:
+                    menuPosition.placement === "below" ? "translateX(-100%)" : "translate(-100%, -100%)",
+                }}
+              >
+                {renderRowActionMenu(openMenuRow)}
+              </div>
+            </>,
+            document.body,
+          )
+        : null}
 
       {/* Dk Adet düzenleme modalı */}
       {dkEditProcess !== null && (
@@ -550,6 +730,7 @@ export default function ProductionTable({
                         return (
                           <tr
                             key={`${team}-${row.workerId}-${rowIdx}`}
+                            id={`production-row-${row.workerId}`}
                             className={`border-b border-slate-100 align-middle transition-colors dark:border-slate-700/60 ${
                               absent
                                 ? "bg-slate-50/80 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500"
@@ -712,65 +893,15 @@ export default function ProductionTable({
                                 <div className="relative flex justify-center">
                                   <button
                                     type="button"
+                                    data-row-action-trigger
                                     title="İşlemler"
-                                    onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
+                                    onClick={(e) => openRowMenu(row, e.currentTarget)}
                                     className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                   >
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                                       <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
                                     </svg>
                                   </button>
-                                  {openMenuId === row.workerId && (
-                                    <div className="absolute right-0 top-full z-50 mt-1 min-w-[148px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                                      <button type="button" disabled={absent} onClick={() => { setOpenMenuId(null); startEdit(row); }}
-                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-950/40"
-                                      >
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
-                                        Taşı
-                                      </button>
-                                      <button type="button" onClick={() => { setOpenMenuId(null); setDkEditTeam(row.team); setDkEditProcess(row.process); setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? ""); }}
-                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
-                                      >
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                        Dk Adet Düzenle
-                                      </button>
-                                      {onSaveNote ? (
-                                        <button type="button" onClick={() => { setOpenMenuId(null); startNoteEdit(row); }}
-                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
-                                        >
-                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
-                                          {row.note ? "Açıklamayı düzenle" : "Açıklama ekle"}
-                                        </button>
-                                      ) : null}
-                                      {absent && onUnhideWorkerForDay ? (
-                                        <button type="button" onClick={() => { setOpenMenuId(null); onUnhideWorkerForDay(row.workerId, row.name); }}
-                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40"
-                                        >
-                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                          Bugün var
-                                        </button>
-                                      ) : null}
-                                      {!absent && onHideWorkerForDay ? (
-                                        <button type="button" onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
-                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-orange-700 transition hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
-                                        >
-                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                                          Bugün yok
-                                        </button>
-                                      ) : null}
-                                      {canDelete ? (
-                                        <>
-                                          <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
-                                          <button type="button" onClick={() => { setOpenMenuId(null); onDeleteWorker(row.workerId, row.name); }}
-                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                                          >
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                            Sil
-                                          </button>
-                                        </>
-                                      ) : null}
-                                    </div>
-                                  )}
                                 </div>
                               )}
                             </td>
@@ -823,6 +954,7 @@ export default function ProductionTable({
                     return (
                       <div
                         key={`${team}-${row.workerId}-${rowIdx}`}
+                        id={`production-row-${row.workerId}`}
                         className={`p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60 ${
                           absent ? "!bg-slate-100/90 dark:!bg-slate-900/70" : ""
                         } ${isMulti ? "pl-5" : ""}`}
@@ -943,7 +1075,8 @@ export default function ProductionTable({
                             <div className="relative w-full">
                               <button
                                 type="button"
-                                onClick={() => setOpenMenuId((prev) => (prev === row.workerId ? null : row.workerId))}
+                                data-row-action-trigger
+                                onClick={(e) => openRowMenu(row, e.currentTarget)}
                                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                               >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -951,57 +1084,6 @@ export default function ProductionTable({
                                 </svg>
                                 İşlemler
                               </button>
-                              {openMenuId === row.workerId && (
-                                <div className="absolute bottom-full left-0 z-50 mb-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                                  <button type="button" disabled={absent} onClick={() => { setOpenMenuId(null); startEdit(row); }}
-                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-950/40"
-                                  >
-                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"/></svg>
-                                    Taşı
-                                  </button>
-                                  <button type="button" onClick={() => { setOpenMenuId(null); setDkEditTeam(row.team); setDkEditProcess(row.process); setDkEditValue(prosesMap[makeProsesKey(row.team, row.process)] ?? ""); }}
-                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-amber-700 transition hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
-                                  >
-                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                    Dk Adet Düzenle
-                                  </button>
-                                  {onSaveNote ? (
-                                    <button type="button" onClick={() => { setOpenMenuId(null); startNoteEdit(row); }}
-                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
-                                    >
-                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-6 4h4M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
-                                      {row.note ? "Açıklamayı düzenle" : "Açıklama ekle"}
-                                    </button>
-                                  ) : null}
-                                  {absent && onUnhideWorkerForDay ? (
-                                    <button type="button" onClick={() => { setOpenMenuId(null); onUnhideWorkerForDay(row.workerId, row.name); }}
-                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-teal-700 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-950/40"
-                                    >
-                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                      Bugün var
-                                    </button>
-                                  ) : null}
-                                  {!absent && onHideWorkerForDay ? (
-                                    <button type="button" onClick={() => { setOpenMenuId(null); onHideWorkerForDay(row.workerId, row.name); }}
-                                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-orange-700 transition hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40"
-                                    >
-                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                                      Bugün yok
-                                    </button>
-                                  ) : null}
-                                  {canDelete ? (
-                                    <>
-                                      <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
-                                      <button type="button" onClick={() => { setOpenMenuId(null); onDeleteWorker(row.workerId, row.name); }}
-                                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                                      >
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                        Sil
-                                      </button>
-                                    </>
-                                  ) : null}
-                                </div>
-                              )}
                             </div>
                           )}
                         </div>

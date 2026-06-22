@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useI18n } from "@/components/I18nProvider";
+import { isTvViewPath } from "@/lib/isTvViewPath";
 import { THEME_CHANGE_EVENT } from "@/lib/permissions";
 
 type Theme = "light" | "dark";
@@ -51,17 +52,7 @@ export default function ThemeToggle({ inline = false }: Props) {
     [theme, t]
   );
 
-  if (
-    pathname.startsWith("/ekran1") ||
-    pathname.startsWith("/ekran2") ||
-    pathname.startsWith("/ekran3") ||
-    pathname.startsWith("/ekran4") ||
-    pathname.startsWith("/ekran5") ||
-    pathname.startsWith("/proses-kontrol") ||
-    pathname.startsWith("/hata-rapor") ||
-    ekran5Embedded
-  )
-    return null;
+  if (isTvViewPath(pathname) || ekran5Embedded) return null;
 
   function toggleTheme() {
     const next: Theme = theme === "dark" ? "light" : "dark";

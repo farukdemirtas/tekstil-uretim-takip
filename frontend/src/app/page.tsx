@@ -71,6 +71,7 @@ import { ProductionRow } from "@/lib/types";
 import type * as XLSX from "xlsx";
 import { loadXlsx } from "@/lib/xlsxLazy";
 import { useI18n } from "@/components/I18nProvider";
+import LanguageSelector from "@/components/LanguageSelector";
 
 const EXPORT_TEAM_FALLBACK = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
 
@@ -984,6 +985,7 @@ export default function HomePage() {
               </svg>
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{currentUser}</span>
             </div>
+            <LanguageSelector className="shrink-0" />
             <button
               onClick={handleLogout}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-red-900/50 dark:hover:bg-red-950/30 dark:hover:text-red-300"

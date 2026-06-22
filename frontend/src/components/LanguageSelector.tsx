@@ -1,14 +1,33 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { LOCALE_LABELS, LOCALES, type Locale } from "@/lib/i18n/locales";
+import { isTvViewPath } from "@/lib/isTvViewPath";
 import { useI18n } from "./I18nProvider";
 
 type Props = {
   className?: string;
 };
 
+function useEkran5EmbeddedView(): boolean {
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    const sync = () => setActive(document.body.dataset.ekran5View === "true");
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(document.body, { attributes: true, attributeFilter: ["data-ekran5-view"] });
+    return () => obs.disconnect();
+  }, []);
+  return active;
+}
+
 export default function LanguageSelector({ className = "" }: Props) {
+  const pathname = usePathname();
+  const ekran5Embedded = useEkran5EmbeddedView();
   const { locale, setLocale, t } = useI18n();
+
+  if (isTvViewPath(pathname) || ekran5Embedded) return null;
 
   return (
     <label className={`inline-flex items-center gap-1.5 ${className}`}>
