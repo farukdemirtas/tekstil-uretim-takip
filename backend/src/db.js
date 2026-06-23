@@ -373,6 +373,7 @@ export function initDb() {
         ["secondary_consignment_id", "TEXT"],
         ["primary_consignment_id", "TEXT"],
         ["ekran5_target", "INTEGER"],
+        ["ekran1_target", "INTEGER"],
       ]) {
         if (!names.has(col[0])) {
           db.run(`ALTER TABLE product_models ADD COLUMN ${col[0]} ${col[1]}`, (e) => {

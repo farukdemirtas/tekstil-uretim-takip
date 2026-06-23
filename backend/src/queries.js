@@ -2408,6 +2408,49 @@ export function setEkran5Target(id, value) {
   });
 }
 
+/** Ekran1 paylaşımlı manuel hedef — tüm kullanıcılar/TV aynı değeri görür */
+export function getEkran1Target(id) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT ekran1_target AS ekran1Target, ekran5_target AS ekran5Target,
+              target_quantity AS targetQuantity
+       FROM product_models WHERE id = ?`,
+      [id],
+      (err, row) => {
+        if (err) return reject(err);
+        if (!row) return resolve({ ekran1Target: null, targetQuantity: null });
+        const manual = row.ekran1Target ?? row.ekran5Target;
+        const tq = row.targetQuantity;
+        resolve({
+          ekran1Target:
+            manual != null && Number.isFinite(Number(manual)) && Number(manual) > 0
+              ? Number(manual)
+              : null,
+          targetQuantity:
+            tq != null && Number.isFinite(Number(tq)) && Number(tq) > 0 ? Number(tq) : null,
+        });
+      }
+    );
+  });
+}
+
+export function setEkran1Target(id, value) {
+  const val =
+    value != null && Number.isFinite(Number(value)) && Number(value) > 0
+      ? Math.floor(Number(value))
+      : null;
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE product_models SET ekran1_target = ? WHERE id = ?",
+      [val, id],
+      function onUp(err) {
+        if (err) return reject(err);
+        resolve({ id, ekran1Target: val });
+      }
+    );
+  });
+}
+
 export function deleteProductModel(id) {
   return new Promise((resolve, reject) => {
     db.run("DELETE FROM product_models WHERE id = ?", [id], function onDel(err) {

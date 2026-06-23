@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import Link from "next/link";
 import {
   evaluateHedefAlertEval,
-  getEkran5Target,
-  setEkran5Target,
+  getEkran1Target,
+  setEkran1Target,
   getHedefTakipStageTotals,
   getTopWorkersAnalytics,
   getProduction,
@@ -444,6 +444,7 @@ export default function Ekran1IcerikPage() {
   const [productName, setProductName] = useState("");
   const [productModel, setProductModel] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const activeModelIdRef = useRef<number | null>(null);
 
   const birthdayCelebration = useMemo(() => {
     if (birthdayToday.length === 0)
@@ -522,6 +523,10 @@ export default function Ekran1IcerikPage() {
       if (meta?.modelId != null && Number.isFinite(meta.modelId)) {
         effectiveModelId = meta.modelId;
       }
+      if (effectiveModelId != null) {
+        activeModelIdRef.current = effectiveModelId;
+        setModelId(effectiveModelId);
+      }
       if (meta?.productName) setProductName(meta.productName);
       if (meta?.productModel) setProductModel(meta.productModel);
 
@@ -532,10 +537,14 @@ export default function Ekran1IcerikPage() {
         getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }).catch(() => []),
         isSingleDay ? getProduction(endDate).catch(() => []) : Promise.resolve([]),
         getEkran1GenelIlerleme(endDate, effectiveModelId).catch(() => null),
-        effectiveModelId != null ? getEkran5Target(effectiveModelId).catch(() => null) : Promise.resolve(null),
+        effectiveModelId != null ? getEkran1Target(effectiveModelId).catch(() => null) : Promise.resolve(null),
       ]);
       setGenelIlerleme(genelOzet);
-      setManualTarget(ekranTargetRes?.ekran5Target ?? null);
+      setManualTarget(
+        ekranTargetRes?.ekran1Target != null && ekranTargetRes.ekran1Target > 0
+          ? ekranTargetRes.ekran1Target
+          : null
+      );
       const dayRows = isSingleDay ? dayRowsRaw : [];
       const stageLines =
         genelOzet?.stages?.length
@@ -715,6 +724,7 @@ export default function Ekran1IcerikPage() {
           meta?.modelId != null && Number.isFinite(meta.modelId) ? meta.modelId : null;
         if (resolvedModelId != null) {
           initModelId = resolvedModelId;
+          activeModelIdRef.current = resolvedModelId;
           // Modelin oturum başlangıç tarihini getir — o günden bugüne kadar göster
           const genel = await getEkran1GenelIlerleme(today, resolvedModelId).catch(() => null);
           const rangeStart = genel?.dataStartDate?.trim();
@@ -847,12 +857,14 @@ export default function Ekran1IcerikPage() {
   }, [hasToken]);
 
   async function handleHedefSave(v: number) {
-    if (modelId) await setEkran5Target(modelId, v).catch(() => {});
+    const mid = activeModelIdRef.current ?? modelId;
+    if (mid) await setEkran1Target(mid, v).catch(() => {});
     setManualTarget(v);
     setHedefOpen(false);
   }
   async function handleHedefClear() {
-    if (modelId) await setEkran5Target(modelId, null).catch(() => {});
+    const mid = activeModelIdRef.current ?? modelId;
+    if (mid) await setEkran1Target(mid, null).catch(() => {});
     setManualTarget(null);
     setHedefOpen(false);
   }

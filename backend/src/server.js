@@ -67,6 +67,8 @@ import {
   deleteProductModel,
   getEkran5Target,
   setEkran5Target,
+  getEkran1Target,
+  setEkran1Target,
   bumpEkranRefreshSignal,
   getEkranRefreshSignal,
   applyHedefSessionToDailyMeta,
@@ -706,6 +708,33 @@ app.put("/api/product-models/:id/ekran5-target", requireAuth, async (req, res) =
   try {
     const result = await setEkran5Target(id, value);
     logActivity(req, "ekran5_hedef_guncelle", "product_models", { id, ekran5Target: result.ekran5Target });
+    void bumpEkranRefreshSignal().catch(() => {});
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+/** Ekran1 paylaşımlı manuel hedef — okuma */
+app.get("/api/product-models/:id/ekran1-target", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const result = await getEkran1Target(id);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+/** Ekran1 paylaşımlı manuel hedef — kaydetme / temizleme */
+app.put("/api/product-models/:id/ekran1-target", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  const value = req.body?.value != null ? Number(req.body.value) : null;
+  try {
+    const result = await setEkran1Target(id, value);
+    logActivity(req, "ekran1_hedef_guncelle", "product_models", { id, ekran1Target: result.ekran1Target });
     void bumpEkranRefreshSignal().catch(() => {});
     res.json(result);
   } catch (e) {

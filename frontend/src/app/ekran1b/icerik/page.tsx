@@ -10,8 +10,8 @@ import Link from "next/link";
 import {
   getSecondaryDayMeta,
   getSecondarySimpleTotals,
-  getEkran5Target,
-  setEkran5Target,
+  getEkran1Target,
+  setEkran1Target,
   getEkranRefreshSignal,
   setAuthToken,
   type SecondaryDayMeta,
@@ -174,14 +174,16 @@ export default function Ekran1BIcerikPage() {
       }
       const [totalsRes, targetRes] = await Promise.all([
         getSecondarySimpleTotals(today, mid).catch(() => null),
-        getEkran5Target(mid).catch(() => null),
+        getEkran1Target(mid).catch(() => null),
       ]);
       if (totalsRes) {
         setStages(totalsRes.stages);
         setDailySummaryStages(totalsRes.dailySummaryStages);
       }
-      // manualTarget = el ile ayarlanan (ekran5Target), apiTarget = modelin base hedefi (targetQuantity)
-      setManualTarget(targetRes?.ekran5Target != null && targetRes.ekran5Target > 0 ? targetRes.ekran5Target : null);
+      // manualTarget = el ile ayarlanan (ekran1Target), apiTarget = modelin base hedefi (targetQuantity)
+      setManualTarget(
+        targetRes?.ekran1Target != null && targetRes.ekran1Target > 0 ? targetRes.ekran1Target : null
+      );
       setApiTarget(targetRes?.targetQuantity != null && targetRes.targetQuantity > 0 ? targetRes.targetQuantity : 0);
       setLastUpdated(new Date().toLocaleTimeString("tr-TR"));
     } catch {
@@ -238,14 +240,14 @@ export default function Ekran1BIcerikPage() {
 
   async function handleHedefSave(v: number) {
     const mid = dayMeta.secondaryModelId;
-    if (mid) await setEkran5Target(mid, v).catch(() => {});
+    if (mid) await setEkran1Target(mid, v).catch(() => {});
     setManualTarget(v);
     setHedefOpen(false);
   }
 
   async function handleHedefClear() {
     const mid = dayMeta.secondaryModelId;
-    if (mid) await setEkran5Target(mid, null).catch(() => {});
+    if (mid) await setEkran1Target(mid, null).catch(() => {});
     setManualTarget(null);
     setHedefOpen(false);
   }
