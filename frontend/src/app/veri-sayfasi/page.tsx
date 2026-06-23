@@ -12,6 +12,7 @@ import { loadXlsx } from "@/lib/xlsxLazy";
 import {
   makeProsesKey,
   setProsesMap,
+  mergeProsesMapWithGenelFallback,
   rowsKeyForModel,
   GENEL_VERIMLILIK_MODEL_CODE,
 } from "@/lib/prosesVeri";
@@ -70,6 +71,7 @@ export default function VeriSayfasiPage() {
 
   /* model + satırlar — atomik tek obje (ikisi asla ayrışmaz) */
   const [modelState, setModelState] = useState<{ model: string; rows: Row[] }>({ model: "", rows: [] });
+  const [genelFallback, setGenelFallback] = useState(false);
   const activeModel = modelState.model;
   const rows        = modelState.rows;
 
@@ -87,24 +89,51 @@ export default function VeriSayfasiPage() {
   const [transferMode,    setTransferMode]    = useState<"merge" | "replace">("merge");
 
   /* ── Sunucudan yükle (API + localStorage fallback + otomatik migrasyon) ── */
-  async function loadModelRowsFromServer(model: string): Promise<Row[]> {
+  async function loadModelRowsFromServer(model: string): Promise<{ rows: Row[]; fromGenelFallback: boolean }> {
+    if (model === GENEL_VERIMLILIK_MODEL_CODE) {
+      try {
+        const serverRows = await getProsesVeriRowsFromServer(model);
+        if (serverRows.length > 0) {
+          saveModelRows(model, serverRows);
+          return { rows: serverRows, fromGenelFallback: false };
+        }
+        const localRows = loadModelRows(model);
+        return { rows: localRows, fromGenelFallback: false };
+      } catch {
+        return { rows: loadModelRows(model), fromGenelFallback: false };
+      }
+    }
+
     try {
       const serverRows = await getProsesVeriRowsFromServer(model);
       if (serverRows.length > 0) {
-        // Sunucu verisi varsa localStorage cache'i güncelle
         saveModelRows(model, serverRows);
-        return serverRows;
+        return { rows: serverRows, fromGenelFallback: false };
       }
-      // Sunucu boş — localStorage'da eski veri varsa otomatik yükle
+      const genelRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE).catch(() => []);
+      if (genelRows.length > 0) {
+        return { rows: genelRows, fromGenelFallback: true };
+      }
       const localRows = loadModelRows(model);
       if (localRows.length > 0) {
-        // Arka planda sunucuya yükle (migrasyon)
-        saveProsesVeriRowsToServer(model, localRows).catch(() => {/* sessiz hata */});
+        saveProsesVeriRowsToServer(model, localRows).catch(() => {});
+        return { rows: localRows, fromGenelFallback: false };
       }
-      return localRows;
+      return { rows: [], fromGenelFallback: false };
     } catch {
-      // API erişim hatası — localStorage'a düş
-      return loadModelRows(model);
+      const localRows = loadModelRows(model);
+      if (localRows.length > 0) {
+        return { rows: localRows, fromGenelFallback: false };
+      }
+      try {
+        const genelRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE);
+        if (genelRows.length > 0) {
+          return { rows: genelRows, fromGenelFallback: true };
+        }
+      } catch {
+        /* ignore */
+      }
+      return { rows: [], fromGenelFallback: false };
     }
   }
 
@@ -127,9 +156,11 @@ export default function VeriSayfasiPage() {
         if (procs.length) setSelectedProcess(procs[0].name);
         const first = mds[0]?.modelCode ?? "";
         if (first) {
-          const rows = await loadModelRowsFromServer(first);
+          const { rows, fromGenelFallback } = await loadModelRowsFromServer(first);
+          setGenelFallback(fromGenelFallback);
           setModelState({ model: first, rows });
         } else {
+          setGenelFallback(false);
           setModelState({ model: "", rows: [] });
         }
       })
@@ -139,8 +170,10 @@ export default function VeriSayfasiPage() {
   /* ── Model değişimi — sunucudan yükle ── */
   async function switchModel(model: string) {
     setEdit(EDIT_RESET);
-    setModelState({ model, rows: loadModelRows(model) }); // önce localStorage (anlık)
-    const rows = await loadModelRowsFromServer(model);    // sonra sunucu (güncel)
+    setGenelFallback(false);
+    setModelState({ model, rows: loadModelRows(model) });
+    const { rows, fromGenelFallback } = await loadModelRowsFromServer(model);
+    setGenelFallback(fromGenelFallback);
     setModelState({ model, rows });
   }
 
@@ -502,6 +535,21 @@ export default function VeriSayfasiPage() {
           </div>
         )}
       </section>
+
+      {genelFallback && activeModel && activeModel !== GENEL_VERIMLILIK_MODEL_CODE ? (
+        <section className="rounded-2xl border border-sky-200/80 bg-sky-50/90 px-5 py-3.5 shadow-sm dark:border-sky-800/50 dark:bg-sky-950/25">
+          <p className="text-sm font-medium text-sky-900 dark:text-sky-200">
+            Bu model için kayıtlı verimlilik verisi yok; tabloda{" "}
+            <Link href="/genel-verimlilik" className="font-semibold underline-offset-2 hover:underline">
+              genel verimlilik
+            </Link>{" "}
+            değerleri gösteriliyor.
+          </p>
+          <p className="mt-1 text-xs text-sky-800/90 dark:text-sky-300/90">
+            Model özel dk değerleri girmek için aşağıdaki formu kullanın; kaydettiğinizde bu modele özel liste devreye girer.
+          </p>
+        </section>
+      ) : null}
 
       {/* ── Veri giriş formu ─────────────────────────────── */}
       {activeModel && (

@@ -95,6 +95,59 @@ export function deleteWorkerName(id) {
   });
 }
 
+/** Toplu Excel: aynı isim tekrar yüklenmez (duplicateSame). */
+export function bulkInsertWorkerNames(names) {
+  const list = Array.isArray(names) ? names : [];
+  return new Promise((resolve, reject) => {
+    if (list.length === 0) {
+      resolve({ inserted: 0, skippedInvalid: 0, duplicateSame: 0 });
+      return;
+    }
+    let inserted = 0;
+    let skippedInvalid = 0;
+    let duplicateSame = 0;
+
+    db.run("BEGIN", (bErr) => {
+      if (bErr) return reject(bErr);
+
+      const fail = (e) => {
+        db.run("ROLLBACK", () => reject(e));
+      };
+
+      const step = (i) => {
+        if (i >= list.length) {
+          db.run("COMMIT", (cErr) => {
+            if (cErr) return reject(cErr);
+            resolve({ inserted, skippedInvalid, duplicateSame });
+          });
+          return;
+        }
+        const n = String(list[i] ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+        if (!n) {
+          skippedInvalid++;
+          step(i + 1);
+          return;
+        }
+        db.get("SELECT id FROM worker_names WHERE name = ?", [n], (gErr, row) => {
+          if (gErr) return fail(gErr);
+          if (row) {
+            duplicateSame++;
+            step(i + 1);
+            return;
+          }
+          db.run("INSERT INTO worker_names (name) VALUES (?)", [n], function (insErr) {
+            if (insErr) return fail(insErr);
+            inserted++;
+            step(i + 1);
+          });
+        });
+      };
+
+      step(0);
+    });
+  });
+}
+
 export function getWorkers() {
   return new Promise((resolve, reject) => {
     db.all(
@@ -1769,12 +1822,68 @@ function eachWeekdayIsoInRange(startIso, endIso) {
   return out;
 }
 
-export function applyHedefSessionToDailyMeta({ modelId, startDate, endDate, productName, productModel }) {
+function formatSessionConflictMessage(conflicts, scopeLabel) {
+  if (!conflicts.length) return "";
+  const byModel = new Map();
+  for (const c of conflicts) {
+    const label = c.modelCode
+      ? `${c.modelCode}${c.productName ? ` — ${c.productName}` : ""}`
+      : `Model #${c.modelId}`;
+    if (!byModel.has(label)) byModel.set(label, []);
+    byModel.get(label).push(c.productionDate);
+  }
+  const parts = [];
+  for (const [label, dates] of byModel) {
+    const sorted = [...dates].sort();
+    const show =
+      sorted.length <= 5
+        ? sorted.join(", ")
+        : `${sorted.slice(0, 3).join(", ")} … (+${sorted.length - 3} gün)`;
+    parts.push(`${label}: ${show}`);
+  }
+  return `${scopeLabel} tarih aralığında başka modele atanmış günler var. Önce o modelde tarihleri düzeltin: ${parts.join("; ")}`;
+}
+
+export async function findModelSessionConflicts({ modelId, startDate, endDate, scope }) {
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid < 1) return [];
+  const dates = eachWeekdayIsoInRange(startDate, endDate);
+  if (!dates.length) return [];
+  const table = scope === "utuPaket" ? "utu_paket_meta" : "daily_product_meta";
+  const placeholders = dates.map(() => "?").join(",");
+  const rows = await dbAll(
+    `SELECT m.production_date AS productionDate, m.model_id AS modelId,
+            pm.model_code AS modelCode, pm.product_name AS productName
+     FROM ${table} m
+     LEFT JOIN product_models pm ON pm.id = m.model_id
+     WHERE m.production_date IN (${placeholders})
+       AND m.model_id IS NOT NULL
+       AND m.model_id != ?`,
+    [...dates, mid]
+  );
+  return (rows || []).map((r) => ({
+    productionDate: String(r.productionDate),
+    modelId: Number(r.modelId),
+    modelCode: String(r.modelCode || ""),
+    productName: String(r.productName || ""),
+  }));
+}
+
+export async function applyHedefSessionToDailyMeta({ modelId, startDate, endDate, productName, productModel }) {
   const name = String(productName ?? "").trim();
   const model = String(productModel ?? "").trim();
   const mid = Number(modelId);
   if (!Number.isFinite(mid) || mid < 1) {
-    return Promise.reject(new Error("Geçersiz model"));
+    throw new Error("Geçersiz model");
+  }
+  const conflicts = await findModelSessionConflicts({
+    modelId: mid,
+    startDate,
+    endDate,
+    scope: "production",
+  });
+  if (conflicts.length) {
+    throw new Error(formatSessionConflictMessage(conflicts, "Üretim"));
   }
   const dates = eachWeekdayIsoInRange(startDate, endDate);
   return new Promise((resolve, reject) => {
@@ -1807,13 +1916,22 @@ export function applyHedefSessionToDailyMeta({ modelId, startDate, endDate, prod
 }
 
 /** Ütü–paket ve Ekran5: seçili günlere model ata (veri girişinden bağımsız) */
-export function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, productName, productModel }) {
+export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, productName, productModel }) {
   const name = String(productName ?? "").trim();
   const model = String(productModel ?? "").trim();
   const mid = Number(modelId);
   const start = String(startDate).trim();
   if (!Number.isFinite(mid) || mid < 1) {
-    return Promise.reject(new Error("Geçersiz model"));
+    throw new Error("Geçersiz model");
+  }
+  const conflicts = await findModelSessionConflicts({
+    modelId: mid,
+    startDate,
+    endDate,
+    scope: "utuPaket",
+  });
+  if (conflicts.length) {
+    throw new Error(formatSessionConflictMessage(conflicts, "Ütü–paket"));
   }
   const dates = eachWeekdayIsoInRange(startDate, endDate);
   return new Promise((resolve, reject) => {
@@ -1879,15 +1997,40 @@ export async function getUtuPaketModelForDate(date) {
 export function listProductModels() {
   return new Promise((resolve, reject) => {
     db.all(
-      `SELECT id, model_code AS modelCode, product_name AS productName, created_at AS createdAt,
-              takipsan_product_label AS takipsanProductLabel,
-              takipsan_order_code AS takipsanOrderCode,
-              target_quantity AS targetQuantity,
-              session_start_date AS sessionStartDate,
-              utu_paket_session_start_date AS utuPaketSessionStartDate,
-              primary_consignment_id AS primaryConsignmentId,
-              secondary_consignment_id AS secondaryConsignmentId
-       FROM product_models ORDER BY model_code COLLATE NOCASE`,
+      `SELECT pm.id, pm.model_code AS modelCode, pm.product_name AS productName, pm.created_at AS createdAt,
+              pm.takipsan_product_label AS takipsanProductLabel,
+              pm.takipsan_order_code AS takipsanOrderCode,
+              pm.target_quantity AS targetQuantity,
+              pm.session_start_date AS sessionStartDate,
+              pm.utu_paket_session_start_date AS utuPaketSessionStartDate,
+              pm.primary_consignment_id AS primaryConsignmentId,
+              pm.secondary_consignment_id AS secondaryConsignmentId,
+              prod.firstDate AS productionFirstDate,
+              prod.lastDate AS productionLastDate,
+              COALESCE(prod.dayCount, 0) AS productionDayCount,
+              up.firstDate AS utuPaketFirstDate,
+              up.lastDate AS utuPaketLastDate,
+              COALESCE(up.dayCount, 0) AS utuPaketDayCount
+       FROM product_models pm
+       LEFT JOIN (
+         SELECT model_id,
+                MIN(production_date) AS firstDate,
+                MAX(production_date) AS lastDate,
+                COUNT(*) AS dayCount
+         FROM daily_product_meta
+         WHERE model_id IS NOT NULL
+         GROUP BY model_id
+       ) prod ON prod.model_id = pm.id
+       LEFT JOIN (
+         SELECT model_id,
+                MIN(production_date) AS firstDate,
+                MAX(production_date) AS lastDate,
+                COUNT(*) AS dayCount
+         FROM utu_paket_meta
+         WHERE model_id IS NOT NULL
+         GROUP BY model_id
+       ) up ON up.model_id = pm.id
+       ORDER BY pm.model_code COLLATE NOCASE`,
       [],
       (err, rows) => {
         if (err) return reject(err);
@@ -1895,6 +2038,8 @@ export function listProductModels() {
           (rows || []).map((r) => ({
             ...r,
             targetQuantity: Math.max(0, Math.floor(Number(r.targetQuantity) || 0)),
+            productionDayCount: Math.max(0, Math.floor(Number(r.productionDayCount) || 0)),
+            utuPaketDayCount: Math.max(0, Math.floor(Number(r.utuPaketDayCount) || 0)),
             isTakipsanLinked: Boolean(
               String(r.takipsanProductLabel || r.takipsanOrderCode || "").trim()
             ),
@@ -1908,15 +2053,40 @@ export function listProductModels() {
 export function getProductModelWithBaselines(id) {
   return new Promise((resolve, reject) => {
     db.get(
-      `SELECT id, model_code AS modelCode, product_name AS productName, created_at AS createdAt,
-              takipsan_product_label AS takipsanProductLabel,
-              takipsan_order_code AS takipsanOrderCode,
-              target_quantity AS targetQuantity,
-              session_start_date AS sessionStartDate,
-              utu_paket_session_start_date AS utuPaketSessionStartDate,
-              primary_consignment_id AS primaryConsignmentId,
-              secondary_consignment_id AS secondaryConsignmentId
-       FROM product_models WHERE id = ?`,
+      `SELECT pm.id, pm.model_code AS modelCode, pm.product_name AS productName, pm.created_at AS createdAt,
+              pm.takipsan_product_label AS takipsanProductLabel,
+              pm.takipsan_order_code AS takipsanOrderCode,
+              pm.target_quantity AS targetQuantity,
+              pm.session_start_date AS sessionStartDate,
+              pm.utu_paket_session_start_date AS utuPaketSessionStartDate,
+              pm.primary_consignment_id AS primaryConsignmentId,
+              pm.secondary_consignment_id AS secondaryConsignmentId,
+              prod.firstDate AS productionFirstDate,
+              prod.lastDate AS productionLastDate,
+              COALESCE(prod.dayCount, 0) AS productionDayCount,
+              up.firstDate AS utuPaketFirstDate,
+              up.lastDate AS utuPaketLastDate,
+              COALESCE(up.dayCount, 0) AS utuPaketDayCount
+       FROM product_models pm
+       LEFT JOIN (
+         SELECT model_id,
+                MIN(production_date) AS firstDate,
+                MAX(production_date) AS lastDate,
+                COUNT(*) AS dayCount
+         FROM daily_product_meta
+         WHERE model_id IS NOT NULL
+         GROUP BY model_id
+       ) prod ON prod.model_id = pm.id
+       LEFT JOIN (
+         SELECT model_id,
+                MIN(production_date) AS firstDate,
+                MAX(production_date) AS lastDate,
+                COUNT(*) AS dayCount
+         FROM utu_paket_meta
+         WHERE model_id IS NOT NULL
+         GROUP BY model_id
+       ) up ON up.model_id = pm.id
+       WHERE pm.id = ?`,
       [id],
       (err, row) => {
         if (err) return reject(err);
@@ -1938,6 +2108,8 @@ export function getProductModelWithBaselines(id) {
                 resolve({
                   ...row,
                   targetQuantity: Math.max(0, Math.floor(Number(row.targetQuantity) || 0)),
+                  productionDayCount: Math.max(0, Math.floor(Number(row.productionDayCount) || 0)),
+                  utuPaketDayCount: Math.max(0, Math.floor(Number(row.utuPaketDayCount) || 0)),
                   isTakipsanLinked: Boolean(
                     String(row.takipsanProductLabel || row.takipsanOrderCode || "").trim()
                   ),

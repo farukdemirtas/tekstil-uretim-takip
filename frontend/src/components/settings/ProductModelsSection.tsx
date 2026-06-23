@@ -5,6 +5,7 @@ import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
   applyHedefSession,
   applyUtuPaketSession,
+  checkModelSessionConflicts,
   createProductModel,
   deleteProductModel,
   getProcesses,
@@ -14,6 +15,7 @@ import {
   listProductModels,
   refreshProductModelTarget,
   updateProductModel,
+  type ModelSessionConflict,
   type ProcessRow,
   type ProductModelListItem,
   type TeamRow,
@@ -45,6 +47,79 @@ function emptyRow(): BaselineRow {
 
 function emptyDailyRow(): DailySummaryRow {
   return { teamCode: "", processName: "", arkaHalf: 0 };
+}
+
+function formatIsoDateTr(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
+function formatProductionRange(
+  first?: string | null,
+  last?: string | null,
+  dayCount?: number
+): string {
+  if (!first || !last) return "Üretim kaydı yok";
+  const a = formatIsoDateTr(first);
+  const b = formatIsoDateTr(last);
+  if (first === last) {
+    return dayCount && dayCount > 0 ? `Üretim: ${a} (${dayCount} gün)` : `Üretim: ${a}`;
+  }
+  return dayCount && dayCount > 0 ? `Üretim: ${a} – ${b} (${dayCount} gün)` : `Üretim: ${a} – ${b}`;
+}
+
+type SessionDateFields = Pick<
+  ProductModelListItem,
+  | "productionFirstDate"
+  | "productionLastDate"
+  | "sessionStartDate"
+  | "utuPaketFirstDate"
+  | "utuPaketLastDate"
+  | "utuPaketSessionStartDate"
+>;
+
+function resolveSessionRange(
+  first?: string | null,
+  last?: string | null,
+  fallbackStart?: string | null
+): { start: string; end: string } {
+  const today = clampToWeekdayIso(todayWeekdayIso());
+  const start = first
+    ? clampToWeekdayIso(String(first))
+    : fallbackStart
+      ? clampToWeekdayIso(String(fallbackStart))
+      : today;
+  const end = last ? clampToWeekdayIso(String(last)) : start;
+  return { start, end: end >= start ? end : start };
+}
+
+function formatConflictList(conflicts: ModelSessionConflict[]): string {
+  const byModel = new Map<string, string[]>();
+  for (const c of conflicts) {
+    const label = c.modelCode
+      ? `${c.modelCode}${c.productName ? ` — ${c.productName}` : ""}`
+      : `Model #${c.modelId}`;
+    if (!byModel.has(label)) byModel.set(label, []);
+    byModel.get(label)!.push(formatIsoDateTr(c.productionDate));
+  }
+  return [...byModel.entries()]
+    .map(([label, dates]) => {
+      const sorted = dates.sort();
+      return sorted.length <= 5
+        ? `${label}: ${sorted.join(", ")}`
+        : `${label}: ${sorted.slice(0, 3).join(", ")} (+${sorted.length - 3} gün)`;
+    })
+    .join(" · ");
+}
+
+function SessionConflictWarning({ conflicts, label }: { conflicts: ModelSessionConflict[]; label: string }) {
+  if (!conflicts.length) return null;
+  return (
+    <p className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+      ⚠ {label} aralığında başka modele atanmış günler var. Önce o modelde tarihleri düzeltin: {formatConflictList(conflicts)}
+    </p>
+  );
 }
 
 export default function ProductModelsSection() {
@@ -80,8 +155,24 @@ export default function ProductModelsSection() {
   const [utuPaketApplyBusy, setUtuPaketApplyBusy] = useState(false);
   const [utuPaketApplyMsg, setUtuPaketApplyMsg] = useState<string | null>(null);
   const [utuPaketApplyErr, setUtuPaketApplyErr] = useState<string | null>(null);
+  const [hedefConflicts, setHedefConflicts] = useState<ModelSessionConflict[]>([]);
+  const [utuPaketConflicts, setUtuPaketConflicts] = useState<ModelSessionConflict[]>([]);
 
   const processNames = useMemo(() => processes.map((p) => p.name).sort((a, b) => a.localeCompare(b, "tr")), [processes]);
+
+  function applyStoredSessionDates(d: SessionDateFields) {
+    const prod = resolveSessionRange(d.productionFirstDate, d.productionLastDate, d.sessionStartDate);
+    setHedefApplyStart(prod.start);
+    setHedefApplyEnd(prod.end);
+    setSessionStartDate(prod.start);
+    const up = resolveSessionRange(
+      d.utuPaketFirstDate,
+      d.utuPaketLastDate,
+      d.utuPaketSessionStartDate || prod.start
+    );
+    setUtuPaketApplyStart(up.start);
+    setUtuPaketApplyEnd(up.end);
+  }
 
   const loadTeamsAndProcesses = useCallback(async () => {
     const [t, p] = await Promise.all([getTeams(), getProcesses()]);
@@ -107,6 +198,13 @@ export default function ProductModelsSection() {
   useEffect(() => { void loadAll(); }, [loadAll]);
 
   useEffect(() => {
+    if (editingId === null) return;
+    requestAnimationFrame(() => {
+      document.getElementById(`model-edit-panel-${editingId}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }, [editingId]);
+
+  useEffect(() => {
     if (!list.length) return;
     if (!hasPermission("hedefTakip")) return;
     try {
@@ -120,6 +218,42 @@ export default function ProductModelsSection() {
       }
     } catch { /* ignore */ }
   }, [list]);
+
+  useEffect(() => {
+    if (typeof editingId !== "number") {
+      setHedefConflicts([]);
+      return;
+    }
+    const start = clampToWeekdayIso(hedefApplyStart);
+    const end = clampToWeekdayIso(hedefApplyEnd);
+    if (!start || !end || start > end) {
+      setHedefConflicts([]);
+      return;
+    }
+    let cancelled = false;
+    void checkModelSessionConflicts({ modelId: editingId, startDate: start, endDate: end, scope: "production" })
+      .then((rows) => { if (!cancelled) setHedefConflicts(rows); })
+      .catch(() => { if (!cancelled) setHedefConflicts([]); });
+    return () => { cancelled = true; };
+  }, [editingId, hedefApplyStart, hedefApplyEnd]);
+
+  useEffect(() => {
+    if (typeof editingId !== "number") {
+      setUtuPaketConflicts([]);
+      return;
+    }
+    const start = clampToWeekdayIso(utuPaketApplyStart);
+    const end = clampToWeekdayIso(utuPaketApplyEnd);
+    if (!start || !end || start > end) {
+      setUtuPaketConflicts([]);
+      return;
+    }
+    let cancelled = false;
+    void checkModelSessionConflicts({ modelId: editingId, startDate: start, endDate: end, scope: "utuPaket" })
+      .then((rows) => { if (!cancelled) setUtuPaketConflicts(rows); })
+      .catch(() => { if (!cancelled) setUtuPaketConflicts([]); });
+    return () => { cancelled = true; };
+  }, [editingId, utuPaketApplyStart, utuPaketApplyEnd]);
 
   async function startNew() {
     setEditingId("new");
@@ -135,6 +269,12 @@ export default function ProductModelsSection() {
     setPrimaryConsignmentId("");
     setIsTakipsanLinkedEdit(false);
     setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
+    setHedefApplyStart(clampToWeekdayIso(todayWeekdayIso()));
+    setHedefApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
+    setUtuPaketApplyStart(clampToWeekdayIso(todayWeekdayIso()));
+    setUtuPaketApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
+    setHedefConflicts([]);
+    setUtuPaketConflicts([]);
     setError(null);
     try { await loadTeamsAndProcesses(); } catch (e) {
       setError(e instanceof Error ? e.message : "Bölüm ve proses listesi alınamadı");
@@ -161,6 +301,12 @@ export default function ProductModelsSection() {
       setBaselines([emptyRow()]);
       setDailySummaryRows([]);
       setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
+      setHedefApplyStart(clampToWeekdayIso(todayWeekdayIso()));
+      setHedefApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
+      setUtuPaketApplyStart(clampToWeekdayIso(todayWeekdayIso()));
+      setUtuPaketApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
+      setHedefConflicts([]);
+      setUtuPaketConflicts([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Takipsan verisi alınamadı");
     } finally {
@@ -186,18 +332,14 @@ export default function ProductModelsSection() {
       setTargetQuantity(d.targetQuantity ?? 0);
       setSecondaryConsignmentId(d.secondaryConsignmentId ?? "");
       setPrimaryConsignmentId(d.primaryConsignmentId ?? "");
-      const ssd = d.sessionStartDate ? clampToWeekdayIso(String(d.sessionStartDate)) : clampToWeekdayIso(todayWeekdayIso());
-      setSessionStartDate(ssd);
-      setUtuPaketApplyStart(
-        d.utuPaketSessionStartDate ? clampToWeekdayIso(String(d.utuPaketSessionStartDate)) : ssd
-      );
-      setUtuPaketApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
-      // Formun içindeki "Günlere uygula" alanını mevcut model ve tarihle hazırla
+      applyStoredSessionDates(d);
       setHedefApplyModelId(id);
-      setHedefApplyStart(ssd);
-      setHedefApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
       setHedefApplyMsg(null);
       setHedefApplyErr(null);
+      setUtuPaketApplyMsg(null);
+      setUtuPaketApplyErr(null);
+      setHedefConflicts([]);
+      setUtuPaketConflicts([]);
       const rows = (d.baselines || []).slice().sort((a, b) => a.sortOrder - b.sortOrder).map((row) => ({ teamCode: row.teamCode, processName: row.processName, arkaHalf: row.arkaHalf ? 1 : 0 }));
       setBaselines(rows.length ? rows : [emptyRow()]);
       const dailyRows = (d.dailySummaryProcesses || []).slice().sort((a, b) => a.sortOrder - b.sortOrder).map((row) => ({ teamCode: row.teamCode, processName: row.processName, arkaHalf: row.arkaHalf ? 1 : 0 }));
@@ -207,7 +349,12 @@ export default function ProductModelsSection() {
     }
   }
 
-  function cancelEdit() { setEditingId(null); setError(null); }
+  function cancelEdit() {
+    setEditingId(null);
+    setError(null);
+    setHedefConflicts([]);
+    setUtuPaketConflicts([]);
+  }
 
   function setRow(index: number, field: keyof BaselineRow, value: string | number) {
     setBaselines((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
@@ -273,11 +420,19 @@ export default function ProductModelsSection() {
     const start = clampToWeekdayIso(hedefApplyStart);
     const end = clampToWeekdayIso(hedefApplyEnd);
     if (!start || !end || start > end) { setHedefApplyErr("Geçerli bir hafta içi tarih aralığı seçin."); return; }
+    if (hedefConflicts.length > 0) {
+      setHedefApplyErr("Seçili aralıkta başka modele atanmış günler var. Önce o modelde tarihleri düzeltin.");
+      return;
+    }
     setHedefApplyBusy(true);
     try {
       const m = await getProductModel(Number(hedefApplyModelId));
       const { datesUpdated } = await applyHedefSession({ modelId: Number(hedefApplyModelId), startDate: start, endDate: end, productName: m.productName, productModel: m.modelCode });
       setHedefApplyMsg(datesUpdated > 0 ? `${datesUpdated} iş gününe ürün adı ve model kodu yazıldı.` : "Aralıkta güncellenecek iş günü bulunamadı.");
+      const refreshed = await getProductModel(Number(hedefApplyModelId));
+      applyStoredSessionDates(refreshed);
+      setHedefConflicts([]);
+      await loadAll();
     } catch (e) {
       setHedefApplyErr(e instanceof Error ? e.message : "Uygulanamadı");
     } finally {
@@ -298,6 +453,10 @@ export default function ProductModelsSection() {
       setUtuPaketApplyErr("Geçerli bir hafta içi tarih aralığı seçin.");
       return;
     }
+    if (utuPaketConflicts.length > 0) {
+      setUtuPaketApplyErr("Seçili aralıkta başka modele atanmış günler var. Önce o modelde tarihleri düzeltin.");
+      return;
+    }
     setUtuPaketApplyBusy(true);
     try {
       const m = await getProductModel(editingId);
@@ -313,6 +472,10 @@ export default function ProductModelsSection() {
           ? `${datesUpdated} iş günü ütü–paket ve Ekran5 için bu modele bağlandı.`
           : "Aralıkta güncellenecek iş günü bulunamadı."
       );
+      const refreshed = await getProductModel(editingId);
+      applyStoredSessionDates(refreshed);
+      setUtuPaketConflicts([]);
+      await loadAll();
     } catch (e) {
       setUtuPaketApplyErr(e instanceof Error ? e.message : "Uygulanamadı");
     } finally {
@@ -392,129 +555,13 @@ export default function ProductModelsSection() {
     );
   }
 
-  return (
-    <section className="space-y-4">
-
-      {/* Hata */}
-      {error ? (
-        <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
-          <span className="shrink-0">⚠</span>
-          <span>{error}</span>
-        </div>
-      ) : null}
-
-      {/* ══ MODEL LİSTESİ ═════════════════════════════════════════════════════ */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-
-        {/* Başlık + Ekle butonları */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-700">
-          <div>
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">Ürün Modelleri</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Hedef, bölüm ve proses tanımları</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Takipsan'dan ekle — isteğe bağlı sevkiyat ID */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 dark:border-sky-800/50 dark:bg-sky-950/30">
-              <svg className="h-3.5 w-3.5 shrink-0 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
-              <input
-                type="text"
-                value={takipsanInputId}
-                onChange={(e) => setTakipsanInputId(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !takipsanBusy) void startNewFromTakipsan(); }}
-                placeholder="Sevkiyat ID (opsiyonel)"
-                className="w-36 bg-transparent text-xs font-medium text-slate-700 placeholder-slate-400 outline-none dark:text-slate-200 sm:w-44"
-              />
-              <button
-                type="button"
-                onClick={() => void startNewFromTakipsan()}
-                disabled={takipsanBusy}
-                className="flex shrink-0 items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-              >
-                {takipsanBusy
-                  ? <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                  : null}
-                {takipsanBusy ? "Yükleniyor…" : "Çek"}
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => void startNew()}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-              Manuel ekle
-            </button>
-          </div>
-        </div>
-
-        {/* Model listesi */}
-        {loading && list.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
-            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-            Yükleniyor…
-          </div>
-        ) : list.length === 0 ? (
-          <div className="py-10 text-center">
-            <p className="text-sm text-slate-400">Henüz model yok.</p>
-            <p className="mt-1 text-xs text-slate-400">Takipsan&apos;dan veya manuel olarak ekleyin.</p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-            {list.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
-                <div className="flex min-w-0 items-start gap-3">
-                  {/* İkon */}
-                  <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${m.isTakipsanLinked ? "bg-sky-500" : "bg-slate-400"} text-white`}>
-                    {m.isTakipsanLinked
-                      ? <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
-                      : <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg>
-                    }
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      {m.isTakipsanLinked
-                        ? m.takipsanProductLabel || formatModelPickerLabel(m.productName, m.modelCode)
-                        : `${m.modelCode}${m.productName ? ` — ${m.productName}` : ""}`}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      {m.targetQuantity != null && m.targetQuantity > 0 ? (
-                        <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700 ring-1 ring-teal-200/80 dark:bg-teal-950/30 dark:text-teal-300 dark:ring-teal-800/50">
-                          Hedef {m.targetQuantity.toLocaleString("tr-TR")} adet
-                        </span>
-                      ) : null}
-                      {(m.primaryConsignmentId || m.secondaryConsignmentId) ? (
-                        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700 ring-1 ring-violet-200/80 dark:bg-violet-950/30 dark:text-violet-300 dark:ring-violet-800/50">
-                          2 PO birleşik
-                        </span>
-                      ) : null}
-                      {m.isTakipsanLinked ? (
-                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600 dark:bg-sky-950/30 dark:text-sky-400">Takipsan</span>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex shrink-0 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => void startEdit(m.id)}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
-                  >Düzenle</button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDelete(m.id)}
-                    className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/30"
-                  >Sil</button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* ══ DÜZENLEME FORMU ══════════════════════════════════════════════════ */}
-      {editingId !== null ? (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-
+  function renderEditPanel() {
+    if (editingId === null) return null;
+    return (
+      <div
+        id={`model-edit-panel-${editingId}`}
+        className="rounded-2xl border border-teal-200/80 bg-white shadow-sm dark:border-teal-800/50 dark:bg-slate-900/40"
+      >
           {/* Form başlığı */}
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-700">
             <div className="flex items-center gap-2.5">
@@ -531,9 +578,7 @@ export default function ProductModelsSection() {
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12" /></svg>
             </button>
           </div>
-
           <div className="divide-y divide-slate-100 dark:divide-slate-700">
-
             {/* ── Ürün Bilgileri ── */}
             <div className="px-5 py-4">
               <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Ürün Bilgileri</p>
@@ -636,16 +681,16 @@ export default function ProductModelsSection() {
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-teal-700 dark:text-teal-400">Üretim Günlerine Uygula</p>
-                    <p className="text-[11px] text-slate-400">Seçili hafta içi günlere bu modeli ata; Ekran 1 «Biten» de bu tarihten sayılır.</p>
+                    <p className="text-[11px] text-slate-400">Seçili hafta içi günlere bu modeli ata; Ekran 1 «Biten» de bu tarihten sayılır. Tarihler sistemde kayıtlı aralıktan otomatik gelir.</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-end gap-3">
-                  <WeekdayDatePicker label="Başlangıç" value={hedefApplyStart} onChange={(v) => { setHedefApplyStart(coerceWeekdayPickerValue(v)); setSessionStartDate(coerceWeekdayPickerValue(v)); }} className="min-w-[10rem] flex-1" />
-                  <WeekdayDatePicker label="Bitiş" value={hedefApplyEnd} onChange={(v) => setHedefApplyEnd(coerceWeekdayPickerValue(v))} className="min-w-[10rem] flex-1" />
+                  <WeekdayDatePicker label="Başlangıç" value={hedefApplyStart} onChange={(v) => { setHedefApplyStart(coerceWeekdayPickerValue(v)); setSessionStartDate(coerceWeekdayPickerValue(v)); setHedefApplyMsg(null); setHedefApplyErr(null); }} className="min-w-[10rem] flex-1" />
+                  <WeekdayDatePicker label="Bitiş" value={hedefApplyEnd} onChange={(v) => { setHedefApplyEnd(coerceWeekdayPickerValue(v)); setHedefApplyMsg(null); setHedefApplyErr(null); }} className="min-w-[10rem] flex-1" />
                   {typeof editingId === "number" ? (
                     <button
                       type="button"
-                      disabled={hedefApplyBusy}
+                      disabled={hedefApplyBusy || hedefConflicts.length > 0}
                       onClick={() => {
                         void handleHedefApplyToProduction();
                       }}
@@ -661,6 +706,7 @@ export default function ProductModelsSection() {
                 {hedefApplyMsg ? (
                   <p className="mt-2.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">✓ {hedefApplyMsg}</p>
                 ) : null}
+                <SessionConflictWarning conflicts={hedefConflicts} label="Üretim" />
                 {hedefApplyErr ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {hedefApplyErr}</p> : null}
               </div>
             ) : (
@@ -679,25 +725,25 @@ export default function ProductModelsSection() {
                     Ütü–Paket İçin Uygula
                   </p>
                   <p className="text-[11px] text-slate-400">
-                    Seçili günlere bu modeli ata; ütü–paket veri girişi, Takipsan paketleme ve Ekran5 bu modele göre çalışır (veri girişi modelinden bağımsız).
+                    Seçili günlere bu modeli ata; ütü–paket veri girişi, Takipsan paketleme ve Ekran5 bu modele göre çalışır (veri girişi modelinden bağımsız). Tarihler sistemde kayıtlı aralıktan otomatik gelir.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-end gap-3">
                   <WeekdayDatePicker
                     label="Başlangıç"
                     value={utuPaketApplyStart}
-                    onChange={(v) => setUtuPaketApplyStart(coerceWeekdayPickerValue(v))}
+                    onChange={(v) => { setUtuPaketApplyStart(coerceWeekdayPickerValue(v)); setUtuPaketApplyMsg(null); setUtuPaketApplyErr(null); }}
                     className="min-w-[10rem] flex-1"
                   />
                   <WeekdayDatePicker
                     label="Bitiş"
                     value={utuPaketApplyEnd}
-                    onChange={(v) => setUtuPaketApplyEnd(coerceWeekdayPickerValue(v))}
+                    onChange={(v) => { setUtuPaketApplyEnd(coerceWeekdayPickerValue(v)); setUtuPaketApplyMsg(null); setUtuPaketApplyErr(null); }}
                     className="min-w-[10rem] flex-1"
                   />
                   <button
                     type="button"
-                    disabled={utuPaketApplyBusy}
+                    disabled={utuPaketApplyBusy || utuPaketConflicts.length > 0}
                     onClick={() => void handleUtuPaketApplyToDays()}
                     className="flex items-center gap-1.5 rounded-lg border border-indigo-400 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
                   >
@@ -709,6 +755,7 @@ export default function ProductModelsSection() {
                     ✓ {utuPaketApplyMsg}
                   </p>
                 ) : null}
+                <SessionConflictWarning conflicts={utuPaketConflicts} label="Ütü–paket" />
                 {utuPaketApplyErr ? (
                   <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {utuPaketApplyErr}</p>
                 ) : null}
@@ -761,8 +808,6 @@ export default function ProductModelsSection() {
                 max={MAX_DAILY_SUMMARY_ROWS} addLabel="Özet prosesi ekle" canRemove={false} />
             </div>
           </div>
-
-          {/* Form footer */}
           <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4 dark:border-slate-700">
             <button type="button" onClick={cancelEdit}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
@@ -775,9 +820,139 @@ export default function ProductModelsSection() {
                 : "Kaydet"}
             </button>
           </div>
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+
+      {/* Hata */}
+      {error ? (
+        <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+          <span className="shrink-0">⚠</span>
+          <span>{error}</span>
         </div>
       ) : null}
 
+      {/* ══ MODEL LİSTESİ ═════════════════════════════════════════════════════ */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+
+        {/* Başlık + Ekle butonları */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-700">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Ürün Modelleri</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Hedef, bölüm ve proses tanımları</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Takipsan'dan ekle — isteğe bağlı sevkiyat ID */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 dark:border-sky-800/50 dark:bg-sky-950/30">
+              <svg className="h-3.5 w-3.5 shrink-0 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
+              <input
+                type="text"
+                value={takipsanInputId}
+                onChange={(e) => setTakipsanInputId(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !takipsanBusy) void startNewFromTakipsan(); }}
+                placeholder="Sevkiyat ID (opsiyonel)"
+                className="w-36 bg-transparent text-xs font-medium text-slate-700 placeholder-slate-400 outline-none dark:text-slate-200 sm:w-44"
+              />
+              <button
+                type="button"
+                onClick={() => void startNewFromTakipsan()}
+                disabled={takipsanBusy}
+                className="flex shrink-0 items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+              >
+                {takipsanBusy
+                  ? <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                  : null}
+                {takipsanBusy ? "Yükleniyor…" : "Çek"}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => void startNew()}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+              Manuel ekle
+            </button>
+          </div>
+        </div>
+
+        {/* Model listesi */}
+        {loading && list.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
+            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+            Yükleniyor…
+          </div>
+        ) : list.length === 0 && editingId !== "new" ? (
+          <div className="py-10 text-center">
+            <p className="text-sm text-slate-400">Henüz model yok.</p>
+            <p className="mt-1 text-xs text-slate-400">Takipsan&apos;dan veya manuel olarak ekleyin.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+            {editingId === "new" ? (
+              <li className="px-5 py-4">{renderEditPanel()}</li>
+            ) : null}
+            {list.map((m) =>
+              editingId === m.id ? (
+                <li key={m.id} className="px-5 py-4">
+                  {renderEditPanel()}
+                </li>
+              ) : (
+                <li key={m.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${m.isTakipsanLinked ? "bg-sky-500" : "bg-slate-400"} text-white`}>
+                      {m.isTakipsanLinked
+                        ? <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
+                        : <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg>
+                      }
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {m.isTakipsanLinked
+                          ? m.takipsanProductLabel || formatModelPickerLabel(m.productName, m.modelCode)
+                          : `${m.modelCode}${m.productName ? ` — ${m.productName}` : ""}`}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        {formatProductionRange(m.productionFirstDate, m.productionLastDate, m.productionDayCount)}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {m.targetQuantity != null && m.targetQuantity > 0 ? (
+                          <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700 ring-1 ring-teal-200/80 dark:bg-teal-950/30 dark:text-teal-300 dark:ring-teal-800/50">
+                            Hedef {m.targetQuantity.toLocaleString("tr-TR")} adet
+                          </span>
+                        ) : null}
+                        {(m.primaryConsignmentId || m.secondaryConsignmentId) ? (
+                          <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700 ring-1 ring-violet-200/80 dark:bg-violet-950/30 dark:text-violet-300 dark:ring-violet-800/50">
+                            2 PO birleşik
+                          </span>
+                        ) : null}
+                        {m.isTakipsanLinked ? (
+                          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600 dark:bg-sky-950/30 dark:text-sky-400">Takipsan</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void startEdit(m.id)}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >Düzenle</button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(m.id)}
+                      className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/30"
+                    >Sil</button>
+                  </div>
+                </li>
+              )
+            )}
+          </ul>
+        )}
+      </div>
 
     </section>
   );

@@ -120,6 +120,25 @@ export async function deleteWorkerName(id: number): Promise<void> {
   if (!res.ok) throw new Error("Silinemedi");
 }
 
+export type BulkWorkerNamesResult = {
+  inserted: number;
+  skippedInvalid: number;
+  duplicateSame: number;
+};
+
+export async function bulkInsertWorkerNames(names: string[]): Promise<BulkWorkerNamesResult> {
+  const res = await apiFetch(`${apiBase()}/worker-names/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ names }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Toplu yükleme başarısız");
+  }
+  return res.json() as Promise<BulkWorkerNamesResult>;
+}
+
 export type PersonnelBirthdayRow = {
   id: number;
   firstName: string;
@@ -816,6 +835,12 @@ export type ProductModelListItem = {
   secondaryConsignmentId?: string | null;
   primaryConsignmentId?: string | null;
   isTakipsanLinked?: boolean;
+  productionFirstDate?: string | null;
+  productionLastDate?: string | null;
+  productionDayCount?: number;
+  utuPaketFirstDate?: string | null;
+  utuPaketLastDate?: string | null;
+  utuPaketDayCount?: number;
 };
 
 /** arkaHalf: DB alanı adı; 1 ise o satırın üretim toplamı 0.5 ile çarpılır. */
@@ -837,6 +862,36 @@ export type ProductModelDetail = ProductModelListItem & {
   baselines: ProductModelBaseline[];
   dailySummaryProcesses: ProductModelDailySummaryProcess[];
 };
+
+export type ModelSessionConflict = {
+  productionDate: string;
+  modelId: number;
+  modelCode: string;
+  productName: string;
+};
+
+export async function checkModelSessionConflicts(params: {
+  modelId: number;
+  startDate: string;
+  endDate: string;
+  scope: "production" | "utuPaket";
+}): Promise<ModelSessionConflict[]> {
+  const q = new URLSearchParams({
+    startDate: params.startDate,
+    endDate: params.endDate,
+    scope: params.scope,
+  }).toString();
+  const res = await apiFetch(`${apiBase()}/product-models/${params.modelId}/session-conflicts?${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Çakışma kontrolü yapılamadı");
+  }
+  const data = (await res.json()) as { conflicts?: ModelSessionConflict[] };
+  return Array.isArray(data.conflicts) ? data.conflicts : [];
+}
 
 export async function listProductModels(): Promise<ProductModelListItem[]> {
   const res = await apiFetch(`${apiBase()}/product-models`, { cache: "no-store", headers: authHeaders() });

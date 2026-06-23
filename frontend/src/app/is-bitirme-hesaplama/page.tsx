@@ -29,7 +29,9 @@ import {
   buildProsesMapFromVeriRows,
   getProsesMap,
   makeProsesKey,
+  mergeProsesMapWithGenelFallback,
   setProsesMap as writeProsesMapToLocal,
+  GENEL_VERIMLILIK_MODEL_CODE,
   type ProsesMap,
 } from "@/lib/prosesVeri";
 import { downloadIsBitirmeHesaplamaPdf } from "@/lib/exportIsBitirmePdf";
@@ -234,10 +236,16 @@ export default function IsBitirmeHesaplamaPage() {
     let cancelled = false;
     setModelMapLoading(true);
     setModelMapErr("");
-    void getProsesVeriRowsFromServer(selectedModelCode)
-      .then((serverRows) => {
+    void Promise.all([
+      getProsesVeriRowsFromServer(selectedModelCode),
+      getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE).catch(() => []),
+    ])
+      .then(([serverRows, genelRows]) => {
         if (cancelled) return;
-        const map = buildProsesMapFromVeriRows(serverRows);
+        const map = mergeProsesMapWithGenelFallback(
+          buildProsesMapFromVeriRows(serverRows),
+          buildProsesMapFromVeriRows(genelRows)
+        );
         setModelProsesMap(map);
         try {
           writeProsesMapToLocal(map, selectedModelCode);
@@ -245,20 +253,30 @@ export default function IsBitirmeHesaplamaPage() {
           /* quota */
         }
         if (Object.keys(map).length === 0) {
-          setModelMapErr("Bu model için sunucuda dk satırı yok; Model arşivinde tanımlayın.");
+          setModelMapErr("Bu model için dk satırı yok; genel verimlilik de boş. Model arşivinde tanımlayın.");
+        } else if (serverRows.length === 0 && genelRows.length > 0) {
+          setModelMapErr("");
+        } else if (serverRows.length === 0) {
+          setModelMapErr("");
         } else {
           setModelMapErr("");
         }
       })
       .catch(() => {
         if (cancelled) return;
-        const local = getProsesMap(selectedModelCode);
-        setModelProsesMap(local);
-        if (Object.keys(local).length === 0) {
-          setModelMapErr("Proses verisi alınamadı ve yerel önbellekte bu model yok.");
-        } else {
-          setModelMapErr("");
-        }
+        void getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE)
+          .catch(() => [])
+          .then((genelRows) => {
+            if (cancelled) return;
+            const local = getProsesMap(selectedModelCode);
+            const map = mergeProsesMapWithGenelFallback(local, buildProsesMapFromVeriRows(genelRows));
+            setModelProsesMap(map);
+            if (Object.keys(map).length === 0) {
+              setModelMapErr("Proses verisi alınamadı ve yerel önbellekte bu model yok.");
+            } else {
+              setModelMapErr("");
+            }
+          });
       })
       .finally(() => {
         if (!cancelled) setModelMapLoading(false);

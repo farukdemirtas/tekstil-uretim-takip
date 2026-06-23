@@ -8,6 +8,7 @@ import {
   addWorkerName,
   updateWorkerName,
   deleteWorkerName,
+  bulkInsertWorkerNames,
   createWorker,
   updateWorker,
   deleteWorker,
@@ -70,6 +71,7 @@ import {
   getEkranRefreshSignal,
   applyHedefSessionToDailyMeta,
   applyUtuPaketSessionToMeta,
+  findModelSessionConflicts,
   getUtuPaketModelForDate,
   getRepairEntries,
   upsertRepairEntries,
@@ -428,6 +430,18 @@ app.delete("/api/worker-names/:id", requirePermission("ayarlar"), async (req, re
   } catch (e) { res.status(500).json({ message: String(e) }); }
 });
 
+app.post("/api/worker-names/bulk", requirePermission("ayarlar"), async (req, res) => {
+  const names = req.body?.names;
+  if (!Array.isArray(names)) return res.status(400).json({ message: "names[] gerekli" });
+  try {
+    const r = await bulkInsertWorkerNames(names);
+    logActivity(req, "isim_havuzu_toplu", "worker_names", r);
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
 /* ── Doğum günleri (EKRAN1 kutlama + ayarlar) ── */
 app.get("/api/personnel-birthdays", requirePermission("ayarlar"), async (_req, res) => {
   try {
@@ -607,6 +621,30 @@ app.get("/api/product-models/:id", requireAuth, async (req, res) => {
     res.json(row);
   } catch (e) {
     res.status(500).json({ message: String(e) });
+  }
+});
+
+app.get("/api/product-models/:id/session-conflicts", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const { startDate, endDate, scope } = req.query || {};
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "startDate ve endDate zorunlu" });
+  }
+  const sc = String(scope || "production");
+  if (sc !== "production" && sc !== "utuPaket") {
+    return res.status(400).json({ message: "scope production veya utuPaket olmalı" });
+  }
+  try {
+    const conflicts = await findModelSessionConflicts({
+      modelId: id,
+      startDate: String(startDate),
+      endDate: String(endDate),
+      scope: sc,
+    });
+    res.json({ conflicts });
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
   }
 });
 

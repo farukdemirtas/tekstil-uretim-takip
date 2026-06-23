@@ -1,7 +1,16 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { addWorkerName, deleteWorkerName, getWorkerNames, setAuthToken, updateWorkerName } from "@/lib/api";
+import {
+  addWorkerName,
+  bulkInsertWorkerNames,
+  deleteWorkerName,
+  getWorkerNames,
+  setAuthToken,
+  updateWorkerName,
+} from "@/lib/api";
+import { loadXlsx } from "@/lib/xlsxLazy";
+import { parsePersonnelNamesFromRows } from "@/lib/personnelListExcel";
 
 type WorkerName = { id: number; name: string };
 
@@ -15,6 +24,8 @@ export default function PersonnelNamesSection() {
   const [editId, setEditId] = useState<number | null>(null);
   const [editVal, setEditVal] = useState("");
   const [editBusy, setEditBusy] = useState(false);
+  const [excelMsg, setExcelMsg] = useState("");
+  const [excelBusy, setExcelBusy] = useState(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -75,6 +86,49 @@ export default function PersonnelNamesSection() {
     await load();
   }
 
+  async function onExcelFile(f: File) {
+    setExcelMsg("");
+    setExcelBusy(true);
+    try {
+      const buf = await f.arrayBuffer();
+      const XLSX = await loadXlsx();
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      if (!sheet) {
+        setExcelMsg("Sayfa bulunamadı.");
+        return;
+      }
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" }) as unknown[][];
+      if (!rows.length) {
+        setExcelMsg("Boş dosya.");
+        return;
+      }
+      const names = parsePersonnelNamesFromRows(rows);
+      if (names.length === 0) {
+        setExcelMsg(
+          "Geçerli satır yok. Yeşil İmaj: A=sıra, B=ad, C=soyad. Dar tablo: A–B ad/soyad. Başlık satırı varsa otomatik atlanır."
+        );
+        return;
+      }
+      const res = await bulkInsertWorkerNames(names);
+      const parts: string[] = [];
+      parts.push(`Yeni eklenen: ${res.inserted}`);
+      if (res.duplicateSame > 0) parts.push(`zaten kayıtlı (atlandı): ${res.duplicateSame}`);
+      if (res.skippedInvalid > 0) parts.push(`geçersiz satır: ${res.skippedInvalid}`);
+      if (res.duplicateSame > 0) {
+        window.alert(
+          `${res.duplicateSame} isim sistemde zaten kayıtlı olduğu için tekrar eklenmedi.`
+        );
+      }
+      setExcelMsg(parts.join(" · "));
+      await load();
+    } catch (e) {
+      setExcelMsg(e instanceof Error ? e.message : "Excel okunamadı.");
+    } finally {
+      setExcelBusy(false);
+    }
+  }
+
   const filtered = list.filter((w) =>
     !search || w.name.toLocaleLowerCase("tr").includes(search.toLocaleLowerCase("tr"))
   );
@@ -84,8 +138,30 @@ export default function PersonnelNamesSection() {
       <p className="text-sm text-slate-600 dark:text-slate-300">
         Ana ekrandaki <strong>Çalışan Ekle</strong> formu bu listeden beslenir. İsimleri büyük harfle saklarız. Burada bir
         ismi güncellediğinizde aynı isme sahip tüm çalışan kayıtları (veri girişi listeleri, üretim ve TV ekranlarındaki
-        isimler) birlikte güncellenir.
+        isimler) birlikte güncellenir. Toplu Excel: doğum günleri ile aynı Yeşil İmaj formatı — <strong>A</strong> sıra,{" "}
+        <strong>B</strong> ad, <strong>C</strong> soyad; ad ve soyad birleştirilerek isim havuzuna eklenir.
       </p>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Toplu Excel</h2>
+        <label className="flex cursor-pointer flex-col gap-2 sm:flex-row sm:items-center">
+          <span className="rounded-md border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">
+            {excelBusy ? "İşleniyor…" : ".xlsx / .xls seç"}
+          </span>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            className="sr-only"
+            disabled={excelBusy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void onExcelFile(file);
+            }}
+          />
+        </label>
+        {excelMsg && <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">{excelMsg}</p>}
+      </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Yeni isim ekle</h2>

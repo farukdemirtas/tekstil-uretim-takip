@@ -126,6 +126,13 @@ export function buildProsesMapFromVeriRows(
   return map;
 }
 
+/** Model dk yoksa veya eksikse genel verimlilik hedefleri ile tamamlar (model değerleri öncelikli). */
+export function mergeProsesMapWithGenelFallback(modelMap: ProsesMap, genelMap: ProsesMap): ProsesMap {
+  if (Object.keys(genelMap).length === 0) return { ...modelMap };
+  if (Object.keys(modelMap).length === 0) return { ...genelMap };
+  return { ...genelMap, ...modelMap };
+}
+
 function dispatchGenelProsesUpdated() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(GENEL_PROSES_UPDATED_EVENT));
