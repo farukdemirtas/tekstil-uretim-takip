@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { getTeams, getWorkers, getWorkerComparison, getTeamComparison, getPeriodComparison, setAuthToken } from "@/lib/api";
-import { addDaysToIso, todayWeekdayIso } from "@/lib/businessCalendar";
+import { getTeams, getWorkersForAnalytics, getWorkerComparison, getTeamComparison, getPeriodComparison, setAuthToken } from "@/lib/api";
+import { addDaysToIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission } from "@/lib/permissions";
 import type { WorkerComparisonData, WorkerCompStat, TeamRow, PeriodComparisonData } from "@/lib/api";
@@ -211,7 +211,7 @@ export default function KarsilastirmaPage() {
     }
     setAuthToken(token);
     setIsReady(true);
-    getWorkers()
+    getWorkersForAnalytics()
       .then((list) =>
         setWorkers([...list].sort((a, b) => a.name.localeCompare(b.name, "tr", { sensitivity: "base" })))
       )
@@ -262,11 +262,18 @@ export default function KarsilastirmaPage() {
           setCompData(null);
           return;
         }
+        const start = coerceWeekdayPickerValue(startDate);
+        const end = coerceWeekdayPickerValue(endDate);
+        if (!start || !end || start > end) {
+          setError("Geçerli bir tarih aralığı seçin (başlangıç bitişten büyük olamaz).");
+          setCompData(null);
+          return;
+        }
         const data = await getWorkerComparison({
           worker1Id: w1Id,
           worker2Id: w2Id,
-          startDate,
-          endDate,
+          startDate: start,
+          endDate: end,
         });
         setCompData(data);
         return;
@@ -277,11 +284,18 @@ export default function KarsilastirmaPage() {
         setCompData(null);
         return;
       }
+      const start = coerceWeekdayPickerValue(startDate);
+      const end = coerceWeekdayPickerValue(endDate);
+      if (!start || !end || start > end) {
+        setError("Geçerli bir tarih aralığı seçin (başlangıç bitişten büyük olamaz).");
+        setCompData(null);
+        return;
+      }
       const data = await getTeamComparison({
         team1: tm1Code,
         team2: tm2Code,
-        startDate,
-        endDate,
+        startDate: start,
+        endDate: end,
       });
       const t1Label = teamLabels[tm1Code] ?? tm1Code;
       const t2Label = teamLabels[tm2Code] ?? tm2Code;
@@ -330,7 +344,21 @@ export default function KarsilastirmaPage() {
       return;
     }
     void fetchData();
-  }, [isReady, compareMode, fetchData, w1Id, w2Id, tm1Code, tm2Code]);
+  }, [
+    isReady,
+    compareMode,
+    fetchData,
+    w1Id,
+    w2Id,
+    tm1Code,
+    tm2Code,
+    startDate,
+    endDate,
+    pr1Start,
+    pr1End,
+    pr2Start,
+    pr2End,
+  ]);
 
   /* ── PDF Export (Türkçe UTF-8, html2pdf) ── */
   async function exportToPDF() {
@@ -530,13 +558,21 @@ export default function KarsilastirmaPage() {
               <WeekdayDatePicker
                 label="Başlangıç Tarihi"
                 value={startDate}
-                onChange={setStartDate}
+                onChange={(v) => {
+                  const next = coerceWeekdayPickerValue(v);
+                  setStartDate(next);
+                  if (endDate && next > endDate) setEndDate(next);
+                }}
                 className="w-full"
               />
               <WeekdayDatePicker
                 label="Bitiş Tarihi"
                 value={endDate}
-                onChange={setEndDate}
+                onChange={(v) => {
+                  const next = coerceWeekdayPickerValue(v);
+                  setEndDate(next);
+                  if (startDate && next < startDate) setStartDate(next);
+                }}
                 className="w-full"
               />
             </div>
@@ -685,9 +721,13 @@ export default function KarsilastirmaPage() {
 
             {/* ── Overall comparison bar ── */}
             <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-              <h2 className="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Genel Üretim Karşılaştırması
               </h2>
+              <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                Tarih aralığı: {startDate} — {endDate}
+                {w1?.activeDays != null ? ` · ${w1.activeDays} / ${w2?.activeDays ?? 0} aktif gün` : null}
+              </p>
               <div className="flex items-center gap-3">
                 <div className="w-16 text-right">
                   <span className="text-lg font-bold text-blue-600 dark:text-blue-400">

@@ -2460,86 +2460,130 @@ export function deleteProductModel(id) {
   });
 }
 
-export function getWorkerComparisonData({ worker1Id, worker2Id, startDate, endDate }) {
-  return new Promise((resolve, reject) => {
-    // Hourly totals + summary for both workers
-    db.all(
+async function resolveWorkerIdsByName(workerId) {
+  const id = Number(workerId);
+  if (!Number.isFinite(id) || id < 1) return [];
+  const row = await dbGet("SELECT name FROM workers WHERE id = ?", [id]);
+  const nm = row?.name != null ? String(row.name).trim() : "";
+  if (!nm) return [id];
+  const idRows = await dbAll(
+    "SELECT id FROM workers WHERE TRIM(LOWER(name)) = TRIM(LOWER(?))",
+    [nm]
+  );
+  const ids = (idRows || []).map((r) => Number(r.id)).filter((n) => n > 0);
+  return ids.length ? ids : [id];
+}
+
+const WORKER_COMP_SLOT_SQL = `
+  COALESCE(SUM(p.t1000), 0) + COALESCE(SUM(p.h0900), 0) + COALESCE(SUM(p.h1000), 0) AS t1000,
+  COALESCE(SUM(p.t1300), 0) + COALESCE(SUM(p.h1115), 0) + COALESCE(SUM(p.h1215), 0) + COALESCE(SUM(p.h1300), 0) AS t1300,
+  COALESCE(SUM(p.t1600), 0) + COALESCE(SUM(p.h1445), 0) + COALESCE(SUM(p.h1545), 0) AS t1600,
+  COALESCE(SUM(p.t1830), 0) + COALESCE(SUM(p.h1700), 0) + COALESCE(SUM(p.h1830), 0) AS t1830,
+  COALESCE(SUM(${PRODUCTION_SUM_SQL}), 0) AS total,
+  COUNT(DISTINCT p.production_date) AS activeDays
+`;
+
+const WORKER_COMP_ACTIVE_FILTER = `
+  AND (w.created_at IS NULL OR w.created_at <= p.production_date)
+  AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
+`;
+
+export async function getWorkerComparisonData({ worker1Id, worker2Id, startDate, endDate }) {
+  const sd = String(startDate).trim();
+  const ed = String(endDate).trim();
+  const w1Ids = await resolveWorkerIdsByName(worker1Id);
+  const w2Ids = await resolveWorkerIdsByName(worker2Id);
+  const w1Set = new Set(w1Ids);
+  const w2Set = new Set(w2Ids);
+
+  const [w1Info, w2Info] = await Promise.all([
+    dbGet("SELECT id, name, team, process FROM workers WHERE id = ?", [Number(worker1Id)]),
+    dbGet("SELECT id, name, team, process FROM workers WHERE id = ?", [Number(worker2Id)]),
+  ]);
+
+  async function aggregateStats(ids) {
+    if (!ids.length) {
+      return { t1000: 0, t1300: 0, t1600: 0, t1830: 0, total: 0, activeDays: 0 };
+    }
+    const ph = ids.map(() => "?").join(",");
+    const row = await dbGet(
+      `
+      SELECT ${WORKER_COMP_SLOT_SQL}
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.worker_id IN (${ph})
+        AND p.production_date BETWEEN ? AND ?
+        ${WORKER_COMP_ACTIVE_FILTER}
+      `,
+      [...ids, sd, ed]
+    );
+    const toNum = (v) => Number(v) || 0;
+    return {
+      t1000: toNum(row?.t1000),
+      t1300: toNum(row?.t1300),
+      t1600: toNum(row?.t1600),
+      t1830: toNum(row?.t1830),
+      total: toNum(row?.total),
+      activeDays: toNum(row?.activeDays),
+    };
+  }
+
+  const [s1, s2] = await Promise.all([aggregateStats(w1Ids), aggregateStats(w2Ids)]);
+
+  const allIds = [...new Set([...w1Ids, ...w2Ids])];
+  let dailyRows = [];
+  if (allIds.length) {
+    const ph = allIds.map(() => "?").join(",");
+    dailyRows = await dbAll(
       `
       SELECT
-        w.id          AS workerId,
-        w.name,
-        w.team,
-        w.process,
-        COALESCE(SUM(p.t1000), 0) + COALESCE(SUM(p.h0900), 0) + COALESCE(SUM(p.h1000), 0) AS t1000,
-        COALESCE(SUM(p.t1300), 0) + COALESCE(SUM(p.h1115), 0) + COALESCE(SUM(p.h1215), 0) + COALESCE(SUM(p.h1300), 0) AS t1300,
-        COALESCE(SUM(p.t1600), 0) + COALESCE(SUM(p.h1445), 0) + COALESCE(SUM(p.h1545), 0) AS t1600,
-        COALESCE(SUM(p.t1830), 0) + COALESCE(SUM(p.h1700), 0) + COALESCE(SUM(p.h1830), 0) AS t1830,
-        COALESCE(SUM(${PRODUCTION_SUM_SQL}), 0) AS total,
-        COUNT(DISTINCT p.production_date) AS activeDays
-      FROM workers w
-      LEFT JOIN production_entries p
-        ON p.worker_id = w.id
+        p.production_date AS date,
+        p.worker_id AS workerId,
+        (${PRODUCTION_SUM_SQL}) AS production
+      FROM production_entries p
+      JOIN workers w ON w.id = p.worker_id
+      WHERE p.worker_id IN (${ph})
         AND p.production_date BETWEEN ? AND ?
-        AND (w.created_at IS NULL OR w.created_at <= p.production_date)
-        AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
-      WHERE w.id IN (?, ?)
-      GROUP BY w.id
+        ${WORKER_COMP_ACTIVE_FILTER}
+      ORDER BY p.production_date ASC
       `,
-      [startDate, endDate, worker1Id, worker2Id],
-      (err, workerRows) => {
-        if (err) return reject(err);
-
-        // Daily totals for both workers
-        db.all(
-          `
-          SELECT
-            p.production_date AS date,
-            w.id AS workerId,
-            (${PRODUCTION_SUM_SQL}) AS production
-          FROM production_entries p
-          JOIN workers w ON w.id = p.worker_id
-          WHERE p.worker_id IN (?, ?)
-            AND p.production_date BETWEEN ? AND ?
-            AND (w.created_at IS NULL OR w.created_at <= p.production_date)
-            AND (w.deleted_at IS NULL OR w.deleted_at > p.production_date)
-          ORDER BY p.production_date ASC
-          `,
-          [worker1Id, worker2Id, startDate, endDate],
-          (err2, dailyRows) => {
-            if (err2) return reject(err2);
-
-            const toNum = (v) => Number(v) || 0;
-            const fmt = (r) => r ? {
-              workerId: r.workerId,
-              name: r.name,
-              team: r.team,
-              process: r.process,
-              t1000: toNum(r.t1000),
-              t1300: toNum(r.t1300),
-              t1600: toNum(r.t1600),
-              t1830: toNum(r.t1830),
-              total: toNum(r.total),
-              activeDays: toNum(r.activeDays),
-            } : null;
-
-            const dateMap = new Map();
-            for (const row of dailyRows) {
-              if (!dateMap.has(row.date)) dateMap.set(row.date, { date: row.date, w1: 0, w2: 0 });
-              const entry = dateMap.get(row.date);
-              if (Number(row.workerId) === Number(worker1Id)) entry.w1 = toNum(row.production);
-              else entry.w2 = toNum(row.production);
-            }
-
-            resolve({
-              worker1: fmt(workerRows.find((r) => Number(r.workerId) === Number(worker1Id))),
-              worker2: fmt(workerRows.find((r) => Number(r.workerId) === Number(worker2Id))),
-              daily: [...dateMap.values()],
-            });
-          }
-        );
-      }
+      [...allIds, sd, ed]
     );
-  });
+  }
+
+  const toNum = (v) => Number(v) || 0;
+  const fmtWorker = (info, stats, primaryId) =>
+    info
+      ? {
+          workerId: Number(primaryId),
+          name: String(info.name || ""),
+          team: String(info.team || ""),
+          process: String(info.process || ""),
+          t1000: stats.t1000,
+          t1300: stats.t1300,
+          t1600: stats.t1600,
+          t1830: stats.t1830,
+          total: stats.total,
+          activeDays: stats.activeDays,
+        }
+      : null;
+
+  const dateMap = new Map();
+  for (const row of dailyRows || []) {
+    const ds = String(row.date);
+    if (!dateMap.has(ds)) dateMap.set(ds, { date: ds, w1: 0, w2: 0 });
+    const entry = dateMap.get(ds);
+    const wid = Number(row.workerId);
+    const prod = toNum(row.production);
+    if (w1Set.has(wid)) entry.w1 += prod;
+    if (w2Set.has(wid)) entry.w2 += prod;
+  }
+
+  return {
+    worker1: fmtWorker(w1Info, s1, worker1Id),
+    worker2: fmtWorker(w2Info, s2, worker2Id),
+    daily: [...dateMap.values()],
+  };
 }
 
 /** Kişi bazlı analiz: her iş günü için dört saat dilimi + meta. `includeSameNameWorkers`: aynı ada sahip tüm worker kayıtları. */
