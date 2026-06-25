@@ -322,12 +322,10 @@ function SlidePanel({
 function BedenStatBox({
   label,
   value,
-  subLabel,
   accent,
 }: {
   label: string;
   value: string;
-  subLabel?: string;
   accent: "slate" | "sky" | "indigo" | "amber";
 }) {
   const styles = {
@@ -338,21 +336,15 @@ function BedenStatBox({
   }[accent];
 
   return (
-    <div className={`relative flex min-h-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border-2 px-1 py-2 shadow-md sm:rounded-2xl sm:py-2.5 ${styles.box}`}>
-      <p className={`shrink-0 font-black uppercase tracking-[0.1em] ${styles.label}`}
-        style={{ fontSize: "clamp(0.65rem, 1.35vw, 1rem)" }}>
+    <div className={`flex min-h-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border-2 px-1 py-1.5 shadow-md sm:rounded-2xl sm:py-2 ${styles.box}`}>
+      <p className={`shrink-0 font-black uppercase tracking-[0.08em] leading-none ${styles.label}`}
+        style={{ fontSize: "clamp(0.6rem, 1.1vw, 0.85rem)" }}>
         {label}
       </p>
       <p className={`w-full text-center font-black tabular-nums leading-none [text-shadow:0_1px_2px_rgba(0,0,0,0.08)] ${styles.value}`}
-        style={{ fontSize: "clamp(1.35rem, 3.2vw, 3rem)" }}>
+        style={{ fontSize: "clamp(1.1rem, 2.4vw, 2.25rem)" }}>
         {value}
       </p>
-      {subLabel ? (
-        <p className="mt-0.5 font-black tabular-nums uppercase tracking-wide text-indigo-700"
-          style={{ fontSize: "clamp(0.6rem, 1.1vw, 0.85rem)" }}>
-          {subLabel}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -362,15 +354,11 @@ function BedenSizeFrame({
   target,
   total,
   today,
-  koliTotal,
-  koliToday,
 }: {
   code: UtuPaketSizeCode;
   target: number;
   total: number;
   today: number;
-  koliTotal: number;
-  koliToday: number;
 }) {
   const remaining = target > 0 ? Math.max(0, target - total) : 0;
   const tier = bedenProgressTier(total, target);
@@ -397,8 +385,8 @@ function BedenSizeFrame({
       ) : null}
 
       <p
-        className={`shrink-0 text-center font-black uppercase tracking-[0.15em] ${frame.label}`}
-        style={{ fontSize: "clamp(1.5rem, 3.5vw, 3rem)" }}
+        className={`shrink-0 text-center font-black uppercase tracking-[0.12em] ${frame.label}`}
+        style={{ fontSize: "clamp(1.25rem, 2.8vw, 2.5rem)" }}
       >
         {code}
       </p>
@@ -436,27 +424,17 @@ function BedenSizeFrame({
         </div>
       </div>
 
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-2 gap-1.5 sm:mt-2.5 sm:gap-2 md:gap-2.5">
-        <BedenStatBox label="Hedef" value={target > 0 ? target.toLocaleString("tr-TR") : "—"} accent="slate" />
-        <BedenStatBox
-          label="Toplam"
-          value={total.toLocaleString("tr-TR")}
-          subLabel={koliTotal > 0 ? `${koliTotal.toLocaleString("tr-TR")} koli` : undefined}
-          accent="sky"
-        />
-        <BedenStatBox
-          label="Bugün"
-          value={today.toLocaleString("tr-TR")}
-          subLabel={koliToday > 0 ? `${koliToday.toLocaleString("tr-TR")} koli` : undefined}
-          accent="indigo"
-        />
-        <BedenStatBox label="Kalan" value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"} accent="amber" />
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-2 gap-1 sm:mt-2 sm:gap-1.5 md:gap-2">
+        <BedenStatBox label="Hedef"  value={target > 0 ? target.toLocaleString("tr-TR") : "—"} accent="slate" />
+        <BedenStatBox label="Toplam" value={total.toLocaleString("tr-TR")}                      accent="sky"   />
+        <BedenStatBox label="Bugün"  value={today.toLocaleString("tr-TR")}                      accent="indigo"/>
+        <BedenStatBox label="Kalan"  value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"} accent="amber" />
       </div>
 
       {done ? (
-        <p className="mt-1 shrink-0 text-center font-black uppercase tracking-[0.12em] text-emerald-700 sm:mt-1.5"
-          style={{ fontSize: "clamp(0.7rem, 1.3vw, 1rem)" }}>
-          Tamamlandı
+        <p className="mt-1 shrink-0 text-center font-black uppercase tracking-[0.1em] text-emerald-700"
+          style={{ fontSize: "clamp(0.6rem, 1.1vw, 0.85rem)" }}>
+          Tamamlandı ✓
         </p>
       ) : null}
     </div>
@@ -467,14 +445,10 @@ function BedenTableSlide({
   targets,
   totals,
   today,
-  koliTotals,
-  koliToday,
 }: {
   targets: Record<string, number>;
   totals: Record<string, number>;
   today: Record<string, number>;
-  koliTotals: Record<string, number>;
-  koliToday: Record<string, number>;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 md:gap-3">
@@ -494,8 +468,6 @@ function BedenTableSlide({
             target={targets[code] ?? 0}
             total={totals[code] ?? 0}
             today={today[code] ?? 0}
-            koliTotal={koliTotals[code] ?? 0}
-            koliToday={koliToday[code] ?? 0}
           />
         ))}
       </div>
@@ -1091,8 +1063,6 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
               targets={bedenTargets}
               totals={bedenTotals}
               today={bedenToday}
-              koliTotals={bedenKoliTotals}
-              koliToday={bedenKoliToday}
             />
           )}
           {slideKey === "optik" && (
