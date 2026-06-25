@@ -103,6 +103,21 @@ export function sumGunPaketlenen(
   };
 }
 
+/** Takipsan paket listesinden beden → koli (paket) sayısı */
+export function countKoliByBeden(
+  packages: TakipsanPackageRow[] | undefined,
+  dateIso?: string
+): Record<UtuPaketSizeCode, number> {
+  const out = emptyUtuPaketBeden();
+  for (const row of normalizeTakipsanPackages(packages)) {
+    if (dateIso && !packageCreatedOnDate(row.createdAt, dateIso)) continue;
+    const raw = String(row.size || "").trim().toUpperCase();
+    const code = UTU_PAKET_SIZE_CODES.find((c) => c === raw || raw.includes(c));
+    if (code) out[code] += 1;
+  }
+  return out;
+}
+
 export type UtuPaketModelRef = {
   modelId: number;
   productName: string;
@@ -215,6 +230,65 @@ export function calcUtuPaketPercent(count: number, target: number): number {
   if (!Number.isFinite(target) || target <= 0) return 0;
   const pct = (count / target) * 100;
   return Math.max(0, Math.min(100, pct));
+}
+
+export type BedenProgressTier = "red" | "yellow" | "green" | "done";
+
+/** Beden çeki ilerleme rengi: 0–50 kırmızı, 50–80 sarı, 80–100 yeşil, tamamlandı */
+export function bedenProgressTier(total: number, target: number): BedenProgressTier {
+  if (target > 0 && total >= target) return "done";
+  const pct = calcUtuPaketPercent(total, target);
+  if (pct >= 80) return "green";
+  if (pct >= 50) return "yellow";
+  return "red";
+}
+
+export const BEDEN_PROGRESS_FRAME: Record<
+  BedenProgressTier,
+  { ring: string; glow: string; bg: string; label: string }
+> = {
+  red: {
+    ring: "ring-red-400",
+    glow: "shadow-[0_0_28px_rgba(239,68,68,0.45)]",
+    bg: "bg-gradient-to-b from-red-50 to-white",
+    label: "text-red-700",
+  },
+  yellow: {
+    ring: "ring-amber-400",
+    glow: "shadow-[0_0_28px_rgba(245,158,11,0.4)]",
+    bg: "bg-gradient-to-b from-amber-50 to-white",
+    label: "text-amber-800",
+  },
+  green: {
+    ring: "ring-emerald-400",
+    glow: "shadow-[0_0_28px_rgba(16,185,129,0.4)]",
+    bg: "bg-gradient-to-b from-emerald-50 to-white",
+    label: "text-emerald-800",
+  },
+  done: {
+    ring: "ring-emerald-500",
+    glow: "shadow-[0_0_32px_rgba(16,185,129,0.55)]",
+    bg: "bg-gradient-to-b from-emerald-100 to-emerald-50",
+    label: "text-emerald-900",
+  },
+};
+
+export const BEDEN_BAR_GRADIENT: Record<BedenProgressTier, string> = {
+  red: "from-red-500 via-red-500 to-orange-500",
+  yellow: "from-amber-500 via-yellow-500 to-amber-400",
+  green: "from-emerald-500 via-teal-500 to-cyan-500",
+  done: "from-emerald-500 via-teal-500 to-cyan-500",
+};
+
+export const BEDEN_BAR_GLOW: Record<BedenProgressTier, string> = {
+  red: "shadow-[0_0_20px_rgba(239,68,68,0.45)]",
+  yellow: "shadow-[0_0_20px_rgba(245,158,11,0.4)]",
+  green: "shadow-[0_0_20px_rgba(16,185,129,0.4)]",
+  done: "shadow-[0_0_24px_rgba(16,185,129,0.5)]",
+};
+
+export function emptyBedenCekiTargets(): Record<UtuPaketSizeCode, number> {
+  return emptyUtuPaketBeden();
 }
 
 /** Model hedefi ile birleştirilmiş Takipsan sipariş hedefinin büyük olanı */

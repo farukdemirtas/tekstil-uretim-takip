@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
   deleteUtuPaket,
+  getBedenCekiTargets,
   getTakipsanStatus,
   getUtuPaket,
   saveUtuPaket,
   setAuthToken,
+  setBedenCekiTargets,
   syncTakipsan,
 } from "@/lib/api";
 import type { DayProductMeta } from "@/lib/api";
@@ -23,6 +25,7 @@ import {
   UTU_PAKET_STAGES,
   emptyUtuPaketBeden,
   emptyUtuPaketStages,
+  emptyBedenCekiTargets,
   normalizeTakipsanPackages,
   normalizeUtuPaketPayload,
   resolveUtuPaketLineTarget,
@@ -30,6 +33,7 @@ import {
   sumUtuPaketSlots,
   type UtuPaketDayPayload,
   type UtuPaketSlotKey,
+  type UtuPaketSizeCode,
   type UtuPaketStage,
   type TakipsanStatus,
 } from "@/lib/utuPaket";
@@ -103,6 +107,10 @@ export default function UtuPaketPage() {
   const [mainTab, setMainTab] = useState<"entry" | "analysis">("entry");
   const [takipsanStatus, setTakipsanStatus] = useState<TakipsanStatus | null>(null);
   const [takipsanSyncing, setTakipsanSyncing] = useState(false);
+  const [bedenCekiTargets, setBedenCekiTargetsState] = useState<Record<UtuPaketSizeCode, number>>(() => emptyBedenCekiTargets());
+  const [bedenCekiDirty, setBedenCekiDirty] = useState(false);
+  const [bedenCekiSaving, setBedenCekiSaving] = useState(false);
+  const [bedenCekiMsg, setBedenCekiMsg] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const f5RefreshBusy = useRef(false);
 
@@ -159,6 +167,60 @@ export default function UtuPaketPage() {
     if (!authorized) return;
     void loadDay(selectedDate);
   }, [authorized, selectedDate, loadDay]);
+
+  const modelIdForBeden = data.utuPaketModel?.modelId ?? null;
+
+  useEffect(() => {
+    if (!authorized || !modelIdForBeden) {
+      setBedenCekiTargetsState(emptyBedenCekiTargets());
+      setBedenCekiDirty(false);
+      return;
+    }
+    let cancelled = false;
+    void getBedenCekiTargets(modelIdForBeden)
+      .then((res) => {
+        if (cancelled) return;
+        const next = emptyBedenCekiTargets();
+        for (const code of UTU_PAKET_SIZE_CODES) {
+          next[code] = Math.max(0, Math.floor(Number(res.targets?.[code]) || 0));
+        }
+        setBedenCekiTargetsState(next);
+        setBedenCekiDirty(false);
+      })
+      .catch(() => {
+        if (!cancelled) setBedenCekiTargetsState(emptyBedenCekiTargets());
+      });
+    return () => { cancelled = true; };
+  }, [authorized, modelIdForBeden]);
+
+  async function saveBedenCekiTargets() {
+    const mid = data.utuPaketModel?.modelId;
+    if (!mid) {
+      setBedenCekiMsg("Önce bu güne bir ürün modeli atanmalı (Ayarlar → Ütü–pakete uygula).");
+      return;
+    }
+    setBedenCekiSaving(true);
+    setBedenCekiMsg(null);
+    try {
+      await setBedenCekiTargets(mid, bedenCekiTargets);
+      setBedenCekiDirty(false);
+      setBedenCekiMsg("Beden çeki hedefleri kaydedildi — Ekran5 güncellenecek.");
+    } catch (e) {
+      setBedenCekiMsg(e instanceof Error ? e.message : "Kaydedilemedi");
+    } finally {
+      setBedenCekiSaving(false);
+    }
+  }
+
+  function setBedenCekiTarget(code: UtuPaketSizeCode, raw: string) {
+    const v = parseInt(raw.replace(/\D/g, ""), 10);
+    setBedenCekiTargetsState((prev) => ({
+      ...prev,
+      [code]: Number.isFinite(v) && v >= 0 ? v : 0,
+    }));
+    setBedenCekiDirty(true);
+    setBedenCekiMsg(null);
+  }
 
   const refreshTakipsan = useCallback(async () => {
     try {
@@ -756,6 +818,59 @@ export default function UtuPaketPage() {
                 );
               })}
             </div>
+          </div>
+
+          {/* ── Beden çeki hedefleri (Ekran5) ── */}
+          <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Beden çeki hedefleri</h3>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  XS–XL için hedef adet; Ekran5 «Beden Tablosu» slaytında gösterilir.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={!modelIdForBeden || bedenCekiSaving || !bedenCekiDirty}
+                onClick={() => void saveBedenCekiTargets()}
+                className="rounded-lg border border-sky-400 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-40 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-200"
+              >
+                {bedenCekiSaving ? "Kaydediliyor…" : "Hedefleri kaydet"}
+              </button>
+            </div>
+            {!modelIdForBeden ? (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                Bu güne atanmış ürün modeli yok. Ayarlar → Ürün modelleri → «Ütü–Paket İçin Uygula» ile model atayın.
+              </p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-5">
+                {UTU_PAKET_SIZE_CODES.map((code) => (
+                  <div
+                    key={code}
+                    className="rounded-2xl border border-sky-200/80 bg-sky-50/50 p-3 ring-1 ring-sky-100 dark:border-sky-900/50 dark:bg-sky-950/20 dark:ring-sky-900/30"
+                  >
+                    <label className="mb-1.5 block text-center text-sm font-black text-sky-800 dark:text-sky-200">{code}</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={bedenCekiTargets[code] || ""}
+                      onChange={(e) => setBedenCekiTarget(code, e.target.value)}
+                      className="w-full rounded-lg border border-sky-200 bg-white px-2 py-2 text-center text-lg font-black tabular-nums text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-400/30 dark:border-sky-800 dark:bg-slate-900 dark:text-white"
+                      placeholder="0"
+                    />
+                    <p className="mt-1 text-center text-[10px] text-slate-500 dark:text-slate-400">
+                      Bugün: {(data.beden[code] || 0).toLocaleString("tr-TR")}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {bedenCekiMsg ? (
+              <p className={`mt-2 text-xs ${bedenCekiMsg.includes("kaydedildi") ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                {bedenCekiMsg}
+              </p>
+            ) : null}
           </div>
 
           {paketPackages.length > 0 ? (() => {

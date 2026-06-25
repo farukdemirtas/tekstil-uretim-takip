@@ -67,6 +67,8 @@ import {
   deleteProductModel,
   getEkran5Target,
   setEkran5Target,
+  getBedenCekiTargets,
+  setBedenCekiTargets,
   getEkran1Target,
   setEkran1Target,
   bumpEkranRefreshSignal,
@@ -708,6 +710,33 @@ app.put("/api/product-models/:id/ekran5-target", requireAuth, async (req, res) =
   try {
     const result = await setEkran5Target(id, value);
     logActivity(req, "ekran5_hedef_guncelle", "product_models", { id, ekran5Target: result.ekran5Target });
+    void bumpEkranRefreshSignal().catch(() => {});
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+/** Beden çeki hedefleri (XS–XL) — okuma */
+app.get("/api/product-models/:id/beden-ceki-targets", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const result = await getBedenCekiTargets(id);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+/** Beden çeki hedefleri (XS–XL) — kaydetme */
+app.put("/api/product-models/:id/beden-ceki-targets", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  const targets = req.body?.targets;
+  try {
+    const result = await setBedenCekiTargets(id, targets);
+    logActivity(req, "beden_ceki_hedef_guncelle", "product_models", { id, targets: result.targets });
     void bumpEkranRefreshSignal().catch(() => {});
     res.json(result);
   } catch (e) {

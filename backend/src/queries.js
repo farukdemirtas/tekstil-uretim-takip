@@ -2419,6 +2419,51 @@ export function setEkran5Target(id, value) {
   });
 }
 
+function parseBedenCekiTargets(raw) {
+  const out = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  if (raw == null || raw === "") return out;
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (parsed && typeof parsed === "object") {
+      for (const code of UTU_PAKET_SIZE_CODES) {
+        out[code] = Math.max(0, Math.floor(Number(parsed[code]) || 0));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return out;
+}
+
+export function getBedenCekiTargets(id) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      "SELECT beden_ceki_targets AS bedenCekiTargets FROM product_models WHERE id = ?",
+      [id],
+      (err, row) => {
+        if (err) return reject(err);
+        if (!row) return resolve({ targets: parseBedenCekiTargets(null) });
+        resolve({ targets: parseBedenCekiTargets(row.bedenCekiTargets) });
+      }
+    );
+  });
+}
+
+export function setBedenCekiTargets(id, targets) {
+  const normalized = parseBedenCekiTargets(targets);
+  const json = JSON.stringify(normalized);
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE product_models SET beden_ceki_targets = ? WHERE id = ?",
+      [json, id],
+      function onUp(err) {
+        if (err) return reject(err);
+        resolve({ id, targets: normalized });
+      }
+    );
+  });
+}
+
 /** Ekran1 paylaşımlı manuel hedef — tüm kullanıcılar/TV aynı değeri görür */
 export function getEkran1Target(id) {
   return new Promise((resolve, reject) => {

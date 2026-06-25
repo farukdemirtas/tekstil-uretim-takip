@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  getBedenCekiTargets,
   getEkran1GenelIlerleme,
   getEkran5Target,
   getEkranRefreshSignal,
@@ -16,19 +17,35 @@ import {
 } from "@/lib/api";
 import { todayIsoTurkey, todayWeekdayIso } from "@/lib/businessCalendar";
 import {
+  BEDEN_BAR_GLOW,
+  BEDEN_BAR_GRADIENT,
+  BEDEN_PROGRESS_FRAME,
+  UTU_PAKET_SIZE_CODES,
+  bedenProgressTier,
   calcUtuPaketPercent,
+  countKoliByBeden,
+  emptyUtuPaketBeden,
   normalizeUtuPaketPayload,
   normalizeTakipsanPackages,
   sumGunPaketlenen,
   resolveUtuPaketLineTarget,
   sumUtuPaketSlots,
+  type UtuPaketSizeCode,
 } from "@/lib/utuPaket";
 
 const AUTO_REFRESH_MS = 30_000;
 const SLIDE_DURATION_MS = 30_000;
-const SLIDE_COUNT = 3;
-const SLIDES = ["paketleme", "optik", "utu"] as const;
+const SLIDE_COUNT = 4;
+const SLIDES = ["paketleme", "beden", "optik", "utu"] as const;
 type SlideKey = (typeof SLIDES)[number];
+type ProductionSlideKey = Exclude<SlideKey, "beden">;
+
+const SLIDE_LABELS: Record<SlideKey, string> = {
+  paketleme: "Paketleme",
+  optik: "Optik Kontrol",
+  utu: "Ütü",
+  beden: "Beden Tablosu",
+};
 
 // ─── Renk / stil tanımları ───────────────────────────────────────────────────
 type BoxStyle = { box: string; label: string; value: string };
@@ -43,7 +60,7 @@ type SlideMeta = {
   remainStyle: BoxStyle;
 };
 
-const SLIDE_META: Record<SlideKey, SlideMeta> = {
+const SLIDE_META: Record<ProductionSlideKey, SlideMeta> = {
   paketleme: {
     label: "Paketleme",
     badgeCls: "from-emerald-600 to-teal-600",
@@ -243,7 +260,7 @@ function StatBox({ label, value, style, subLabel }: { label: string; value: stri
 // ─── Slayt paneli ────────────────────────────────────────────────────────────
 function SlidePanel({
   slideKey, total, todayCount, target, koliCount, totalKoliCount,
-}: { slideKey: SlideKey; total: number; todayCount: number; target: number; koliCount?: number; totalKoliCount?: number }) {
+}: { slideKey: ProductionSlideKey; total: number; todayCount: number; target: number; koliCount?: number; totalKoliCount?: number }) {
   const m = SLIDE_META[slideKey];
   const pct = calcUtuPaketPercent(total, target);
   const remaining = Math.max(0, target - total);
@@ -297,6 +314,184 @@ function SlidePanel({
           subLabel={showKoli && koliCount! > 0 ? `${koliCount!.toLocaleString("tr-TR")} koli` : undefined}
         />
         <StatBox label="Kalan"  value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"} style={m.remainStyle} />
+      </div>
+    </div>
+  );
+}
+
+function BedenStatBox({
+  label,
+  value,
+  subLabel,
+  accent,
+}: {
+  label: string;
+  value: string;
+  subLabel?: string;
+  accent: "slate" | "sky" | "indigo" | "amber";
+}) {
+  const styles = {
+    slate: { box: "border-slate-300 bg-white ring-1 ring-slate-200/80", label: "text-slate-500", value: "text-slate-900" },
+    sky: { box: "border-sky-400 bg-sky-50 ring-1 ring-sky-200/90", label: "text-sky-700", value: "text-sky-900" },
+    indigo: { box: "border-indigo-400 bg-indigo-50 ring-1 ring-indigo-200/90", label: "text-indigo-700", value: "text-indigo-900" },
+    amber: { box: "border-amber-400 bg-amber-50 ring-1 ring-amber-200/90", label: "text-amber-700", value: "text-amber-900" },
+  }[accent];
+
+  return (
+    <div className={`relative flex min-h-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border-2 px-1 py-2 shadow-md sm:rounded-2xl sm:py-2.5 ${styles.box}`}>
+      <p className={`shrink-0 font-black uppercase tracking-[0.1em] ${styles.label}`}
+        style={{ fontSize: "clamp(0.65rem, 1.35vw, 1rem)" }}>
+        {label}
+      </p>
+      <p className={`w-full text-center font-black tabular-nums leading-none [text-shadow:0_1px_2px_rgba(0,0,0,0.08)] ${styles.value}`}
+        style={{ fontSize: "clamp(1.35rem, 3.2vw, 3rem)" }}>
+        {value}
+      </p>
+      {subLabel ? (
+        <p className="mt-0.5 font-black tabular-nums uppercase tracking-wide text-indigo-700"
+          style={{ fontSize: "clamp(0.6rem, 1.1vw, 0.85rem)" }}>
+          {subLabel}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function BedenSizeFrame({
+  code,
+  target,
+  total,
+  today,
+  koliTotal,
+  koliToday,
+}: {
+  code: UtuPaketSizeCode;
+  target: number;
+  total: number;
+  today: number;
+  koliTotal: number;
+  koliToday: number;
+}) {
+  const remaining = target > 0 ? Math.max(0, target - total) : 0;
+  const tier = bedenProgressTier(total, target);
+  const frame = BEDEN_PROGRESS_FRAME[tier];
+  const pct = calcUtuPaketPercent(total, target);
+  const done = tier === "done";
+  const barGrad = BEDEN_BAR_GRADIENT[tier];
+  const barGlow = BEDEN_BAR_GLOW[tier];
+
+  return (
+    <div
+      className={`relative flex min-h-0 min-w-0 flex-col rounded-2xl border-2 border-slate-300/90 p-2 ring-2 transition-shadow duration-700 sm:rounded-3xl sm:p-3 md:p-3.5 ${frame.ring} ${frame.glow} ${frame.bg}`}
+    >
+      {done ? (
+        <div
+          className="absolute right-2 top-2 z-10 flex items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg ring-2 ring-white sm:right-3 sm:top-3"
+          style={{ width: "clamp(2rem, 3.5vw, 3rem)", height: "clamp(2rem, 3.5vw, 3rem)" }}
+          title="Tamamlandı"
+        >
+          <svg className="h-[55%] w-[55%]" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+      ) : null}
+
+      <p
+        className={`shrink-0 text-center font-black uppercase tracking-[0.15em] ${frame.label}`}
+        style={{ fontSize: "clamp(1.5rem, 3.5vw, 3rem)" }}
+      >
+        {code}
+      </p>
+
+      {/* İlerleme çubuğu — diğer slaytlarla aynı stil */}
+      <div className="mt-2 flex shrink-0 flex-col gap-1.5 sm:mt-2.5">
+        <div
+          className="relative h-10 overflow-hidden rounded-xl bg-gradient-to-b from-slate-100 to-slate-200/90 p-[3px] shadow-[inset_0_2px_6px_rgba(15,23,42,0.08)] ring-1 ring-slate-300/90 sm:h-12 md:h-14 md:rounded-2xl"
+          role="progressbar"
+          aria-valuenow={Math.round(pct)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <div className="relative h-full overflow-hidden rounded-[0.65rem] bg-slate-300/50 md:rounded-[0.85rem]">
+            <div
+              className={`absolute inset-y-0 left-0 rounded-[0.55rem] bg-gradient-to-r ${barGrad} ${barGlow} transition-[width] duration-1000 ease-out md:rounded-[0.75rem]`}
+              style={{ width: `${done ? 100 : pct}%` }}
+            >
+              <div className="absolute inset-x-0 top-0 h-2/5 bg-gradient-to-b from-white/35 to-transparent" />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-center">
+          <div className="rounded-xl border-2 border-slate-800 bg-slate-900 px-3 py-1 shadow-md sm:px-4 sm:py-1.5">
+            <span className="font-black tabular-nums text-white" style={{ fontSize: "clamp(1rem, 2.2vw, 1.75rem)" }}>
+              %{done ? 100 : pct.toFixed(0)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 grid min-h-0 flex-1 grid-cols-2 gap-1.5 sm:mt-2.5 sm:gap-2 md:gap-2.5">
+        <BedenStatBox label="Hedef" value={target > 0 ? target.toLocaleString("tr-TR") : "—"} accent="slate" />
+        <BedenStatBox
+          label="Toplam"
+          value={total.toLocaleString("tr-TR")}
+          subLabel={koliTotal > 0 ? `${koliTotal.toLocaleString("tr-TR")} koli` : undefined}
+          accent="sky"
+        />
+        <BedenStatBox
+          label="Bugün"
+          value={today.toLocaleString("tr-TR")}
+          subLabel={koliToday > 0 ? `${koliToday.toLocaleString("tr-TR")} koli` : undefined}
+          accent="indigo"
+        />
+        <BedenStatBox label="Kalan" value={target > 0 ? remaining.toLocaleString("tr-TR") : "—"} accent="amber" />
+      </div>
+
+      {done ? (
+        <p className="mt-1 shrink-0 text-center font-black uppercase tracking-[0.12em] text-emerald-700 sm:mt-1.5"
+          style={{ fontSize: "clamp(0.7rem, 1.3vw, 1rem)" }}>
+          Tamamlandı
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function BedenTableSlide({
+  targets,
+  totals,
+  today,
+  koliTotals,
+  koliToday,
+}: {
+  targets: Record<string, number>;
+  totals: Record<string, number>;
+  today: Record<string, number>;
+  koliTotals: Record<string, number>;
+  koliToday: Record<string, number>;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2 md:gap-3">
+      <div className="flex shrink-0 justify-center">
+        <h2
+          className="rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 py-2.5 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-10 min-[1920px]:py-3"
+          style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}
+        >
+          Beden Tablosu
+        </h2>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 md:grid-cols-5 md:gap-3">
+        {UTU_PAKET_SIZE_CODES.map((code) => (
+          <BedenSizeFrame
+            key={code}
+            code={code}
+            target={targets[code] ?? 0}
+            total={totals[code] ?? 0}
+            today={today[code] ?? 0}
+            koliTotal={koliTotals[code] ?? 0}
+            koliToday={koliToday[code] ?? 0}
+          />
+        ))}
       </div>
     </div>
   );
@@ -416,6 +611,11 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [gunPaketlenen, setGunPaketlenen] = useState(0);
   const [gunKoli, setGunKoli]             = useState(0);
   const [toplamKoli, setToplamKoli]       = useState(0);
+  const [bedenTargets, setBedenTargets]   = useState<Record<string, number>>(() => emptyUtuPaketBeden());
+  const [bedenTotals, setBedenTotals]     = useState<Record<string, number>>(() => emptyUtuPaketBeden());
+  const [bedenToday, setBedenToday]       = useState<Record<string, number>>(() => emptyUtuPaketBeden());
+  const [bedenKoliTotals, setBedenKoliTotals] = useState<Record<string, number>>(() => emptyUtuPaketBeden());
+  const [bedenKoliToday, setBedenKoliToday]   = useState<Record<string, number>>(() => emptyUtuPaketBeden());
 
   /** Model hedefi (target_quantity) — el ile hedef yoksa kullanılır */
   const [apiTarget, setApiTarget] = useState(0);
@@ -501,11 +701,15 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         setGunPaketlenen(gunPkt.adet);
         setGunKoli(gunPkt.paket);
         setToplamKoli(normalizeTakipsanPackages(data.takipsan?.packages).length);
+        setBedenKoliTotals(countKoliByBeden(data.takipsan?.packages));
+        setBedenKoliToday(countKoliByBeden(data.takipsan?.packages, date));
       } else {
         setPaketCount(0);
         setGunPaketlenen(0);
         setGunKoli(0);
         setToplamKoli(0);
+        setBedenKoliTotals(emptyUtuPaketBeden());
+        setBedenKoliToday(emptyUtuPaketBeden());
       }
 
       const modelHedef = ekran5Res.targetQuantity ?? 0;
@@ -522,14 +726,28 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         modelDetail?.utuPaketSessionStartDate?.trim() ||
         genelOzet?.dataStartDate ||
         date;
+      let analytics = null;
       if (startDate && startDate <= date) {
-        const analytics = await getUtuPaketAnalytics({ startDate, endDate: date }).catch(() => null);
+        analytics = await getUtuPaketAnalytics({ startDate, endDate: date }).catch(() => null);
         setOptikTotal(analytics?.periodTotals?.optik ?? todayOptik);
         setUtuTotal(analytics?.periodTotals?.utu ?? todayUtu);
       } else {
         setOptikTotal(todayOptik);
         setUtuTotal(todayUtu);
       }
+
+      const bedenTargetsRes = mid ? await getBedenCekiTargets(mid).catch(() => ({ targets: emptyUtuPaketBeden() })) : { targets: emptyUtuPaketBeden() };
+      const normalizedTargets = emptyUtuPaketBeden();
+      for (const code of UTU_PAKET_SIZE_CODES) {
+        normalizedTargets[code] = Math.max(0, Math.floor(Number(bedenTargetsRes.targets?.[code]) || 0));
+      }
+      setBedenTargets(normalizedTargets);
+      setBedenToday({ ...data.beden });
+      const periodBeden = emptyUtuPaketBeden();
+      for (const code of UTU_PAKET_SIZE_CODES) {
+        periodBeden[code] = Math.max(0, Math.floor(Number(analytics?.bedenTotals?.[code]) || 0));
+      }
+      setBedenTotals(periodBeden);
       setLastUpdated(formatClock());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Veri alınamadı");
@@ -862,6 +1080,15 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
           {slideKey === "paketleme" && (
             <SlidePanel slideKey="paketleme" total={paketCount}  todayCount={gunPaketlenen} target={target} koliCount={gunKoli} totalKoliCount={toplamKoli} />
           )}
+          {slideKey === "beden" && (
+            <BedenTableSlide
+              targets={bedenTargets}
+              totals={bedenTotals}
+              today={bedenToday}
+              koliTotals={bedenKoliTotals}
+              koliToday={bedenKoliToday}
+            />
+          )}
           {slideKey === "optik" && (
             <SlidePanel slideKey="optik"     total={optikTotal}  todayCount={optikCount}    target={target} />
           )}
@@ -884,7 +1111,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
                   i === slide ? "bg-slate-900 text-white shadow-md" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
                 }`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${i === slide ? "bg-teal-400" : "bg-slate-400"}`} />
-                {SLIDE_META[key].label}
+                {SLIDE_LABELS[key]}
               </button>
             ))}
           </div>

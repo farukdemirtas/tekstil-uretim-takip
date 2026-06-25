@@ -990,6 +990,26 @@ export async function setEkran5Target(modelId: number, value: number | null): Pr
   if (!res.ok) throw new Error("Hedef kaydedilemedi");
 }
 
+export type BedenCekiTargets = Record<string, number>;
+
+export async function getBedenCekiTargets(modelId: number): Promise<{ targets: BedenCekiTargets }> {
+  const res = await apiFetch(`${apiBase()}/product-models/${modelId}/beden-ceki-targets`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) return { targets: {} };
+  return res.json() as Promise<{ targets: BedenCekiTargets }>;
+}
+
+export async function setBedenCekiTargets(modelId: number, targets: BedenCekiTargets): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/product-models/${modelId}/beden-ceki-targets`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ targets }),
+  });
+  if (!res.ok) throw new Error("Beden çeki hedefleri kaydedilemedi");
+}
+
 /** Ekran1 paylaşımlı manuel hedef — okuma */
 export async function getEkran1Target(
   modelId: number
