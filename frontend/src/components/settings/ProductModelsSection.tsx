@@ -20,7 +20,7 @@ import {
   type ProductModelListItem,
   type TeamRow,
 } from "@/lib/api";
-import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
+import { clampToWeekdayIso, coerceWeekdayPickerValue, previousWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
 import { formatModelPickerLabel, formatProductDisplayLine } from "@/lib/takipsanProduct";
 import { hasPermission } from "@/lib/permissions";
 
@@ -113,12 +113,47 @@ function formatConflictList(conflicts: ModelSessionConflict[]): string {
     .join(" · ");
 }
 
-function SessionConflictWarning({ conflicts, label }: { conflicts: ModelSessionConflict[]; label: string }) {
+function earliestConflictDate(conflicts: ModelSessionConflict[]): string | null {
+  if (!conflicts.length) return null;
+  return [...conflicts].map((c) => c.productionDate).sort()[0] ?? null;
+}
+
+function formatSessionApplyMsg(datesUpdated: number, datesCleared?: number): string {
+  if (datesUpdated <= 0) return "Aralıkta güncellenecek iş günü bulunamadı.";
+  const cleared = datesCleared ?? 0;
+  return cleared > 0
+    ? `${datesUpdated} iş gününe uygulandı; ${cleared} gün eski kapsamdan kaldırıldı.`
+    : `${datesUpdated} iş gününe uygulandı.`;
+}
+
+function SessionConflictWarning({
+  conflicts,
+  label,
+  onShrinkEnd,
+}: {
+  conflicts: ModelSessionConflict[];
+  label: string;
+  onShrinkEnd?: () => void;
+}) {
   if (!conflicts.length) return null;
   return (
-    <p className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-      ⚠ {label} aralığında başka modele atanmış günler var. Önce o modelde tarihleri düzeltin: {formatConflictList(conflicts)}
-    </p>
+    <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+      <p>
+        ⚠ {label} aralığında başka modele atanmış günler var: {formatConflictList(conflicts)}
+      </p>
+      <p className="mt-1 text-amber-800 dark:text-amber-300/90">
+        Eski modeli düzenliyorsanız bitiş tarihini çakışmadan önceki güne çekip «Günlere uygula» deyin; yeni aralık dışındaki günler otomatik kaldırılır.
+      </p>
+      {onShrinkEnd ? (
+        <button
+          type="button"
+          onClick={onShrinkEnd}
+          className="mt-2 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/40"
+        >
+          Bitişi çakışmadan önceye al
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -416,20 +451,27 @@ export default function ProductModelsSection() {
   async function handleHedefApplyToProduction() {
     setHedefApplyMsg(null);
     setHedefApplyErr(null);
-    if (hedefApplyModelId === "") { setHedefApplyErr("Önce bir ürün modeli seçin."); return; }
+    const targetId = typeof editingId === "number" ? editingId : hedefApplyModelId;
+    if (targetId === "") { setHedefApplyErr("Önce bir ürün modeli seçin."); return; }
     const start = clampToWeekdayIso(hedefApplyStart);
     const end = clampToWeekdayIso(hedefApplyEnd);
     if (!start || !end || start > end) { setHedefApplyErr("Geçerli bir hafta içi tarih aralığı seçin."); return; }
     if (hedefConflicts.length > 0) {
-      setHedefApplyErr("Seçili aralıkta başka modele atanmış günler var. Önce o modelde tarihleri düzeltin.");
+      setHedefApplyErr("Seçili aralıkta başka modele atanmış günler var. Bitiş tarihini daraltın veya «Bitişi çakışmadan önceye al» kullanın.");
       return;
     }
     setHedefApplyBusy(true);
     try {
-      const m = await getProductModel(Number(hedefApplyModelId));
-      const { datesUpdated } = await applyHedefSession({ modelId: Number(hedefApplyModelId), startDate: start, endDate: end, productName: m.productName, productModel: m.modelCode });
-      setHedefApplyMsg(datesUpdated > 0 ? `${datesUpdated} iş gününe ürün adı ve model kodu yazıldı.` : "Aralıkta güncellenecek iş günü bulunamadı.");
-      const refreshed = await getProductModel(Number(hedefApplyModelId));
+      const m = await getProductModel(Number(targetId));
+      const { datesUpdated, datesCleared } = await applyHedefSession({
+        modelId: Number(targetId),
+        startDate: start,
+        endDate: end,
+        productName: m.productName,
+        productModel: m.modelCode,
+      });
+      setHedefApplyMsg(formatSessionApplyMsg(datesUpdated, datesCleared));
+      const refreshed = await getProductModel(Number(targetId));
       applyStoredSessionDates(refreshed);
       setHedefConflicts([]);
       await loadAll();
@@ -438,6 +480,34 @@ export default function ProductModelsSection() {
     } finally {
       setHedefApplyBusy(false);
     }
+  }
+
+  function shrinkHedefEndBeforeConflicts() {
+    const first = earliestConflictDate(hedefConflicts);
+    if (!first) return;
+    const start = clampToWeekdayIso(hedefApplyStart);
+    const newEnd = previousWeekdayIso(first);
+    if (!start || newEnd < start) {
+      setHedefApplyErr("Çakışmayı gidermek için başlangıç tarihini de ileri almanız gerekir.");
+      return;
+    }
+    setHedefApplyEnd(newEnd);
+    setHedefApplyMsg(null);
+    setHedefApplyErr(null);
+  }
+
+  function shrinkUtuPaketEndBeforeConflicts() {
+    const first = earliestConflictDate(utuPaketConflicts);
+    if (!first) return;
+    const start = clampToWeekdayIso(utuPaketApplyStart);
+    const newEnd = previousWeekdayIso(first);
+    if (!start || newEnd < start) {
+      setUtuPaketApplyErr("Çakışmayı gidermek için başlangıç tarihini de ileri almanız gerekir.");
+      return;
+    }
+    setUtuPaketApplyEnd(newEnd);
+    setUtuPaketApplyMsg(null);
+    setUtuPaketApplyErr(null);
   }
 
   async function handleUtuPaketApplyToDays() {
@@ -454,24 +524,20 @@ export default function ProductModelsSection() {
       return;
     }
     if (utuPaketConflicts.length > 0) {
-      setUtuPaketApplyErr("Seçili aralıkta başka modele atanmış günler var. Önce o modelde tarihleri düzeltin.");
+      setUtuPaketApplyErr("Seçili aralıkta başka modele atanmış günler var. Bitiş tarihini daraltın veya «Bitişi çakışmadan önceye al» kullanın.");
       return;
     }
     setUtuPaketApplyBusy(true);
     try {
       const m = await getProductModel(editingId);
-      const { datesUpdated } = await applyUtuPaketSession({
+      const { datesUpdated, datesCleared } = await applyUtuPaketSession({
         modelId: editingId,
         startDate: start,
         endDate: end,
         productName: m.productName,
         productModel: m.modelCode,
       });
-      setUtuPaketApplyMsg(
-        datesUpdated > 0
-          ? `${datesUpdated} iş günü ütü–paket ve Ekran5 için bu modele bağlandı.`
-          : "Aralıkta güncellenecek iş günü bulunamadı."
-      );
+      setUtuPaketApplyMsg(formatSessionApplyMsg(datesUpdated, datesCleared));
       const refreshed = await getProductModel(editingId);
       applyStoredSessionDates(refreshed);
       setUtuPaketConflicts([]);
@@ -706,7 +772,7 @@ export default function ProductModelsSection() {
                 {hedefApplyMsg ? (
                   <p className="mt-2.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">✓ {hedefApplyMsg}</p>
                 ) : null}
-                <SessionConflictWarning conflicts={hedefConflicts} label="Üretim" />
+                <SessionConflictWarning conflicts={hedefConflicts} label="Üretim" onShrinkEnd={shrinkHedefEndBeforeConflicts} />
                 {hedefApplyErr ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {hedefApplyErr}</p> : null}
               </div>
             ) : (
@@ -755,7 +821,7 @@ export default function ProductModelsSection() {
                     ✓ {utuPaketApplyMsg}
                   </p>
                 ) : null}
-                <SessionConflictWarning conflicts={utuPaketConflicts} label="Ütü–paket" />
+                <SessionConflictWarning conflicts={utuPaketConflicts} label="Ütü–paket" onShrinkEnd={shrinkUtuPaketEndBeforeConflicts} />
                 {utuPaketApplyErr ? (
                   <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {utuPaketApplyErr}</p>
                 ) : null}

@@ -1841,7 +1841,27 @@ function formatSessionConflictMessage(conflicts, scopeLabel) {
         : `${sorted.slice(0, 3).join(", ")} … (+${sorted.length - 3} gün)`;
     parts.push(`${label}: ${show}`);
   }
-  return `${scopeLabel} tarih aralığında başka modele atanmış günler var. Önce o modelde tarihleri düzeltin: ${parts.join("; ")}`;
+  return `${scopeLabel} tarih aralığında başka modele atanmış günler var. Çakışan modeli düzenleyip aralığı daraltın ve «Günlere uygula» deyin: ${parts.join("; ")}`;
+}
+
+/** Seçili aralık dışında kalan bu modele ait oturum günlerini kaldırır (aralık daraltma). */
+async function clearModelSessionOutsideRange({ modelId, startDate, endDate, scope }) {
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid < 1) return 0;
+  const keepSet = new Set(eachWeekdayIsoInRange(startDate, endDate));
+  const table = scope === "utuPaket" ? "utu_paket_meta" : "daily_product_meta";
+  const hedefOnly = scope === "production" ? " AND meta_source = 'hedef'" : "";
+  const rows = await dbAll(
+    `SELECT production_date AS d FROM ${table} WHERE model_id = ?${hedefOnly}`,
+    [mid]
+  );
+  const toRemove = (rows || []).map((r) => String(r.d)).filter((d) => d && !keepSet.has(d));
+  if (!toRemove.length) return 0;
+  const ph = toRemove.map(() => "?").join(",");
+  return dbRun(
+    `DELETE FROM ${table} WHERE model_id = ? AND production_date IN (${ph})${hedefOnly}`,
+    [mid, ...toRemove]
+  );
 }
 
 export async function findModelSessionConflicts({ modelId, startDate, endDate, scope }) {
@@ -1873,6 +1893,7 @@ export async function applyHedefSessionToDailyMeta({ modelId, startDate, endDate
   const name = String(productName ?? "").trim();
   const model = String(productModel ?? "").trim();
   const mid = Number(modelId);
+  const sd = String(startDate).trim();
   if (!Number.isFinite(mid) || mid < 1) {
     throw new Error("Geçersiz model");
   }
@@ -1886,33 +1907,33 @@ export async function applyHedefSessionToDailyMeta({ modelId, startDate, endDate
     throw new Error(formatSessionConflictMessage(conflicts, "Üretim"));
   }
   const dates = eachWeekdayIsoInRange(startDate, endDate);
-  return new Promise((resolve, reject) => {
-    db.serialize(() => {
-      db.run("BEGIN TRANSACTION");
-      const stmt = db.prepare(`
-        INSERT INTO daily_product_meta (production_date, product_name, product_model, model_id, meta_source)
-        VALUES (?, ?, ?, ?, 'hedef')
-        ON CONFLICT(production_date) DO UPDATE SET
-          product_name = excluded.product_name,
-          product_model = excluded.product_model,
-          model_id = excluded.model_id,
-          meta_source = 'hedef'
-      `);
-      for (const d of dates) {
-        stmt.run([d, name, model, mid]);
-      }
-      stmt.finalize((finErr) => {
-        if (finErr) {
-          db.run("ROLLBACK");
-          return reject(finErr);
-        }
-        db.run("COMMIT", (cErr) => {
-          if (cErr) return reject(cErr);
-          resolve({ ok: true, datesUpdated: dates.length });
-        });
-      });
+  const upsertSql = `
+    INSERT INTO daily_product_meta (production_date, product_name, product_model, model_id, meta_source)
+    VALUES (?, ?, ?, ?, 'hedef')
+    ON CONFLICT(production_date) DO UPDATE SET
+      product_name = excluded.product_name,
+      product_model = excluded.product_model,
+      model_id = excluded.model_id,
+      meta_source = 'hedef'
+  `;
+  await dbRun("BEGIN TRANSACTION");
+  try {
+    const datesCleared = await clearModelSessionOutsideRange({
+      modelId: mid,
+      startDate,
+      endDate,
+      scope: "production",
     });
-  });
+    await dbRun(`UPDATE product_models SET session_start_date = ? WHERE id = ?`, [sd, mid]);
+    for (const d of dates) {
+      await dbRun(upsertSql, [d, name, model, mid]);
+    }
+    await dbRun("COMMIT");
+    return { ok: true, datesUpdated: dates.length, datesCleared };
+  } catch (e) {
+    await dbRun("ROLLBACK").catch(() => {});
+    throw e;
+  }
 }
 
 /** Ütü–paket ve Ekran5: seçili günlere model ata (veri girişinden bağımsız) */
@@ -1934,43 +1955,33 @@ export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, 
     throw new Error(formatSessionConflictMessage(conflicts, "Ütü–paket"));
   }
   const dates = eachWeekdayIsoInRange(startDate, endDate);
-  return new Promise((resolve, reject) => {
-    db.serialize(() => {
-      db.run("BEGIN TRANSACTION");
-      db.run(
-        `UPDATE product_models SET utu_paket_session_start_date = ? WHERE id = ?`,
-        [start, mid],
-        (updErr) => {
-          if (updErr) {
-            db.run("ROLLBACK");
-            return reject(updErr);
-          }
-          const stmt = db.prepare(`
-            INSERT INTO utu_paket_meta (production_date, packaging_target, model_id, product_name, product_model, model_reference_date)
-            VALUES (?, 0, ?, ?, ?, ?)
-            ON CONFLICT(production_date) DO UPDATE SET
-              model_id = excluded.model_id,
-              product_name = excluded.product_name,
-              product_model = excluded.product_model,
-              model_reference_date = excluded.model_reference_date
-          `);
-          for (const d of dates) {
-            stmt.run([d, mid, name, model, d]);
-          }
-          stmt.finalize((finErr) => {
-            if (finErr) {
-              db.run("ROLLBACK");
-              return reject(finErr);
-            }
-            db.run("COMMIT", (cErr) => {
-              if (cErr) return reject(cErr);
-              resolve({ ok: true, datesUpdated: dates.length, sessionStartDate: start });
-            });
-          });
-        }
-      );
+  const upsertSql = `
+    INSERT INTO utu_paket_meta (production_date, packaging_target, model_id, product_name, product_model, model_reference_date)
+    VALUES (?, 0, ?, ?, ?, ?)
+    ON CONFLICT(production_date) DO UPDATE SET
+      model_id = excluded.model_id,
+      product_name = excluded.product_name,
+      product_model = excluded.product_model,
+      model_reference_date = excluded.model_reference_date
+  `;
+  await dbRun("BEGIN TRANSACTION");
+  try {
+    const datesCleared = await clearModelSessionOutsideRange({
+      modelId: mid,
+      startDate,
+      endDate,
+      scope: "utuPaket",
     });
-  });
+    await dbRun(`UPDATE product_models SET utu_paket_session_start_date = ? WHERE id = ?`, [start, mid]);
+    for (const d of dates) {
+      await dbRun(upsertSql, [d, mid, name, model, d]);
+    }
+    await dbRun("COMMIT");
+    return { ok: true, datesUpdated: dates.length, datesCleared, sessionStartDate: start };
+  } catch (e) {
+    await dbRun("ROLLBACK").catch(() => {});
+    throw e;
+  }
 }
 
 /** Gün için atanmış ütü–paket modeli (ayarlardan); veri girişi modelinden bağımsız */

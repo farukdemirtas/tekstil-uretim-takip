@@ -1018,7 +1018,7 @@ export async function applyUtuPaketSession(payload: {
   endDate: string;
   productName?: string;
   productModel?: string;
-}): Promise<{ ok: boolean; datesUpdated: number; sessionStartDate?: string }> {
+}): Promise<{ ok: boolean; datesUpdated: number; datesCleared?: number; sessionStartDate?: string }> {
   const res = await apiFetch(`${apiBase()}/utu-paket/apply-session`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -1037,7 +1037,7 @@ export async function applyHedefSession(payload: {
   endDate: string;
   productName?: string;
   productModel?: string;
-}): Promise<{ ok: boolean; datesUpdated: number }> {
+}): Promise<{ ok: boolean; datesUpdated: number; datesCleared?: number }> {
   const res = await apiFetch(`${apiBase()}/hedef/apply-session`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
