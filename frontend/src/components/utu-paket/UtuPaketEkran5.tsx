@@ -403,15 +403,16 @@ function BedenSizeFrame({
         {code}
       </p>
 
-      {/* İlerleme çubuğu — diğer slaytlarla aynı stil */}
-      <div className="mt-2 flex shrink-0 flex-col gap-1.5 sm:mt-2.5">
+      {/* İlerleme çubuğu — % barın içinde gösterilir */}
+      <div className="mt-2 shrink-0 sm:mt-2.5">
         <div
-          className="relative h-10 overflow-hidden rounded-xl bg-gradient-to-b from-slate-100 to-slate-200/90 p-[3px] shadow-[inset_0_2px_6px_rgba(15,23,42,0.08)] ring-1 ring-slate-300/90 sm:h-12 md:h-14 md:rounded-2xl"
+          className="relative h-10 rounded-xl bg-gradient-to-b from-slate-100 to-slate-200/90 p-[3px] shadow-[inset_0_2px_6px_rgba(15,23,42,0.08)] ring-1 ring-slate-300/90 sm:h-12 md:h-14 md:rounded-2xl"
           role="progressbar"
           aria-valuenow={Math.round(pct)}
           aria-valuemin={0}
           aria-valuemax={100}
         >
+          {/* Dolum — overflow-hidden burada */}
           <div className="relative h-full overflow-hidden rounded-[0.65rem] bg-slate-300/50 md:rounded-[0.85rem]">
             <div
               className={`absolute inset-y-0 left-0 rounded-[0.55rem] bg-gradient-to-r ${barGrad} ${barGlow} transition-[width] duration-1000 ease-out md:rounded-[0.75rem]`}
@@ -420,10 +421,15 @@ function BedenSizeFrame({
               <div className="absolute inset-x-0 top-0 h-2/5 bg-gradient-to-b from-white/35 to-transparent" />
             </div>
           </div>
-        </div>
-        <div className="flex justify-center">
-          <div className="rounded-xl border-2 border-slate-800 bg-slate-900 px-3 py-1 shadow-md sm:px-4 sm:py-1.5">
-            <span className="font-black tabular-nums text-white" style={{ fontSize: "clamp(1rem, 2.2vw, 1.75rem)" }}>
+          {/* % metni barın ortasına overlay — outer div relative, overflow-hidden yok */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span
+              className="font-black tabular-nums text-white"
+              style={{
+                fontSize: "clamp(0.85rem, 2vw, 1.5rem)",
+                textShadow: "0 1px 4px rgba(0,0,0,0.65), 0 0 10px rgba(0,0,0,0.35)",
+              }}
+            >
               %{done ? 100 : pct.toFixed(0)}
             </span>
           </div>
