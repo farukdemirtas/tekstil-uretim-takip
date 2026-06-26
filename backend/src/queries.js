@@ -1762,12 +1762,11 @@ export async function getEkran1GenelIlerleme(date, modelId) {
 
   const bottleneckIdx = findBottleneckStageIndex(cStages);
 
-  // Günlük özet prosesleri yapılandırılmışsa bunların TOPLAMINI "biten" sayar;
-  // yoksa eski yaklaşım: bölüm aşamalarının minimumu (darboğaz) kullanılır.
-  const totalCompleted = cDailyStages.length
-    ? Math.max(0, Math.floor(cDailyStages.reduce((s, r) => s + (Number(r.total) || 0), 0)))
-    : cStages.length
-      ? Math.max(0, Math.floor(Number(cStages[bottleneckIdx]?.total) || 0))
+  // Kümülatif "biten": darboğaz bölüm aşamasını esas al; yoksa özet proseslerin toplamı.
+  const totalCompleted = cStages.length && bottleneckIdx < cStages.length
+    ? Math.max(0, Math.floor(Number(cStages[bottleneckIdx]?.total) || 0))
+    : cDailyStages.length
+      ? Math.max(0, Math.floor(cDailyStages.reduce((s, r) => s + (Number(r.total) || 0), 0)))
       : 0;
 
   // "Bugün Tamamlanan": darboğaz bölüm aşamasını esas al (tStages[bottleneckIdx]).
