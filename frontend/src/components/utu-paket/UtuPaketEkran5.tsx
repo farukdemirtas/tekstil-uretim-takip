@@ -682,8 +682,10 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         setToplamKoli(normalizeTakipsanPackages(data.takipsan?.packages).length);
         setBedenKoliTotals(countKoliByBeden(data.takipsan?.packages));
         setBedenKoliToday(countKoliByBeden(data.takipsan?.packages, date));
-        // Bugün paketlenen adet per beden — Takipsan canlı verisi (manuel girişe bağlı değil)
+        // Bugün per beden — Takipsan bugünkü paketleri (date filtreli)
         setBedenToday(countAdetByBeden(data.takipsan?.packages, date));
+        // Toplam per beden — Takipsan TÜM paketleri (filtre yok); paketleme toplam ile tutarlı
+        setBedenTotals(countAdetByBeden(data.takipsan?.packages));
       } else {
         setPaketCount(0);
         setGunPaketlenen(0);
@@ -725,11 +727,14 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         normalizedTargets[code] = Math.max(0, Math.floor(Number(bedenTargetsRes.targets?.[code]) || 0));
       }
       setBedenTargets(normalizedTargets);
-      const periodBeden = emptyUtuPaketBeden();
-      for (const code of UTU_PAKET_SIZE_CODES) {
-        periodBeden[code] = Math.max(0, Math.floor(Number(analytics?.bedenTotals?.[code]) || 0));
+      // Takipsan yoksa DB analytics toplamını kullan (Takipsan varsa zaten üstte set edildi)
+      if (!takipsanOk) {
+        const periodBeden = emptyUtuPaketBeden();
+        for (const code of UTU_PAKET_SIZE_CODES) {
+          periodBeden[code] = Math.max(0, Math.floor(Number(analytics?.bedenTotals?.[code]) || 0));
+        }
+        setBedenTotals(periodBeden);
       }
-      setBedenTotals(periodBeden);
       setLastUpdated(formatClock());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Veri alınamadı");
