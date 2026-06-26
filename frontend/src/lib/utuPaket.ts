@@ -118,6 +118,21 @@ export function countKoliByBeden(
   return out;
 }
 
+/** Takipsan paket listesinden beden → adet (items) sayısı — bugünkü canlı veri için */
+export function countAdetByBeden(
+  packages: TakipsanPackageRow[] | undefined,
+  dateIso?: string
+): Record<UtuPaketSizeCode, number> {
+  const out = emptyUtuPaketBeden();
+  for (const row of normalizeTakipsanPackages(packages)) {
+    if (dateIso && !packageCreatedOnDate(row.createdAt, dateIso)) continue;
+    const raw = String(row.size || "").trim().toUpperCase();
+    const code = UTU_PAKET_SIZE_CODES.find((c) => c === raw || raw.includes(c));
+    if (code) out[code] += row.items;
+  }
+  return out;
+}
+
 export type UtuPaketModelRef = {
   modelId: number;
   productName: string;

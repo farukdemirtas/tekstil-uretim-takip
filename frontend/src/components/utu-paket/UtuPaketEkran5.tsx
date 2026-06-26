@@ -23,6 +23,7 @@ import {
   UTU_PAKET_SIZE_CODES,
   bedenProgressTier,
   calcUtuPaketPercent,
+  countAdetByBeden,
   countKoliByBeden,
   emptyUtuPaketBeden,
   normalizeUtuPaketPayload,
@@ -681,6 +682,8 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         setToplamKoli(normalizeTakipsanPackages(data.takipsan?.packages).length);
         setBedenKoliTotals(countKoliByBeden(data.takipsan?.packages));
         setBedenKoliToday(countKoliByBeden(data.takipsan?.packages, date));
+        // Bugün paketlenen adet per beden — Takipsan canlı verisi (manuel girişe bağlı değil)
+        setBedenToday(countAdetByBeden(data.takipsan?.packages, date));
       } else {
         setPaketCount(0);
         setGunPaketlenen(0);
@@ -688,6 +691,8 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         setToplamKoli(0);
         setBedenKoliTotals(emptyUtuPaketBeden());
         setBedenKoliToday(emptyUtuPaketBeden());
+        // Takipsan yoksa manuel girişi kullan
+        setBedenToday({ ...data.beden });
       }
 
       const modelHedef = ekran5Res.targetQuantity ?? 0;
@@ -720,7 +725,6 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         normalizedTargets[code] = Math.max(0, Math.floor(Number(bedenTargetsRes.targets?.[code]) || 0));
       }
       setBedenTargets(normalizedTargets);
-      setBedenToday({ ...data.beden });
       const periodBeden = emptyUtuPaketBeden();
       for (const code of UTU_PAKET_SIZE_CODES) {
         periodBeden[code] = Math.max(0, Math.floor(Number(analytics?.bedenTotals?.[code]) || 0));
