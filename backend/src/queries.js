@@ -1770,10 +1770,12 @@ export async function getEkran1GenelIlerleme(date, modelId) {
       ? Math.max(0, Math.floor(Number(cStages[bottleneckIdx]?.total) || 0))
       : 0;
 
-  const todayProduced = tDailyStages.length
-    ? Math.max(0, Math.floor(tDailyStages.reduce((s, r) => s + (Number(r.total) || 0), 0)))
-    : tStages.length && bottleneckIdx < tStages.length
-      ? Math.max(0, Math.floor(Number(tStages[bottleneckIdx]?.total) || 0))
+  // "Bugün Tamamlanan": darboğaz bölüm aşamasını esas al (tStages[bottleneckIdx]).
+  // dailySummaryStages toplamı farklı proseslerin birikimidir — "biten" sayısı değil.
+  const todayProduced = tStages.length && bottleneckIdx < tStages.length
+    ? Math.max(0, Math.floor(Number(tStages[bottleneckIdx]?.total) || 0))
+    : tDailyStages.length
+      ? Math.max(0, Math.floor(tDailyStages.reduce((s, r) => s + (Number(r.total) || 0), 0)))
       : 0;
 
   const aff = cStages[bottleneckIdx];
