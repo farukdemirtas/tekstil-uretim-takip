@@ -103,6 +103,20 @@ export function sumGunPaketlenen(
   };
 }
 
+/**
+ * Ham beden stringinden en uygun size kodunu döndürür.
+ * Önce tam eşleşme (===) aranır; yoksa raw içinde geçen en uzun kod seçilir.
+ * Bu sayede "XL" → "L" yanlış eşleşmesinin önüne geçilir.
+ */
+function matchSizeCode(raw: string): UtuPaketSizeCode | undefined {
+  const exact = UTU_PAKET_SIZE_CODES.find((c) => c === raw);
+  if (exact) return exact;
+  // En uzun eşleşeni bul (XL, L gibi prefix çakışmalarında XL kazanır)
+  return [...UTU_PAKET_SIZE_CODES]
+    .sort((a, b) => b.length - a.length)
+    .find((c) => raw.includes(c));
+}
+
 /** Takipsan paket listesinden beden → koli (paket) sayısı */
 export function countKoliByBeden(
   packages: TakipsanPackageRow[] | undefined,
@@ -112,7 +126,7 @@ export function countKoliByBeden(
   for (const row of normalizeTakipsanPackages(packages)) {
     if (dateIso && !packageCreatedOnDate(row.createdAt, dateIso)) continue;
     const raw = String(row.size || "").trim().toUpperCase();
-    const code = UTU_PAKET_SIZE_CODES.find((c) => c === raw || raw.includes(c));
+    const code = matchSizeCode(raw);
     if (code) out[code] += 1;
   }
   return out;
@@ -127,7 +141,7 @@ export function countAdetByBeden(
   for (const row of normalizeTakipsanPackages(packages)) {
     if (dateIso && !packageCreatedOnDate(row.createdAt, dateIso)) continue;
     const raw = String(row.size || "").trim().toUpperCase();
-    const code = UTU_PAKET_SIZE_CODES.find((c) => c === raw || raw.includes(c));
+    const code = matchSizeCode(raw);
     if (code) out[code] += row.items;
   }
   return out;
