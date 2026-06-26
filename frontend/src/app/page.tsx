@@ -1127,7 +1127,7 @@ export default function HomePage() {
         )}
       </div>
 
-      <WorkerForm onSubmit={handleAddWorker} />
+      <WorkerForm onSubmit={handleAddWorker} existingRows={rows} />
 
       {!loading && rows.length > 0 ? (
         <>

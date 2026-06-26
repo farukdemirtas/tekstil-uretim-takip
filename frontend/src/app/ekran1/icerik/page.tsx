@@ -1231,7 +1231,7 @@ export default function Ekran1IcerikPage() {
                     {genelHedef.toLocaleString("tr-TR")}
                   </p>
                 </div>
-                {/* BİTEN */}
+                {/* BİTEN — bugünün darboğaz üretimi */}
                 <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-emerald-400 bg-emerald-50 px-1 shadow-md ring-1 ring-emerald-200/90">
                   <p className="shrink-0 font-black uppercase tracking-[0.12em] text-emerald-700"
                     style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>
@@ -1239,18 +1239,18 @@ export default function Ekran1IcerikPage() {
                   </p>
                   <p className="w-full text-center font-black tabular-nums leading-none text-emerald-800 [text-shadow:0_1px_3px_rgba(0,0,0,0.1)]"
                     style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
-                    {genelTamamlanan.toLocaleString("tr-TR")}
+                    {bugunUretilen.toLocaleString("tr-TR")}
                   </p>
                 </div>
-                {/* Bugün üretilen */}
+                {/* Toplam — oturum başından kümülatif */}
                 <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl border-2 border-teal-400 bg-teal-50 px-1 shadow-md ring-1 ring-teal-200/90">
                   <p className="shrink-0 font-black uppercase tracking-[0.12em] text-teal-700"
                     style={{ fontSize: "clamp(0.6rem, 1.2vw, 1rem)" }}>
-                    Bugün
+                    Toplam
                   </p>
                   <p className="w-full text-center font-black tabular-nums leading-none text-teal-800 [text-shadow:0_1px_3px_rgba(0,0,0,0.1)]"
                     style={{ fontSize: "clamp(1.5rem, 3.2vw, 4.5rem)" }}>
-                    {bugunUretilen.toLocaleString("tr-TR")}
+                    {genelTamamlanan.toLocaleString("tr-TR")}
                   </p>
                 </div>
                 {/* Kalan */}

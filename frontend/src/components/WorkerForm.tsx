@@ -7,9 +7,11 @@ import { useI18n } from "@/components/I18nProvider";
 
 type WorkerFormProps = {
   onSubmit: (payload: { name: string; team: string; process: string }) => Promise<void>;
+  /** Günün mevcut listesi — hangi personelin hangi bölümde olduğunu kilitlemek için kullanılır */
+  existingRows?: { name: string; team: string }[];
 };
 
-export default function WorkerForm({ onSubmit }: WorkerFormProps) {
+export default function WorkerForm({ onSubmit, existingRows = [] }: WorkerFormProps) {
   const { t } = useI18n();
   const [names, setNames] = useState<string[]>([]);
   const [teams, setTeams] = useState<{ code: string; label: string }[]>([]);
@@ -37,6 +39,31 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
       .catch(() => {});
   }, []);
 
+  /**
+   * Bugünün listesindeki personel → bölüm kodu haritası.
+   * Yalnızca o günün aktif satırları baz alınır; silinen/arşivdeki kayıtlar devre dışı.
+   */
+  const nameTeamMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const r of existingRows) {
+      const key = r.name.trim().toUpperCase();
+      if (!map[key]) map[key] = r.team;
+    }
+    return map;
+  }, [existingRows]);
+
+  const teamLabelMap = useMemo(
+    () => teams.reduce<Record<string, string>>((acc, t) => { acc[t.code] = t.label; return acc; }, {}),
+    [teams]
+  );
+
+  /** Seçili isim değiştiğinde bölümü kilitli ise güncelle */
+  function handleNameChange(newName: string) {
+    setName(newName);
+    const locked = nameTeamMap[newName.trim().toUpperCase()];
+    if (locked) setTeam(locked);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!name.trim() || !process.trim() || !team) return;
@@ -56,6 +83,11 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
   const processOptions = useMemo(() => processes.map((p) => ({ value: p, label: p })), [processes]);
 
   const ready = names.length > 0 && teams.length > 0 && processes.length > 0;
+
+  /** Seçili kişi bugünün listesinde zaten bir bölüme kayıtlıysa kilit uygula */
+  const lockedTeamCode = nameTeamMap[name.trim().toUpperCase()] ?? null;
+  const lockedTeamLabel = lockedTeamCode ? (teamLabelMap[lockedTeamCode] ?? lockedTeamCode) : null;
+  const isTeamLocked = lockedTeamCode !== null;
 
   return (
     <form onSubmit={handleSubmit} className="surface-card">
@@ -91,7 +123,7 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
             <WorkerFormListSelect
               id="worker-form-name"
               value={name}
-              onChange={setName}
+              onChange={handleNameChange}
               options={nameOptions}
               emptyLabel={t("workerForm.loading")}
               searchable
@@ -107,14 +139,29 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
                 <path d="M3 12.75 12 18l9-5.25" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               {t("workerForm.team")}
+              {isTeamLocked && (
+                <span className="ml-auto flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="2" />
+                    <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  Kilitli
+                </span>
+              )}
             </label>
             <WorkerFormListSelect
               id="worker-form-team"
               value={team}
-              onChange={setTeam}
+              onChange={isTeamLocked ? () => {} : setTeam}
               options={teamOptions}
               emptyLabel={t("workerForm.loading")}
+              disabled={isTeamLocked}
             />
+            {isTeamLocked && lockedTeamLabel && (
+              <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                Bu personel yalnızca <strong>{lockedTeamLabel}</strong> bölümüne eklenebilir.
+              </p>
+            )}
           </div>
 
           {/* Proses */}
@@ -132,6 +179,8 @@ export default function WorkerForm({ onSubmit }: WorkerFormProps) {
               onChange={setProcess}
               options={processOptions}
               emptyLabel={t("workerForm.loading")}
+              searchable
+              searchPlaceholder="Prosese göre ara…"
             />
           </div>
 
