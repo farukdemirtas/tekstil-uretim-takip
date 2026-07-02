@@ -508,7 +508,7 @@ export default function UtuPaketPage() {
   const slotValues = UTU_PAKET_SLOT_DEFS.map(({ key }) => data.stages[activeStage][key]);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 pb-16 sm:px-6">
+    <main className="mx-auto max-w-6xl px-3 py-6 pb-20 sm:px-6 sm:pb-16">
       <header className="surface-card mb-6 overflow-hidden p-0 dark:text-slate-100">
         <div className="bg-gradient-to-br from-teal-600/90 via-teal-700/85 to-slate-900 px-5 py-6 text-white sm:px-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -531,7 +531,7 @@ export default function UtuPaketPage() {
         </div>
 
         <nav
-          className="flex gap-1 border-t border-slate-200/80 px-4 pt-3 dark:border-slate-700/80 sm:px-5"
+          className="flex gap-1 overflow-x-auto border-t border-slate-200/80 px-3 pt-3 [-webkit-overflow-scrolling:touch] dark:border-slate-700/80 sm:px-5"
           aria-label="Sayfa sekmeleri"
         >
           {(
@@ -694,7 +694,7 @@ export default function UtuPaketPage() {
 
       {/* Sekmeler */}
       <nav
-        className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-slate-200/80 bg-white/60 p-1.5 dark:border-slate-700/80 dark:bg-slate-900/40"
+        className="mb-4 grid grid-cols-3 gap-1.5 rounded-2xl border border-slate-200/80 bg-white/60 p-1.5 dark:border-slate-700/80 dark:bg-slate-900/40 sm:flex sm:flex-wrap sm:gap-2"
         aria-label="Aşamalar"
       >
         {UTU_PAKET_STAGES.map((st) => {
@@ -725,8 +725,8 @@ export default function UtuPaketPage() {
       ) : activeStage === "paketleme" ? (
         <section className="surface-card dark:text-slate-100">
           {/* ── Başlık ── */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-3 py-4 dark:border-slate-700/80 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15">
                 <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z" />
@@ -740,11 +740,11 @@ export default function UtuPaketPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {dayTakipsanSynced ? (
                 <>
                   {data.takipsan?.orderCode ? (
-                    <span className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <span className="max-w-[min(100%,14rem)] truncate rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                       {data.takipsan.orderCode}
                     </span>
                   ) : null}
@@ -766,7 +766,7 @@ export default function UtuPaketPage() {
                   )}
                 </>
               ) : data.utuPaketModel ? (
-                <span className="rounded-lg border border-indigo-200/80 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300">
+                <span className="max-w-full truncate rounded-lg border border-indigo-200/80 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300">
                   {[data.utuPaketModel.productName, data.utuPaketModel.productModel].filter(Boolean).join(" · ")}
                 </span>
               ) : null}
@@ -787,15 +787,15 @@ export default function UtuPaketPage() {
             const pct = paketOrderQty > 0 ? Math.min(100, Math.round((paketReadCount / paketOrderQty) * 100)) : 0;
             const remaining = Math.max(0, paketOrderQty - paketReadCount);
             return (
-              <div className="border-b border-slate-200/80 px-5 py-5 dark:border-slate-700/80">
+              <div className="border-b border-slate-200/80 px-3 py-5 dark:border-slate-700/80 sm:px-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                   {/* Sol: bugün paketlenen — ön planda */}
-                  <div className="rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/5 p-5 ring-1 ring-emerald-200/60 dark:from-emerald-500/10 dark:to-teal-500/5 dark:ring-emerald-800/40">
+                  <div className="rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/5 p-4 ring-1 ring-emerald-200/60 dark:from-emerald-500/10 dark:to-teal-500/5 dark:ring-emerald-800/40 sm:p-5">
                     <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-400">
                       {gunPaketLabel}
                     </p>
                     <div className="mt-1 flex items-end gap-3">
-                      <p className="text-5xl font-black tabular-nums leading-none text-emerald-900 dark:text-emerald-100">
+                      <p className="text-4xl font-black tabular-nums leading-none text-emerald-900 dark:text-emerald-100 sm:text-5xl">
                         {gunPaketAdet.toLocaleString("tr-TR")}
                       </p>
                       <p className="mb-1 text-sm text-slate-500 dark:text-slate-400">adet</p>
@@ -942,7 +942,7 @@ export default function UtuPaketPage() {
                 </span>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {UTU_PAKET_SIZE_CODES.map((code) => {
                 const count = displayBeden[code] || 0;
                 const pct = bedenTotal > 0 ? (count / bedenTotal) * 100 : 0;
@@ -1136,7 +1136,7 @@ export default function UtuPaketPage() {
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {paketPackages.length} kayıttan {pageStart + 1}–{Math.min(pageStart + paketPageSize, paketPackages.length)} arası
                     </p>
-                    <div className="flex items-center gap-1">
+                    <div className="flex max-w-full flex-wrap items-center justify-end gap-1">
                       <button
                         onClick={() => setPaketPage((p) => Math.max(1, p - 1))}
                         disabled={safePage === 1}

@@ -76,7 +76,7 @@ export default function AyarlarPageClient() {
   ];
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-5 p-4 md:p-8">
+    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-5 p-4 pb-20 md:p-8 md:pb-10">
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>

@@ -19,7 +19,7 @@
   }
 
   body {
-    @apply min-h-screen antialiased text-slate-900;
+    @apply min-h-screen overflow-x-hidden antialiased text-slate-900;
     background-color: #f8fafc;
     background-image:
       radial-gradient(ellipse 100% 60% at 50% -25%, rgba(13, 148, 136, 0.09), transparent),

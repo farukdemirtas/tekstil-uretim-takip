@@ -91,12 +91,12 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
       <div className="px-5 pb-5 space-y-4">
 
         {/* Hero: Çalışan + Genel tamamlanan + Bugün tamamlanan */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700">
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
               {t("adminPanel.workers")}
             </p>
-            <p className="mt-1 text-3xl font-black tabular-nums text-slate-700 dark:text-slate-200">
+            <p className="mt-1 text-2xl font-black tabular-nums text-slate-700 dark:text-slate-200 sm:text-3xl">
               {safeNum(workerCount)}
             </p>
           </div>
@@ -104,7 +104,7 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
             <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-500">
               {t("adminPanel.generalCompleted")}
             </p>
-            <p className="mt-1 text-3xl font-black tabular-nums text-emerald-700 dark:text-emerald-300">
+            <p className="mt-1 text-2xl font-black tabular-nums text-emerald-700 dark:text-emerald-300 sm:text-3xl">
               {safeNum(genelTamamlanan).toLocaleString(localeTag)}
             </p>
           </div>
@@ -112,7 +112,7 @@ export default function AdminPanel({ workerCount, stageTotals, stageError, ekran
             <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600 dark:text-sky-500">
               {t("adminPanel.todayCompleted")}
             </p>
-            <p className="mt-1 text-3xl font-black tabular-nums text-sky-700 dark:text-sky-300">
+            <p className="mt-1 text-2xl font-black tabular-nums text-sky-700 dark:text-sky-300 sm:text-3xl">
               {todayProduced != null ? safeNum(todayProduced).toLocaleString(localeTag) : "—"}
             </p>
           </div>

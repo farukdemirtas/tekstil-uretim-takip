@@ -164,7 +164,7 @@ export default function ModelAnaliziPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-6xl px-4 py-8 text-slate-800 dark:text-slate-100">
+    <main className="mx-auto min-h-screen max-w-6xl px-3 py-8 pb-20 text-slate-800 dark:text-slate-100 sm:px-4 sm:pb-10">
       <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Model Analizi</h1>
@@ -425,6 +425,7 @@ export default function ModelAnaliziPage() {
                 <p className="text-sm text-slate-500 dark:text-slate-400">Veri yok.</p>
               ) : (
                 <div className="rounded-xl border border-slate-200/90 dark:border-slate-700">
+                  <div className="overflow-x-auto">
                   <table className="w-full min-w-[360px] border-collapse text-left text-sm">
                     <thead className="border-b border-slate-200 bg-slate-50/95 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-600 dark:bg-slate-800/95 dark:text-slate-400">
                       <tr>
@@ -466,6 +467,7 @@ export default function ModelAnaliziPage() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </section>

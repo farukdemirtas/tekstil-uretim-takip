@@ -949,7 +949,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 p-3 pb-10 md:gap-5 md:p-6">
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 p-3 pb-20 md:gap-5 md:p-6 md:pb-10">
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-700/70 dark:bg-slate-900/85">
         {/* Accent bar */}
@@ -1054,7 +1054,8 @@ export default function HomePage() {
         </div>
 
         <div className="border-t border-slate-100 px-4 py-2.5 dark:border-slate-700/50 md:px-5">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="-mx-1 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+        <div className="flex w-max max-w-none flex-nowrap gap-1.5 sm:w-auto sm:max-w-full sm:flex-wrap">
           {hasPermission("utuPaket") || isAdminRole() ? (
             <Link href="/utu-paket" className="btn-nav-utu-paket">{t("nav.ironPack")}</Link>
           ) : null}
@@ -1109,17 +1110,18 @@ export default function HomePage() {
           ) : null}
         </div>
         </div>
+        </div>
       </section>
 
       {/* ── Ürün bilgisi bandı ────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/85 md:px-5">
+      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/85 sm:flex-row sm:flex-wrap sm:items-center md:px-5">
         <svg className="h-4 w-4 shrink-0 text-teal-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t("home.productWorked")}</span>
         <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
           {formatProductDisplayLine(productName, productModel)}
         </span>
         {productMetaSource === "hedef" ? (
-          <span className="ml-auto rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-800 dark:bg-teal-950/50 dark:text-teal-300">
+          <span className="self-start rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-semibold text-teal-800 sm:ml-auto dark:bg-teal-950/50 dark:text-teal-300">
             {t("home.targetTracking")}
           </span>
         ) : (
@@ -1194,7 +1196,7 @@ export default function HomePage() {
               <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                 {t("home.extraEntryDesc")}
               </p>
-              <div className="overflow-x-auto overflow-hidden rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/90 bg-white text-slate-900 shadow-surface dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-100">
                 <table className="w-full min-w-[280px] border-collapse text-sm">
                   <thead className="bg-slate-800 text-white">
                     <tr>

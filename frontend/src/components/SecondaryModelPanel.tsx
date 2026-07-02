@@ -444,15 +444,15 @@ export default function SecondaryModelPanel({ selectedDate, primaryModelId, prim
           onClick={() => setExpanded((v) => !v)}
           className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left"
         >
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500 text-[10px] font-black text-white shadow">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500 text-[10px] font-black text-white shadow">
               2
             </span>
-            <div>
-              <p className="text-sm font-black text-violet-900 dark:text-violet-200">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-violet-900 dark:text-violet-200">
                 Ek Model Girişi
                 {selectedModel ? (
-                  <span className="ml-2 rounded-md bg-violet-200 px-2 py-0.5 text-xs font-bold text-violet-800 dark:bg-violet-800/50 dark:text-violet-200">
+                  <span className="ml-2 inline-block max-w-[10rem] truncate align-bottom rounded-md bg-violet-200 px-2 py-0.5 text-xs font-bold text-violet-800 dark:bg-violet-800/50 dark:text-violet-200">
                     {selectedModel.productName || selectedModel.modelCode}
                   </span>
                 ) : null}
