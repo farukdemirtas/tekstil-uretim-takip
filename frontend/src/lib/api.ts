@@ -936,8 +936,11 @@ export async function updateProductModel(
     baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
     dailySummaryProcesses?: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
     sessionStartDate?: string | null;
+    targetQuantity?: number;
+    primaryConsignmentId?: string | null;
+    secondaryConsignmentId?: string | null;
   }
-): Promise<{ id: number; modelCode: string; productName: string; sessionStartDate?: string | null }> {
+): Promise<{ id: number; modelCode: string; productName: string; sessionStartDate?: string | null; targetQuantity?: number }> {
   const res = await apiFetch(`${apiBase()}/product-models/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders() },

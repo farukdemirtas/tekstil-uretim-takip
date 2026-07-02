@@ -414,7 +414,8 @@ export default function ProductModelsSection() {
       sessionStartDate: sessionStartDate || null,
       primaryConsignmentId: primaryConsignmentId.trim() || null,
       secondaryConsignmentId: secondaryConsignmentId.trim() || null,
-      ...(editingId === "new" && fromTakipsan ? { fromTakipsan: true, takipsanProductLabel, takipsanOrderCode, targetQuantity } : {}),
+      targetQuantity: Math.max(0, Math.floor(Number(targetQuantity) || 0)),
+      ...(editingId === "new" && fromTakipsan ? { fromTakipsan: true, takipsanProductLabel, takipsanOrderCode } : {}),
     };
     try {
       if (editingId === "new") { await createProductModel(payload); } else { await updateProductModel(editingId, payload); }
@@ -678,39 +679,42 @@ export default function ProductModelsSection() {
               )}
             </div>
 
-            {/* ── Hedef & Sipariş (sadece Takipsan) ── */}
-            {isTakipsanLinkedEdit ? (
-              <div className="px-5 py-4">
-                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Hedef & Sipariş</p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Hedef adet</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number" min={0} step={1}
-                        value={targetQuantity || ""}
-                        onChange={(e) => { const v = parseInt(e.target.value, 10); setTargetQuantity(Number.isFinite(v) && v >= 0 ? v : 0); }}
-                        className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold tabular-nums outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="23500"
-                      />
-                      {typeof editingId === "number" ? (
-                        <button type="button" disabled={takipsanBusy}
-                          onClick={() => {
-                            setTakipsanBusy(true);
-                            void refreshProductModelTarget(editingId)
-                              .then((r) => { setTargetQuantity(r.targetQuantity); if (r.productLabel) setTakipsanProductLabel(r.productLabel); })
-                              .catch((e) => setError(e instanceof Error ? e.message : "Güncellenemedi"))
-                              .finally(() => setTakipsanBusy(false));
-                          }}
-                          className="flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/20 dark:text-sky-300"
-                        >
-                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
-                          {takipsanBusy ? "…" : "Takipsan'dan al"}
-                        </button>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-400">El ile girin ya da Takipsan&apos;dan güncel değeri çekin.</p>
+            {/* ── Hedef adet (tüm modeller) ── */}
+            <div className="px-5 py-4">
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Hedef & Sipariş</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Hedef adet</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" min={0} step={1}
+                      value={targetQuantity || ""}
+                      onChange={(e) => { const v = parseInt(e.target.value, 10); setTargetQuantity(Number.isFinite(v) && v >= 0 ? v : 0); }}
+                      className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold tabular-nums outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      placeholder="23500"
+                    />
+                    {isTakipsanLinkedEdit && typeof editingId === "number" ? (
+                      <button type="button" disabled={takipsanBusy}
+                        onClick={() => {
+                          setTakipsanBusy(true);
+                          void refreshProductModelTarget(editingId)
+                            .then((r) => { setTargetQuantity(r.targetQuantity); if (r.productLabel) setTakipsanProductLabel(r.productLabel); })
+                            .catch((e) => setError(e instanceof Error ? e.message : "Güncellenemedi"))
+                            .finally(() => setTakipsanBusy(false));
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/20 dark:text-sky-300"
+                      >
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.36" /></svg>
+                        {takipsanBusy ? "…" : "Takipsan'dan al"}
+                      </button>
+                    ) : null}
                   </div>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Ütü–paket paketleme hedefi ve Ekran5 için kullanılır. Kaydettikten sonra «Ütü–pakete uygula» ile günlere yazın.
+                  </p>
+                </div>
+                {isTakipsanLinkedEdit ? (
+                  <>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
                       Ana sevkiyat ID
@@ -737,9 +741,10 @@ export default function ProductModelsSection() {
                     />
                     <p className="mt-1 text-[11px] text-slate-400">İkinci PO (örn. 258154). Birden fazla: virgülle ayırın. Ana + ikincil birlikte toplanır.</p>
                   </div>
-                </div>
+                  </>
+                ) : null}
               </div>
-            ) : null}
+            </div>
 
             {/* ── Üretim günlerine uygula (takip başlangıcı + model ata) ── */}
             {hasPermission("hedefTakip") ? (

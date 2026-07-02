@@ -1937,6 +1937,200 @@ export async function applyHedefSessionToDailyMeta({ modelId, startDate, endDate
   }
 }
 
+/** Gerçek Takipsan bağlantısı: sipariş kodu veya sevkiyat ID (ürün etiketi tek başına sayılmaz) */
+export function isProductModelTakipsanLinked(row) {
+  if (!row || typeof row !== "object") return false;
+  return Boolean(
+    String(row.takipsanOrderCode || row.takipsan_order_code || "").trim() ||
+      String(row.primaryConsignmentId || row.primary_consignment_id || "").trim() ||
+      String(row.secondaryConsignmentId || row.secondary_consignment_id || "").trim()
+  );
+}
+
+async function getProductModelPackagingInfo(modelId) {
+  const row = await dbGet(
+    `SELECT target_quantity AS targetQuantity,
+            takipsan_order_code AS takipsanOrderCode,
+            primary_consignment_id AS primaryConsignmentId,
+            secondary_consignment_id AS secondaryConsignmentId
+     FROM product_models WHERE id = ?`,
+    [Number(modelId)]
+  );
+  if (!row) return { target: 0, isTakipsanLinked: false };
+  return {
+    target: Math.max(0, Math.floor(Number(row.targetQuantity) || 0)),
+    isTakipsanLinked: isProductModelTakipsanLinked(row),
+  };
+}
+
+/** Manuel model hedefini utu_paket_meta.packaging_target ile senkronlar; eski Takipsan kalıntısını temizler */
+async function syncUtuPaketPackagingTargetForModel(modelId, targetQuantity, { isTakipsanLinked } = {}) {
+  const mid = Number(modelId);
+  const t = Math.max(0, Math.floor(Number(targetQuantity) || 0));
+  if (!Number.isFinite(mid) || mid < 1) return;
+  if (isTakipsanLinked) {
+    await dbRun(
+      `UPDATE utu_paket_meta SET packaging_target = ?
+       WHERE model_id = ? AND (takipsan_synced_at IS NULL OR takipsan_synced_at = '')`,
+      [t, mid]
+    );
+    return;
+  }
+  await dbRun(
+    `UPDATE utu_paket_meta SET
+       packaging_target = ?,
+       takipsan_synced_at = NULL,
+       takipsan_order_code = '',
+       takipsan_package_count = 0,
+       takipsan_packages_json = NULL
+     WHERE model_id = ?`,
+    [t, mid]
+  );
+  const dateRows = await dbAll(
+    `SELECT production_date AS productionDate FROM utu_paket_meta WHERE model_id = ?`,
+    [mid]
+  );
+  for (const row of dateRows || []) {
+    const d = String(row.productionDate || "").trim();
+    if (!d) continue;
+    await purgeManualUtuPaketTakipsanArtifacts(d);
+    if (t > 0) {
+      await dbRun(`UPDATE utu_paket_meta SET packaging_target = ? WHERE production_date = ?`, [t, d]);
+    }
+  }
+}
+
+/** Günün paketleme verisini sıfırlar (Takipsan + slot + beden) — yeni model/tarih atamasında */
+async function resetUtuPaketPackagingDay(date) {
+  const d = String(date || "").trim();
+  if (!d) return;
+  const slotKeys = [
+    "h0900",
+    "h1000",
+    "h1115",
+    "h1215",
+    "h1300",
+    "h1445",
+    "h1545",
+    "h1700",
+    "h1830",
+  ];
+  await dbRun(
+    `UPDATE utu_paket_meta SET
+       takipsan_synced_at = NULL,
+       takipsan_order_code = '',
+       takipsan_package_count = 0,
+       takipsan_packages_json = NULL
+     WHERE production_date = ?`,
+    [d]
+  );
+  const zeros = slotKeys.map(() => 0);
+  await dbRun(
+    `INSERT INTO utu_paket_slots (
+      production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
+    ) VALUES (?, 'paketleme', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    ON CONFLICT(production_date, stage) DO UPDATE SET
+      h0900 = 0, h1000 = 0, h1115 = 0, h1215 = 0, h1300 = 0,
+      h1445 = 0, h1545 = 0, h1700 = 0, h1830 = 0, ek_sayim = 0`,
+    [d, ...zeros]
+  );
+  await dbRun(`DELETE FROM utu_paket_beden WHERE production_date = ?`, [d]);
+}
+
+/** @deprecated resetUtuPaketPackagingDay kullanın */
+async function purgeManualUtuPaketTakipsanArtifacts(date) {
+  return resetUtuPaketPackagingDay(date);
+}
+
+/** Gün verisine modele bağlı hedefi uygular (manuel modelde eski Takipsan hedefini ezer) */
+export async function enrichUtuPaketDayWithModelTarget(day) {
+  if (!day || typeof day !== "object") return day;
+  const mid = day.utuPaketModel?.modelId;
+  if (!mid || !Number.isFinite(Number(mid))) {
+    day.manualPackaging = false;
+    return day;
+  }
+
+  const { target: modelTarget, isTakipsanLinked } = await getProductModelPackagingInfo(mid);
+  day.manualPackaging = !isTakipsanLinked;
+
+  let packagingTarget = Math.max(
+    0,
+    Math.floor(Number(day.packagingTarget) || Number(day.takipsan?.orderQuantity) || 0)
+  );
+  const hasDayTakipsanSync = Boolean(day.takipsan?.syncedAt);
+  const hasTakipsanPackages =
+    Array.isArray(day.takipsan?.packages) && day.takipsan.packages.length > 0;
+
+  if (modelTarget > 0) {
+    if (!isTakipsanLinked || !hasDayTakipsanSync) {
+      packagingTarget = modelTarget;
+    } else {
+      packagingTarget = Math.max(packagingTarget, modelTarget);
+    }
+  }
+
+  day.packagingTarget = packagingTarget;
+
+  const slotKeys = [
+    "h0900",
+    "h1000",
+    "h1115",
+    "h1215",
+    "h1300",
+    "h1445",
+    "h1545",
+    "h1700",
+    "h1830",
+  ];
+  const sizeCodes = ["XS", "S", "M", "L", "XL"];
+  const packageItemSum = (day.takipsan?.packages || []).reduce(
+    (s, p) => s + Math.max(0, Math.floor(Number(p?.items) || 0)),
+    0
+  );
+
+  if (!isTakipsanLinked) {
+    const hasTakipsanContamination =
+      hasDayTakipsanSync ||
+      hasTakipsanPackages ||
+      Number(day.takipsan?.packageCount) > 0 ||
+      packageItemSum > 0 ||
+      String(day.takipsan?.orderCode || "").trim().length > 0;
+
+    if (hasTakipsanContamination) {
+      await resetUtuPaketPackagingDay(day.date);
+      day.stages = {
+        ...(day.stages || {}),
+        paketleme: Object.fromEntries(slotKeys.map((k) => [k, 0])),
+      };
+      day.stageEkSayim = { ...(day.stageEkSayim || {}), paketleme: 0 };
+      day.beden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
+    }
+
+    const slotSum = slotKeys.reduce(
+      (s, k) => s + Math.max(0, Math.floor(Number(day.stages?.paketleme?.[k]) || 0)),
+      0
+    );
+    const ekSayim = Math.max(0, Math.floor(Number(day.stageEkSayim?.paketleme) || 0));
+
+    day.takipsan = {
+      packageCount: 0,
+      readCount: slotSum + ekSayim,
+      orderQuantity: packagingTarget,
+      orderCode: "",
+      syncedAt: null,
+      packages: [],
+    };
+  } else {
+    day.takipsan = {
+      ...(day.takipsan || {}),
+      orderQuantity: packagingTarget,
+    };
+  }
+
+  return day;
+}
+
 /** Ütü–paket ve Ekran5: seçili günlere model ata (veri girişinden bağımsız) */
 export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, productName, productModel }) {
   const name = String(productName ?? "").trim();
@@ -1946,6 +2140,7 @@ export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, 
   if (!Number.isFinite(mid) || mid < 1) {
     throw new Error("Geçersiz model");
   }
+  const { target: packagingTarget, isTakipsanLinked } = await getProductModelPackagingInfo(mid);
   const conflicts = await findModelSessionConflicts({
     modelId: mid,
     startDate,
@@ -1956,15 +2151,39 @@ export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, 
     throw new Error(formatSessionConflictMessage(conflicts, "Ütü–paket"));
   }
   const dates = eachWeekdayIsoInRange(startDate, endDate);
-  const upsertSql = `
+  const upsertManualSql = `
     INSERT INTO utu_paket_meta (production_date, packaging_target, model_id, product_name, product_model, model_reference_date)
-    VALUES (?, 0, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(production_date) DO UPDATE SET
       model_id = excluded.model_id,
       product_name = excluded.product_name,
       product_model = excluded.product_model,
-      model_reference_date = excluded.model_reference_date
+      model_reference_date = excluded.model_reference_date,
+      packaging_target = excluded.packaging_target,
+      takipsan_synced_at = NULL,
+      takipsan_order_code = '',
+      takipsan_package_count = 0,
+      takipsan_packages_json = NULL
   `;
+  const upsertTakipsanSql = `
+    INSERT INTO utu_paket_meta (production_date, packaging_target, model_id, product_name, product_model, model_reference_date)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(production_date) DO UPDATE SET
+      model_id = excluded.model_id,
+      product_name = excluded.product_name,
+      product_model = excluded.product_model,
+      model_reference_date = excluded.model_reference_date,
+      packaging_target = CASE
+        WHEN utu_paket_meta.takipsan_synced_at IS NOT NULL AND utu_paket_meta.takipsan_synced_at != ''
+        THEN utu_paket_meta.packaging_target
+        ELSE excluded.packaging_target
+      END,
+      takipsan_synced_at = NULL,
+      takipsan_order_code = '',
+      takipsan_package_count = 0,
+      takipsan_packages_json = NULL
+  `;
+  const upsertSql = isTakipsanLinked ? upsertTakipsanSql : upsertManualSql;
   await dbRun("BEGIN TRANSACTION");
   try {
     const datesCleared = await clearModelSessionOutsideRange({
@@ -1975,7 +2194,8 @@ export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, 
     });
     await dbRun(`UPDATE product_models SET utu_paket_session_start_date = ? WHERE id = ?`, [start, mid]);
     for (const d of dates) {
-      await dbRun(upsertSql, [d, mid, name, model, d]);
+      await dbRun(upsertSql, [d, packagingTarget, mid, name, model, d]);
+      await resetUtuPaketPackagingDay(d);
     }
     await dbRun("COMMIT");
     return { ok: true, datesUpdated: dates.length, datesCleared, sessionStartDate: start };
@@ -2052,9 +2272,7 @@ export function listProductModels() {
             targetQuantity: Math.max(0, Math.floor(Number(r.targetQuantity) || 0)),
             productionDayCount: Math.max(0, Math.floor(Number(r.productionDayCount) || 0)),
             utuPaketDayCount: Math.max(0, Math.floor(Number(r.utuPaketDayCount) || 0)),
-            isTakipsanLinked: Boolean(
-              String(r.takipsanProductLabel || r.takipsanOrderCode || "").trim()
-            ),
+            isTakipsanLinked: isProductModelTakipsanLinked(r),
           }))
         );
       }
@@ -2122,9 +2340,7 @@ export function getProductModelWithBaselines(id) {
                   targetQuantity: Math.max(0, Math.floor(Number(row.targetQuantity) || 0)),
                   productionDayCount: Math.max(0, Math.floor(Number(row.productionDayCount) || 0)),
                   utuPaketDayCount: Math.max(0, Math.floor(Number(row.utuPaketDayCount) || 0)),
-                  isTakipsanLinked: Boolean(
-                    String(row.takipsanProductLabel || row.takipsanOrderCode || "").trim()
-                  ),
+                  isTakipsanLinked: isProductModelTakipsanLinked(row),
                   baselines: baselines || [],
                   dailySummaryProcesses: dailySummaryProcesses || [],
                 });
@@ -2271,8 +2487,9 @@ export async function createProductModel(payload, teamCodes) {
   const sessionStart = payload?.sessionStartDate
     ? String(payload.sessionStartDate).trim()
     : null;
-  const productLabel =
-    tsl || (pname && code ? buildTakipsanProductLabel(pname, code) : "");
+  const productLabel = fromTakipsan
+    ? tsl || (pname && code ? buildTakipsanProductLabel(pname, code) : "")
+    : "";
 
   validateBaselineRows(teamCodes, payload?.baselines);
   validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
@@ -2348,6 +2565,11 @@ export async function updateProductModel(id, payload, teamCodes) {
         : null
       : existing.primaryConsignmentId ?? null;
 
+  const targetQuantity =
+    payload?.targetQuantity !== undefined
+      ? Math.max(0, Math.floor(Number(payload.targetQuantity) || 0))
+      : Math.max(0, Math.floor(Number(existing.targetQuantity) || 0));
+
   validateBaselineRows(teamCodes, payload?.baselines);
   validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
   const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
@@ -2355,8 +2577,8 @@ export async function updateProductModel(id, payload, teamCodes) {
 
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE product_models SET model_code = ?, product_name = ?, session_start_date = ?, primary_consignment_id = ?, secondary_consignment_id = ? WHERE id = ?`,
-      [code, pname, sessionStart, primaryConsignmentId, secondaryConsignmentId, id],
+      `UPDATE product_models SET model_code = ?, product_name = ?, target_quantity = ?, session_start_date = ?, primary_consignment_id = ?, secondary_consignment_id = ? WHERE id = ?`,
+      [code, pname, targetQuantity, sessionStart, primaryConsignmentId, secondaryConsignmentId, id],
       function onUp(err) {
         if (err) return reject(err);
         if (this.changes === 0) return reject(new Error("Kayıt bulunamadı"));
@@ -2374,7 +2596,16 @@ export async function updateProductModel(id, payload, teamCodes) {
             if (fe) return reject(fe);
             try {
               await insertDailySummaryRows(id, dailyRows);
-              resolve({ id, modelCode: code, productName: pname, sessionStartDate: sessionStart, primaryConsignmentId, secondaryConsignmentId });
+              await syncUtuPaketPackagingTargetForModel(id, targetQuantity, { isTakipsanLinked: isLinked });
+              resolve({
+                id,
+                modelCode: code,
+                productName: pname,
+                targetQuantity,
+                sessionStartDate: sessionStart,
+                primaryConsignmentId,
+                secondaryConsignmentId,
+              });
             } catch (e) {
               reject(e);
             }
@@ -4682,9 +4913,7 @@ export function getUtuPaketDay(date) {
                 for (const st of UTU_PAKET_STAGES) {
                   const row = (slotRows || []).find((r) => r.stage === st);
                   stages[st] = rowToUtuPaketSlots(row);
-                  if (st !== "paketleme") {
-                    stageEkSayim[st] = Number(row?.ek_sayim) || 0;
-                  }
+                  stageEkSayim[st] = Number(row?.ek_sayim) || 0;
                 }
                 const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
                 for (const r of bedenRows || []) {
@@ -4843,7 +5072,7 @@ export function saveUtuPaketDay(date, payload) {
 
           // ek_sayim: mevcut slot satırını güncelle (takipsan sync'ini etkilemez)
           if (stageEkSayimIn) {
-            for (const stage of ["optik", "utu"]) {
+            for (const stage of UTU_PAKET_STAGES) {
               if (stage in stageEkSayimIn) {
                 db.run(
                   `INSERT INTO utu_paket_slots (production_date, stage, ek_sayim)

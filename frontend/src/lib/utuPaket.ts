@@ -85,9 +85,24 @@ export function normalizeTakipsanPackages(
   return rows.map(normalizeTakipsanPackageRow).filter((row) => row.packageNo);
 }
 
+/** Takipsan created_at → YYYY-MM-DD (ISO ve TR formatları) */
+export function packageDateIso(createdAt: string): string | null {
+  const raw = String(createdAt || "").trim();
+  if (!raw) return null;
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = raw.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+  if (m) {
+    const d = m[1].padStart(2, "0");
+    const mo = m[2].padStart(2, "0");
+    return `${m[3]}-${mo}-${d}`;
+  }
+  return null;
+}
+
 export function packageCreatedOnDate(createdAt: string, dateIso: string): boolean {
-  const m = String(createdAt || "").match(/^(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] === dateIso : false;
+  const iso = packageDateIso(createdAt);
+  return iso ? iso === dateIso : false;
 }
 
 export function sumGunPaketlenen(
@@ -161,10 +176,12 @@ export type UtuPaketDayPayload = {
   utuPaketModel?: UtuPaketModelRef | null;
   stages: Record<UtuPaketStage, UtuPaketSlots>;
   /** Optik ve ütü için saat toplamına eklenen ek adet */
-  stageEkSayim?: Partial<Record<Exclude<UtuPaketStage, "paketleme">, number>>;
+  stageEkSayim?: Partial<Record<UtuPaketStage, number>>;
   beden: Record<string, number>;
   /** TV bar hedefi — sipariş sayısından gelir */
   packagingTarget: number;
+  /** Ayarlardan atanan manuel model — Takipsan paketleme kapalı */
+  manualPackaging?: boolean;
   takipsan?: UtuPaketTakipsanSnapshot;
 };
 
@@ -213,10 +230,10 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
       stages[st][key] = Math.max(0, Math.floor(Number(src[key]) || 0));
     }
   }
-  const stageEkSayim: Partial<Record<Exclude<UtuPaketStage, "paketleme">, number>> = {
-    optik: Math.max(0, Math.floor(Number(raw.stageEkSayim?.optik) || 0)),
-    utu: Math.max(0, Math.floor(Number(raw.stageEkSayim?.utu) || 0)),
-  };
+  const stageEkSayim: Partial<Record<UtuPaketStage, number>> = {};
+  for (const st of UTU_PAKET_STAGES) {
+    stageEkSayim[st] = Math.max(0, Math.floor(Number(raw.stageEkSayim?.[st]) || 0));
+  }
   const beden = emptyUtuPaketBeden();
   for (const code of UTU_PAKET_SIZE_CODES) {
     beden[code] = Math.max(0, Math.floor(Number(raw.beden?.[code]) || 0));
@@ -251,6 +268,7 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
     stageEkSayim,
     beden,
     packagingTarget: Math.max(0, Math.floor(Number(raw.packagingTarget) || 0)),
+    manualPackaging: raw.manualPackaging === true,
     takipsan,
   };
 }

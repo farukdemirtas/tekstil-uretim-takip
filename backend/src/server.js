@@ -82,6 +82,7 @@ import {
   getRepairHistory,
   deleteRepairEntries,
   getUtuPaketDay,
+  enrichUtuPaketDayWithModelTarget,
   getUtuPaketAnalytics,
   getUtuPaketEkran1Summary,
   getEkran1GenelIlerleme,
@@ -1754,7 +1755,7 @@ app.get("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ message: "date zorunlu" });
   try {
-    const data = await getUtuPaketDay(String(date));
+    const data = await enrichUtuPaketDayWithModelTarget(await getUtuPaketDay(String(date)));
     return res.json(data);
   } catch (err) {
     return res.status(500).json({ message: "Ütü–paket verisi alınamadı", error: String(err) });

@@ -8,6 +8,7 @@ import {
   getProductModelWithBaselines,
   getSecondaryModelId,
   getUtuPaketModelForDate,
+  isProductModelTakipsanLinked,
 } from "./queries.js";
 import { TakipsanClient, isTakipsanConfigured } from "./takipsanClient.js";
 import { splitTakipsanProductLabel, buildTakipsanProductLabel } from "./takipsanProduct.js";
@@ -258,6 +259,22 @@ export async function syncTakipsanToUtuPaket(options = {}) {
       : [consignmentId, ...resolved.mergeIds].filter(Boolean);
     const activeModel = resolved.activeModel;
     const meta = resolved.meta;
+
+    // Manuel ütü–paket modeli (Takipsan sevkiyatı yok): otomatik sync hedefi ezmesin
+    if (activeModel && !isProductModelTakipsanLinked(activeModel)) {
+      updateState({
+        lastSyncAt: syncedAt,
+        lastError: null,
+        lastDate: date,
+      });
+      return {
+        ok: true,
+        skipped: true,
+        reason: "manual_utu_paket_model",
+        date,
+        modelId: resolved.activeModelId,
+      };
+    }
 
     updateState({ enabled: true, lastSyncAt: syncedAt, lastError: null });
 

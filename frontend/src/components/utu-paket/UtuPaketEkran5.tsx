@@ -643,25 +643,40 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
 
       const modelDetail = mid ? await getProductModel(mid).catch(() => null) : null;
 
-      if ((modelDetail?.primaryConsignmentId || modelDetail?.secondaryConsignmentId) && mid) {
+      if (modelDetail?.isTakipsanLinked && mid) {
         await syncTakipsan(date).catch(() => {});
       }
 
-      const [raw, genelOzet, ekran5Res] = await Promise.all([
+      const genelOzet = await getEkran1GenelIlerleme(date, mid ?? undefined).catch(() => null);
+      const startDate =
+        modelDetail?.utuPaketSessionStartDate?.trim() ||
+        genelOzet?.dataStartDate ||
+        date;
+      const [raw, ekran5Res, analytics] = await Promise.all([
         getUtuPaket(date),
-        getEkran1GenelIlerleme(date, mid ?? undefined).catch(() => null),
         mid ? getEkran5Target(mid).catch(() => ({ ekran5Target: null, targetQuantity: null })) : Promise.resolve({ ekran5Target: null, targetQuantity: null }),
+        startDate && startDate <= date
+          ? getUtuPaketAnalytics({ startDate, endDate: date }).catch(() => null)
+          : Promise.resolve(null),
       ]);
 
       const data = normalizeUtuPaketPayload({ ...raw, date });
       const meta = upm
         ? { productName: upm.productName, productModel: upm.productModel, modelId: upm.modelId }
         : null;
-      const todayOptik = sumUtuPaketSlots(data.stages.optik);
-      const todayUtu   = sumUtuPaketSlots(data.stages.utu);
+      const todayOptik = sumUtuPaketSlots(data.stages.optik) + Math.max(0, Math.floor(Number(data.stageEkSayim?.optik) || 0));
+      const todayUtu = sumUtuPaketSlots(data.stages.utu) + Math.max(0, Math.floor(Number(data.stageEkSayim?.utu) || 0));
+      const todayPaketManual =
+        sumUtuPaketSlots(data.stages.paketleme) + Math.max(0, Math.floor(Number(data.stageEkSayim?.paketleme) || 0));
+      const periodPaketManual = Math.max(
+        todayPaketManual,
+        Math.floor(Number(analytics?.periodTotals?.paketleme) || 0)
+      );
       setDisplayDate(date);
       setOptikCount(todayOptik);
       setUtuCount(todayUtu);
+      setOptikTotal(analytics?.periodTotals?.optik ?? todayOptik);
+      setUtuTotal(analytics?.periodTotals?.utu ?? todayUtu);
 
       const modelCodes = [
         meta?.productModel ?? "",
@@ -671,55 +686,47 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       const usesModelConsignment = Boolean(
         modelDetail?.primaryConsignmentId || modelDetail?.secondaryConsignmentId
       );
+      const isManualPackaging = data.manualPackaging === true;
       const takipsanOk =
-        (usesModelConsignment && Boolean(data.takipsan?.syncedAt)) ||
-        currentProductMatchesTakipsan(meta, data.takipsan?.orderCode ?? "", modelCodes);
+        !isManualPackaging &&
+        Boolean(data.takipsan?.syncedAt) &&
+        (usesModelConsignment ||
+          currentProductMatchesTakipsan(meta, data.takipsan?.orderCode ?? "", modelCodes));
       if (takipsanOk) {
-        setPaketCount(data.takipsan?.readCount ?? sumUtuPaketSlots(data.stages.paketleme));
+        setPaketCount(data.takipsan?.readCount ?? todayPaketManual);
         const gunPkt = sumGunPaketlenen(data.takipsan?.packages, date);
         setGunPaketlenen(gunPkt.adet);
         setGunKoli(gunPkt.paket);
         setToplamKoli(normalizeTakipsanPackages(data.takipsan?.packages).length);
         setBedenKoliTotals(countKoliByBeden(data.takipsan?.packages));
         setBedenKoliToday(countKoliByBeden(data.takipsan?.packages, date));
-        // Bugün per beden — Takipsan bugünkü paketleri (date filtreli)
         setBedenToday(countAdetByBeden(data.takipsan?.packages, date));
-        // Toplam per beden — Takipsan TÜM paketleri (filtre yok); paketleme toplam ile tutarlı
         setBedenTotals(countAdetByBeden(data.takipsan?.packages));
       } else {
-        setPaketCount(0);
-        setGunPaketlenen(0);
+        setPaketCount(periodPaketManual);
+        setGunPaketlenen(todayPaketManual);
         setGunKoli(0);
         setToplamKoli(0);
         setBedenKoliTotals(emptyUtuPaketBeden());
         setBedenKoliToday(emptyUtuPaketBeden());
-        // Takipsan yoksa manuel girişi kullan
         setBedenToday({ ...data.beden });
       }
 
       const modelHedef = ekran5Res.targetQuantity ?? 0;
       const genelHedef = genelOzet?.target ?? 0;
-      const productionTarget = genelHedef > 0 ? genelHedef : modelHedef > 0 ? modelHedef : 0;
+      const isManualUtuModel = Boolean(modelDetail && !modelDetail.isTakipsanLinked);
+      const productionTarget = isManualUtuModel
+        ? modelHedef
+        : genelHedef > 0
+          ? genelHedef
+          : modelHedef > 0
+            ? modelHedef
+            : 0;
       setApiTarget(resolveUtuPaketLineTarget(data, productionTarget));
       setManualTarget(
         ekran5Res.ekran5Target != null && ekran5Res.ekran5Target > 0 ? ekran5Res.ekran5Target : null
       );
       setProductLabel([meta?.productName, meta?.productModel].filter(Boolean).join(" · "));
-
-      // Modele özgü session başlangıcından bugüne analitik
-      const startDate =
-        modelDetail?.utuPaketSessionStartDate?.trim() ||
-        genelOzet?.dataStartDate ||
-        date;
-      let analytics = null;
-      if (startDate && startDate <= date) {
-        analytics = await getUtuPaketAnalytics({ startDate, endDate: date }).catch(() => null);
-        setOptikTotal(analytics?.periodTotals?.optik ?? todayOptik);
-        setUtuTotal(analytics?.periodTotals?.utu ?? todayUtu);
-      } else {
-        setOptikTotal(todayOptik);
-        setUtuTotal(todayUtu);
-      }
 
       const bedenTargetsRes = mid ? await getBedenCekiTargets(mid).catch(() => ({ targets: emptyUtuPaketBeden() })) : { targets: emptyUtuPaketBeden() };
       const normalizedTargets = emptyUtuPaketBeden();

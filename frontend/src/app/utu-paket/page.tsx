@@ -29,6 +29,7 @@ import {
   emptyBedenCekiTargets,
   normalizeTakipsanPackages,
   normalizeUtuPaketPayload,
+  packageCreatedOnDate,
   resolveUtuPaketLineTarget,
   sumGunPaketlenen,
   sumUtuPaketSlots,
@@ -114,6 +115,8 @@ export default function UtuPaketPage() {
   const [bedenCekiMsg, setBedenCekiMsg] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const f5RefreshBusy = useRef(false);
+  /** Paketleme sekmesinde tarih/model başına otomatik sync yalnızca bir kez */
+  const paketlemeAutoSyncKey = useRef("");
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -129,8 +132,9 @@ export default function UtuPaketPage() {
     setAuthorized(true);
   }, [router]);
 
-  const loadDay = useCallback(async (date: string) => {
-    setLoading(true);
+  const loadDay = useCallback(async (date: string, opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    if (!silent) setLoading(true);
     setSaveMsg(null);
     try {
       const raw = await getUtuPaket(date);
@@ -155,12 +159,14 @@ export default function UtuPaketPage() {
           packagingTarget: 0,
         })
       );
-      setSaveMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : "Veri yüklenemedi",
-      });
+      if (!silent) {
+        setSaveMsg({
+          ok: false,
+          text: e instanceof Error ? e.message : "Veri yüklenemedi",
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -237,29 +243,63 @@ export default function UtuPaketPage() {
     }
   }, []);
 
-  const runTakipsanSync = useCallback(async () => {
+  const runTakipsanSync = useCallback(async (opts?: { silent?: boolean }) => {
     const syncDate = selectedDate || todayIsoTurkey();
-    setTakipsanSyncing(true);
+    const silent = opts?.silent === true;
+    if (!silent) setTakipsanSyncing(true);
     try {
       await syncTakipsan(syncDate);
-      await loadDay(syncDate);
+      await loadDay(syncDate, { silent });
       await refreshTakipsan();
     } catch (e) {
       await refreshTakipsan();
-      setSaveMsg({
-        ok: false,
-        text: e instanceof Error ? e.message : "Paketleme verisi güncellenemedi",
-      });
+      if (!silent) {
+        setSaveMsg({
+          ok: false,
+          text: e instanceof Error ? e.message : "Paketleme verisi güncellenemedi",
+        });
+      }
     } finally {
-      setTakipsanSyncing(false);
+      if (!silent) setTakipsanSyncing(false);
     }
   }, [selectedDate, loadDay, refreshTakipsan]);
 
-  /** Paketleme sekmesine geçince tek seferlik senkron; sürekli döngü yok (F5 ile yenilenir) */
+  /** Paketleme sekmesine geçince Takipsan senkronu (manuel modelde atlanır) */
   useEffect(() => {
-    if (!authorized || mainTab !== "entry" || activeStage !== "paketleme") return;
+    if (!authorized || mainTab !== "entry") return;
+    if (activeStage !== "paketleme") {
+      paketlemeAutoSyncKey.current = "";
+      return;
+    }
+    if (loading) return;
+
+    const syncKey = `${selectedDate}:${data.manualPackaging ? "manual" : "takipsan"}`;
+    if (paketlemeAutoSyncKey.current === syncKey) return;
+    paketlemeAutoSyncKey.current = syncKey;
+
+    if (data.manualPackaging) return;
+
     void runTakipsanSync();
-  }, [authorized, mainTab, activeStage, runTakipsanSync]);
+  }, [
+    authorized,
+    mainTab,
+    activeStage,
+    loading,
+    selectedDate,
+    data.manualPackaging,
+    runTakipsanSync,
+  ]);
+
+  /** Paketleme sekmesinde Takipsan verisini periyodik güncelle (~1 dk) */
+  useEffect(() => {
+    if (!authorized || mainTab !== "entry" || activeStage !== "paketleme" || data.manualPackaging) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      void runTakipsanSync({ silent: true });
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [authorized, mainTab, activeStage, data.manualPackaging, runTakipsanSync]);
 
   /** Gizli F5: tarayıcı yenilemesini engelle, veriyi arka planda güncelle */
   useEffect(() => {
@@ -278,8 +318,10 @@ export default function UtuPaketPage() {
             saveTimer.current = null;
           }
           if (dirty) await persist(data);
-          if (activeStage === "paketleme") {
+          if (activeStage === "paketleme" && !data.manualPackaging) {
             await runTakipsanSync();
+          } else if (activeStage === "paketleme" && data.manualPackaging) {
+            await loadDay(selectedDate);
           } else {
             await loadDay(selectedDate);
             await refreshTakipsan();
@@ -315,42 +357,52 @@ export default function UtuPaketPage() {
     const out = {} as Record<UtuPaketStage, number>;
     for (const st of UTU_PAKET_STAGES) {
       const slotSum = sumUtuPaketSlots(data.stages[st]);
-      const ekSayim =
-        st !== "paketleme" ? (data.stageEkSayim?.[st as "optik" | "utu"] ?? 0) : 0;
+      const ekSayim = data.stageEkSayim?.[st] ?? 0;
       out[st] = slotSum + ekSayim;
     }
     return out;
   }, [data.stages, data.stageEkSayim]);
 
-  const bedenTotal = useMemo(
-    () => UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (data.beden[c] || 0), 0),
-    [data.beden]
-  );
+  const isManualPackagingDay = data.manualPackaging === true;
+  const dayTakipsanSynced = !isManualPackagingDay && Boolean(data.takipsan?.syncedAt);
+
+  const allDayPackages = useMemo(() => {
+    if (!dayTakipsanSynced) return [];
+    return normalizeTakipsanPackages(data.takipsan?.packages);
+  }, [data.takipsan?.packages, dayTakipsanSynced]);
 
   const paketPackages = useMemo(() => {
-    const fromDay = normalizeTakipsanPackages(data.takipsan?.packages);
-    const fromStatus = normalizeTakipsanPackages(takipsanStatus?.lastPackages);
-    const dayHasDates = fromDay.some((row) => row.createdAt);
-    const statusHasDates = fromStatus.some((row) => row.createdAt);
-    let rows: typeof fromDay;
-    if (dayHasDates) rows = fromDay;
-    else if (statusHasDates) rows = fromStatus;
-    else if (fromDay.length > 0) rows = fromDay;
-    else rows = fromStatus;
-    return [...rows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [data.takipsan?.packages, takipsanStatus?.lastPackages]);
-  const paketReadCount = data.takipsan?.readCount ?? stageTotals.paketleme;
-  const paketPackageCount = Math.max(
-    data.takipsan?.packageCount ?? 0,
-    takipsanStatus?.lastPackageCount ?? 0
+    return allDayPackages
+      .filter((row) => packageCreatedOnDate(row.createdAt, selectedDate))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [allDayPackages, selectedDate]);
+
+  const displayBeden = useMemo(() => {
+    if (isManualPackagingDay) return data.beden;
+    if (dayTakipsanSynced) return countAdetByBeden(allDayPackages, selectedDate);
+    return data.beden;
+  }, [isManualPackagingDay, dayTakipsanSynced, allDayPackages, selectedDate, data.beden]);
+
+  const bedenTotal = useMemo(
+    () => UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (displayBeden[c] || 0), 0),
+    [displayBeden]
   );
-  const paketOrderQty = resolveUtuPaketLineTarget(data, 0);
-  const paketRemaining = Math.max(0, paketOrderQty - paketReadCount);
 
   const gunPaketOzeti = useMemo(
-    () => sumGunPaketlenen(paketPackages, selectedDate),
-    [paketPackages, selectedDate]
+    () => sumGunPaketlenen(allDayPackages, selectedDate),
+    [allDayPackages, selectedDate]
   );
+
+  /** Manuel girişte slot toplamı; Takipsan'da o günün paketleri */
+  const gunPaketAdet = isManualPackagingDay ? stageTotals.paketleme : gunPaketOzeti.adet;
+  const gunPaketPaket = isManualPackagingDay ? 0 : gunPaketOzeti.paket;
+
+  const paketReadCount = dayTakipsanSynced
+    ? Math.max(gunPaketOzeti.adet, stageTotals.paketleme)
+    : stageTotals.paketleme;
+  const paketPackageCount = dayTakipsanSynced ? gunPaketOzeti.paket : 0;
+  const paketOrderQty = resolveUtuPaketLineTarget(data, 0);
+  const paketRemaining = Math.max(0, paketOrderQty - paketReadCount);
 
   const gunPaketLabel =
     selectedDate === todayIsoTurkey()
@@ -410,7 +462,7 @@ export default function UtuPaketPage() {
     });
   }
 
-  function setEkSayim(stage: "optik" | "utu", raw: string) {
+  function setEkSayim(stage: UtuPaketStage, raw: string) {
     const v = Math.max(0, parseInt(raw, 10) || 0);
     setData((prev) => {
       const next = {
@@ -466,7 +518,7 @@ export default function UtuPaketPage() {
               </p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Ütü–Paket Takip</h1>
               <p className="mt-2 max-w-xl text-sm text-teal-50/90">
-                Optik → Ütü → Paketleme. Optik ve ütü saatlik girilir; paketleme otomatik güncellenir.
+                Optik, ütü ve paketleme saatlik girilir; paketleme Takipsan ile de otomatik güncellenir.
               </p>
             </div>
             <Link
@@ -605,7 +657,7 @@ export default function UtuPaketPage() {
                         {selectedDate === todayIsoTurkey() ? "Bugün" : formatDayLabel(selectedDate)}
                       </p>
                       <p className="text-xl font-black tabular-nums text-emerald-800 dark:text-emerald-300">
-                        {loading ? "—" : gunPaketOzeti.adet.toLocaleString("tr-TR")}
+                        {loading ? "—" : gunPaketAdet.toLocaleString("tr-TR")}
                       </p>
                     </div>
                   </div>
@@ -683,31 +735,41 @@ export default function UtuPaketPage() {
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">Paketleme</h2>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">Takipsan · otomatik (~1 dk)</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {dayTakipsanSynced ? "Takipsan · otomatik (~1 dk)" : "Manuel giriş · model hedefi"}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {data.takipsan?.orderCode && (
-                <span className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                  {data.takipsan.orderCode}
+              {dayTakipsanSynced ? (
+                <>
+                  {data.takipsan?.orderCode ? (
+                    <span className="rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      {data.takipsan.orderCode}
+                    </span>
+                  ) : null}
+                  {takipsanSyncing ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700 ring-1 ring-teal-200 dark:bg-teal-950/30 dark:text-teal-300 dark:ring-teal-800">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-500" />
+                      Güncelleniyor
+                    </span>
+                  ) : data.takipsan?.syncedAt ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                      {new Date(data.takipsan.syncedAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                      Bekleniyor
+                    </span>
+                  )}
+                </>
+              ) : data.utuPaketModel ? (
+                <span className="rounded-lg border border-indigo-200/80 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300">
+                  {[data.utuPaketModel.productName, data.utuPaketModel.productModel].filter(Boolean).join(" · ")}
                 </span>
-              )}
-              {takipsanSyncing ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700 ring-1 ring-teal-200 dark:bg-teal-950/30 dark:text-teal-300 dark:ring-teal-800">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-500" />
-                  Güncelleniyor
-                </span>
-              ) : data.takipsan?.syncedAt ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  {new Date(data.takipsan.syncedAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                  Bekleniyor
-                </span>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -734,7 +796,7 @@ export default function UtuPaketPage() {
                     </p>
                     <div className="mt-1 flex items-end gap-3">
                       <p className="text-5xl font-black tabular-nums leading-none text-emerald-900 dark:text-emerald-100">
-                        {gunPaketOzeti.adet.toLocaleString("tr-TR")}
+                        {gunPaketAdet.toLocaleString("tr-TR")}
                       </p>
                       <p className="mb-1 text-sm text-slate-500 dark:text-slate-400">adet</p>
                     </div>
@@ -742,7 +804,7 @@ export default function UtuPaketPage() {
                       <div>
                         <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-500">Paket</p>
                         <p className="text-lg font-black tabular-nums text-emerald-800 dark:text-emerald-200">
-                          {gunPaketOzeti.paket.toLocaleString("tr-TR")}
+                          {gunPaketPaket.toLocaleString("tr-TR")}
                         </p>
                       </div>
                       <div className="h-8 w-px bg-emerald-200/60 dark:bg-emerald-800/40" />
@@ -758,7 +820,7 @@ export default function UtuPaketPage() {
                   <div className="rounded-2xl bg-slate-50/80 p-5 ring-1 ring-slate-200/60 dark:bg-slate-800/40 dark:ring-slate-700/50">
                     <div className="flex items-center justify-between">
                       <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                        Sipariş ilerlemesi
+                        {dayTakipsanSynced ? "Sipariş ilerlemesi" : "Paketleme ilerlemesi"}
                       </p>
                       <span className={`text-sm font-black tabular-nums ${pct >= 100 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-700 dark:text-slate-200"}`}>
                         %{pct}
@@ -778,15 +840,97 @@ export default function UtuPaketPage() {
                     </div>
                     <div className="mt-3 flex items-center justify-between">
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {remaining > 0 ? `${remaining.toLocaleString("tr-TR")} adet kaldı` : "Sipariş tamamlandı ✓"}
+                        {remaining > 0 ? `${remaining.toLocaleString("tr-TR")} adet kaldı` : dayTakipsanSynced ? "Sipariş tamamlandı ✓" : "Hedef tamamlandı ✓"}
                       </p>
-                      <p className="text-xs text-slate-400">{paketPackageCount.toLocaleString("tr-TR")} paket</p>
+                      <p className="text-xs text-slate-400">
+                        {dayTakipsanSynced ? `${paketPackageCount.toLocaleString("tr-TR")} paket` : "Manuel takip"}
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
             );
           })()}
+
+          {/* ── Manuel saatlik giriş (paketleme) ── */}
+          <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Manuel saatlik giriş</h3>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  Optik ve ütü ile aynı şekilde saat dilimlerine adet girebilirsiniz. Takipsan okunan adet varsa toplamda büyük olan esas alınır.
+                </p>
+                <p className="mt-2 text-2xl font-black tabular-nums text-emerald-700 dark:text-emerald-400">
+                  Günlük toplam: {stageTotals.paketleme.toLocaleString("tr-TR")} adet
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEkSayimOpen((o) => !o)}
+                className={`mt-0.5 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm transition ${
+                  ekSayimOpen
+                    ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+                aria-expanded={ekSayimOpen}
+                title="Ek adet girişi"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                Ek adet
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => (
+                <label
+                  key={key}
+                  className="group flex flex-col rounded-2xl border border-slate-200/90 bg-slate-50/80 p-3 transition focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/30 dark:border-slate-600/80 dark:bg-slate-800/50"
+                >
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {label}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 text-center text-2xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
+                    value={data.stages.paketleme[key] || ""}
+                    onChange={(e) => setSlot("paketleme", key, e.target.value)}
+                    aria-label={`Paketleme ${label}`}
+                  />
+                </label>
+              ))}
+            </div>
+
+            {ekSayimOpen && (
+              <div className="mt-4 border-t border-slate-200/80 pt-4 dark:border-slate-700/80">
+                <p className="mb-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                  Ek adet saatlik tabloya eklenerek paketleme günlük toplamını günceller.
+                </p>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      className="w-28 rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-center text-xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
+                      value={data.stageEkSayim?.paketleme || ""}
+                      onChange={(e) => setEkSayim("paketleme", e.target.value)}
+                      aria-label="Paketleme ek adet"
+                    />
+                    <span className="text-sm text-slate-500 dark:text-slate-400">adet</span>
+                  </label>
+                  <p className="text-sm tabular-nums text-slate-600 dark:text-slate-300">
+                    Saatlik: {sumUtuPaketSlots(data.stages.paketleme).toLocaleString("tr-TR")} + ek:{" "}
+                    {(data.stageEkSayim?.paketleme ?? 0).toLocaleString("tr-TR")} ={" "}
+                    <strong>{stageTotals.paketleme.toLocaleString("tr-TR")}</strong>
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* ── Beden dağılımı ── */}
           <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
@@ -800,7 +944,7 @@ export default function UtuPaketPage() {
             </div>
             <div className="flex gap-2">
               {UTU_PAKET_SIZE_CODES.map((code) => {
-                const count = data.beden[code] || 0;
+                const count = displayBeden[code] || 0;
                 const pct = bedenTotal > 0 ? (count / bedenTotal) * 100 : 0;
                 const hasCount = count > 0;
                 return (
