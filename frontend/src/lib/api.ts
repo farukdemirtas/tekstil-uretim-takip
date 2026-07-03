@@ -31,6 +31,16 @@ function apiBase(): string {
   if (fromEnv) return fromEnv;
   return "http://127.0.0.1:4000/api";
 }
+
+/** Büyük SQL yedek yükleme — dev'de Next proxy 10MB sınırını atlamak için doğrudan backend */
+function adminDatabaseApiBase(): string {
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+    const backend = process.env.NEXT_PUBLIC_BACKEND_DEV_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:4000";
+    return `${backend}/api`;
+  }
+  return apiBase();
+}
+
 let authToken = "";
 
 export function setAuthToken(token: string) {
@@ -1926,15 +1936,25 @@ export async function downloadDatabaseBackup(): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-export async function restoreDatabaseBackup(sql: string): Promise<{ ok: boolean; tableCount: number }> {
-  const res = await apiFetch(`${apiBase()}/admin/database/restore`, {
-    method: "POST",
-    headers: {
-      ...authHeaders(),
-      "Content-Type": "application/sql; charset=utf-8",
-    },
-    body: sql,
-  });
+export async function restoreDatabaseBackup(
+  source: File | Blob | string
+): Promise<{ ok: boolean; tableCount: number }> {
+  const body: BodyInit = typeof source === "string" ? source : source;
+  let res: Response;
+  try {
+    res = await apiFetch(`${adminDatabaseApiBase()}/admin/database/restore`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(),
+        "Content-Type": "application/sql; charset=utf-8",
+      },
+      body,
+    });
+  } catch {
+    throw new Error(
+      "Yedek sunucuya gönderilemedi. Backend çalışıyor mu? Dosya çok büyükse birkaç dakika sürebilir."
+    );
+  }
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
     throw new Error(err.message || err.error || "Yedek yüklenemedi");

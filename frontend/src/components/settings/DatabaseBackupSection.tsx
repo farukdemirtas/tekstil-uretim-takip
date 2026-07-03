@@ -77,8 +77,7 @@ export default function DatabaseBackupSection() {
     setRestoring(true);
     setMsg(null);
     try {
-      const sql = await selectedFile.text();
-      const result = await restoreDatabaseBackup(sql);
+      const result = await restoreDatabaseBackup(selectedFile);
       setMsg({
         ok: true,
         text: `Yedek yüklendi (${result.tableCount} tablo). Sayfayı yenilemeniz önerilir.`,

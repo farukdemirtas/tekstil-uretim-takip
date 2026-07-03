@@ -2042,6 +2042,9 @@ app.post("/api/admin/database/restore", requireAdmin, restoreSqlBody, async (req
       username: req.user?.username,
       tableCount: result.tableCount,
       bytes: sql.length,
+    }).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.error("db_last_restore kaydı:", e?.message || e);
     });
     logActivity(req, "veritabani_geri_yukle", "database", {
       tableCount: result.tableCount,
