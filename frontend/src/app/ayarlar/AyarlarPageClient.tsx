@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import BirthdaysSection from "@/components/settings/BirthdaysSection";
+import DatabaseBackupSection from "@/components/settings/DatabaseBackupSection";
 import LogsSection from "@/components/settings/LogsSection";
 import PersonnelNamesSection from "@/components/settings/PersonnelNamesSection";
 import ProductModelsSection from "@/components/settings/ProductModelsSection";
@@ -12,7 +13,7 @@ import UsersSettingsSection from "@/components/settings/UsersSettingsSection";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "kullanici" | "personel" | "dogum" | "proses" | "modeller" | "loglar";
+type TabId = "kullanici" | "personel" | "dogum" | "proses" | "modeller" | "loglar" | "yedek";
 
 export default function AyarlarPageClient() {
   const searchParams = useSearchParams();
@@ -44,6 +45,7 @@ export default function AyarlarPageClient() {
   const activeTab = useMemo((): TabId => {
     const raw = searchParams.get("tab");
     if (raw === "loglar" && canLoglar) return "loglar";
+    if (raw === "yedek" && admin) return "yedek";
     if (raw === "modeller" && canAyarlar) return "modeller";
     if (raw === "proses" && canAyarlar) return "proses";
     if (raw === "dogum" && canAyarlar) return "dogum";
@@ -72,6 +74,7 @@ export default function AyarlarPageClient() {
           { id: "modeller" as const, label: "Ürün modelleri" },
         ] as const)
       : []),
+    ...(admin ? [{ id: "yedek" as const, label: "Yedek al" }] : []),
     ...(canLoglar ? [{ id: "loglar" as const, label: "Loglar" }] : []),
   ];
 
@@ -118,6 +121,7 @@ export default function AyarlarPageClient() {
       {activeTab === "dogum" && canAyarlar && <BirthdaysSection />}
       {activeTab === "proses" && canAyarlar && <TeamsProcessesSection />}
       {activeTab === "modeller" && canAyarlar && <ProductModelsSection />}
+      {activeTab === "yedek" && admin && <DatabaseBackupSection />}
       {activeTab === "loglar" && canLoglar && <LogsSection />}
     </main>
   );

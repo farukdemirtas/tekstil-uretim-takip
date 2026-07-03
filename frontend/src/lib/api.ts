@@ -1876,3 +1876,68 @@ export async function getModelAnalysisReport(params: {
   if (!res.ok) throw new Error("Model analizi alınamadı");
   return res.json() as Promise<ModelAnalysisResponse>;
 }
+
+export type DatabaseHistoryEvent = {
+  at: string;
+  by: string;
+  bytes?: number;
+  tableCount?: number;
+};
+
+export type DatabaseInfo = {
+  fileName: string;
+  sizeBytes: number;
+  modifiedAt: string | null;
+  tableCount: number;
+  lastBackupDownload: DatabaseHistoryEvent | null;
+  lastRestore: DatabaseHistoryEvent | null;
+};
+
+export async function getDatabaseInfo(): Promise<DatabaseInfo> {
+  const res = await apiFetch(`${apiBase()}/admin/database/info`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err.message || "Veritabanı bilgisi alınamadı");
+  }
+  return res.json() as Promise<DatabaseInfo>;
+}
+
+export async function downloadDatabaseBackup(): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/admin/database/backup`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(err.message || "Yedek alınamadı");
+  }
+  const blob = await res.blob();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `tekstil-yedek-${stamp}.sql`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function restoreDatabaseBackup(sql: string): Promise<{ ok: boolean; tableCount: number }> {
+  const res = await apiFetch(`${apiBase()}/admin/database/restore`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(),
+      "Content-Type": "application/sql; charset=utf-8",
+    },
+    body: sql,
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+    throw new Error(err.message || err.error || "Yedek yüklenemedi");
+  }
+  return res.json() as Promise<{ ok: boolean; tableCount: number }>;
+}

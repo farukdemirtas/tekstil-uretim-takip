@@ -31,6 +31,8 @@ const ACTION_LABELS: Record<string, string> = {
   urun_meta_guncelle: "Gün ürün bilgisi",
   uretim_kayit: "Üretim kaydı (tek)",
   uretim_toplu: "Üretim kaydı (toplu)",
+  veritabani_yedek: "Veritabanı yedek alma",
+  veritabani_geri_yukle: "Veritabanı geri yükleme",
 };
 
 type FilterForm = {

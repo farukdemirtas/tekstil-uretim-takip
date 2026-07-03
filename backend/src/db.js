@@ -36,6 +36,14 @@ function resolveDbPath() {
 const dbPath = resolveDbPath();
 const dataDir = path.dirname(dbPath);
 
+export function getDbPath() {
+  return dbPath;
+}
+
+export function getDbDataDir() {
+  return dataDir;
+}
+
 try {
   fs.mkdirSync(dataDir, { recursive: true });
 } catch (e) {

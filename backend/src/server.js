@@ -118,6 +118,13 @@ import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } fro
 import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
 import { syncTakipsanToUtuPaket, takipsanSyncState, todayTurkeyIso, fetchTakipsanConsignmentProductInfo } from "./takipsanSync.js";
 import { isTakipsanConfigured } from "./takipsanClient.js";
+import {
+  exportDatabaseSql,
+  getDatabaseInfo,
+  recordDatabaseBackupDownload,
+  recordDatabaseRestore,
+  restoreDatabaseFromSql,
+} from "./databaseBackup.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -1992,6 +1999,57 @@ app.get("/api/analytics/period-comparison", requirePermission("karsilastirma"), 
     return res.json(data);
   } catch (e) {
     return res.status(500).json({ message: String(e?.message ?? e) });
+  }
+});
+
+const restoreSqlBody = express.raw({
+  type: ["application/sql", "text/plain", "application/octet-stream", "text/*"],
+  limit: "150mb",
+});
+
+app.get("/api/admin/database/info", requireAdmin, async (_req, res) => {
+  try {
+    const info = await getDatabaseInfo();
+    return res.json(info);
+  } catch (err) {
+    return res.status(500).json({ message: "Veritabanı bilgisi alınamadı", error: String(err?.message ?? err) });
+  }
+});
+
+app.get("/api/admin/database/backup", requireAdmin, async (req, res) => {
+  try {
+    const sql = await exportDatabaseSql();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    await recordDatabaseBackupDownload({
+      username: req.user?.username,
+      bytes: sql.length,
+    });
+    logActivity(req, "veritabani_yedek", "database", { bytes: sql.length });
+    res.setHeader("Content-Type", "application/sql; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="tekstil-yedek-${stamp}.sql"`);
+    return res.send(sql);
+  } catch (err) {
+    return res.status(500).json({ message: "Yedek alınamadı", error: String(err?.message ?? err) });
+  }
+});
+
+app.post("/api/admin/database/restore", requireAdmin, restoreSqlBody, async (req, res) => {
+  try {
+    const sql = req.body?.length ? req.body.toString("utf8") : "";
+    const result = await restoreDatabaseFromSql(sql);
+    await bumpEkranRefreshSignal().catch(() => {});
+    await recordDatabaseRestore({
+      username: req.user?.username,
+      tableCount: result.tableCount,
+      bytes: sql.length,
+    });
+    logActivity(req, "veritabani_geri_yukle", "database", {
+      tableCount: result.tableCount,
+      bytes: sql.length,
+    });
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ message: "Yedek yüklenemedi", error: String(err?.message ?? err) });
   }
 });
 
