@@ -10,8 +10,6 @@ const nextConfig: NextConfig = {
   experimental: {
     // Ağır paketlerde tree-shaking (date-fns 200+ modül içeriyor)
     optimizePackageImports: ["date-fns", "react-day-picker", "lucide-react"],
-    // Dev rewrite (/api → backend): varsayılan 10MB SQL yedek geri yüklemeyi kesiyordu
-    proxyClientMaxBodySize: "160mb",
   },
   async rewrites() {
     if (process.env.NODE_ENV !== "development") return [];
