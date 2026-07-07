@@ -8,9 +8,16 @@ import AnalysisSubnav from "@/components/analysis/AnalysisSubnav";
 import GenelTamamlananChart from "@/components/analysis/GenelTamamlananChart";
 import { useI18n } from "@/components/I18nProvider";
 
+type PdfExportState = {
+  busy: boolean;
+  ready: boolean;
+  run: () => void;
+};
+
 export default function GenelTamamlananAnalysisPage() {
   const { t } = useI18n();
   const [ready, setReady] = useState(false);
+  const [pdfExport, setPdfExport] = useState<PdfExportState | null>(null);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -55,7 +62,15 @@ export default function GenelTamamlananAnalysisPage() {
                 {t("genelTamamlanan.pageDesc")}
               </p>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => pdfExport?.run()}
+                disabled={!pdfExport?.ready || pdfExport.busy}
+                className="rounded-xl border border-teal-600/80 bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500"
+              >
+                {pdfExport?.busy ? "PDF hazırlanıyor…" : "PDF indir"}
+              </button>
               <Link
                 href="/analysis"
                 className="inline-flex items-center justify-center rounded-xl border border-slate-200/90 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50/80 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
@@ -74,7 +89,7 @@ export default function GenelTamamlananAnalysisPage() {
 
         <AnalysisSubnav />
 
-        <GenelTamamlananChart pageMode />
+        <GenelTamamlananChart pageMode onPdfExportChange={setPdfExport} />
       </div>
     </main>
   );

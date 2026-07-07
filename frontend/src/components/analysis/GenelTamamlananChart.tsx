@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { useI18n } from "@/components/I18nProvider";
 import { getGenelTamamlananTrend, getProcesses, type GenelTamamlananTrend } from "@/lib/api";
+import { downloadGenelTamamlananPdf } from "@/lib/exportGenelTamamlananPdf";
 import {
   addDaysToIso,
   calendarMonthWeekdayBounds,
@@ -109,11 +110,18 @@ function StatSkeleton() {
   );
 }
 
-type Props = {
-  pageMode?: boolean;
+type PdfExportState = {
+  busy: boolean;
+  ready: boolean;
+  run: () => void;
 };
 
-export default function GenelTamamlananChart({ pageMode = false }: Props) {
+type Props = {
+  pageMode?: boolean;
+  onPdfExportChange?: (state: PdfExportState | null) => void;
+};
+
+export default function GenelTamamlananChart({ pageMode = false, onPdfExportChange }: Props) {
   const { t, formatDate, formatTime, localeTag } = useI18n();
   const today = todayWorkdayIsoTurkey();
   const [preset, setPreset] = useState<Preset>("this_week");
@@ -125,6 +133,7 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
   const [weekCompare, setWeekCompare] = useState<CompareCard | null>(null);
   const [monthCompare, setMonthCompare] = useState<CompareCard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState("");
 
@@ -227,6 +236,37 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
 
   const metricLabel = processFilterActive ? processFilter : t("genelTamamlanan.metricGeneral");
   const metricHint = processFilterActive ? t("genelTamamlanan.hintProcess") : t("genelTamamlanan.hintGeneral");
+  const rangeLabel = formatRangeLabel(chartRange.start, chartRange.end, formatShortDate);
+
+  const exportPdf = useCallback(async () => {
+    if (!data) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      await downloadGenelTamamlananPdf({
+        data,
+        metricLabel,
+        rangeLabel,
+        weekCompare,
+        monthCompare,
+        loadedAt,
+      });
+    } catch {
+      setError("PDF oluşturulamadı. Sayfayı yenileyip tekrar deneyin.");
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [data, metricLabel, rangeLabel, weekCompare, monthCompare, loadedAt]);
+
+  useEffect(() => {
+    if (!pageMode || !onPdfExportChange) return;
+    onPdfExportChange({
+      busy: pdfBusy,
+      ready: Boolean(data) && !loading,
+      run: () => void exportPdf(),
+    });
+    return () => onPdfExportChange(null);
+  }, [pageMode, onPdfExportChange, pdfBusy, loading, data, exportPdf]);
 
   const maxVal = useMemo(
     () => Math.max(1, ...(data?.daily.map((d) => d.genelTamamlanan) ?? [0])),
@@ -263,24 +303,47 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
   return (
     <div className={shellCls}>
       <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/90 via-white to-teal-50/30 px-5 py-5 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-teal-950/20 md:px-7">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            {!pageMode ? (
-              <>
-                <h2 className="text-base font-bold text-slate-900 dark:text-white">{metricLabel}</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{metricHint}</p>
-              </>
-            ) : (
-              <>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t("genelTamamlanan.periodTitle")}</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {metricLabel} · {formatRangeLabel(chartRange.start, chartRange.end, formatShortDate)}
-                  {loadedAt ? ` · ${t("common.lastUpdated")} ${loadedAt}` : ""}
-                </p>
-                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{metricHint}</p>
-              </>
-            )}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              {!pageMode ? (
+                <>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">{metricLabel}</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{metricHint}</p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">{t("genelTamamlanan.periodTitle")}</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {metricLabel} · {formatRangeLabel(chartRange.start, chartRange.end, formatShortDate)}
+                    {loadedAt ? ` · ${t("common.lastUpdated")} ${loadedAt}` : ""}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{metricHint}</p>
+                </>
+              )}
+            </div>
+            {pageMode && !onPdfExportChange ? (
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void load()}
+                  disabled={loading}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  {t("common.refresh")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportPdf()}
+                  disabled={pdfBusy || loading || !data}
+                  className="rounded-xl border border-teal-600/80 bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500"
+                >
+                  {pdfBusy ? "PDF hazırlanıyor…" : "PDF indir"}
+                </button>
+              </div>
+            ) : null}
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
             {presets.map((p) => (
               <button
@@ -296,14 +359,16 @@ export default function GenelTamamlananChart({ pageMode = false }: Props) {
                 {p.label}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => void load()}
-              disabled={loading}
-              className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-100 disabled:opacity-50 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200"
-            >
-              {t("common.refresh")}
-            </button>
+            {!pageMode || onPdfExportChange ? (
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading}
+                className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-100 disabled:opacity-50 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200"
+              >
+                {t("common.refresh")}
+              </button>
+            ) : null}
           </div>
         </div>
 
