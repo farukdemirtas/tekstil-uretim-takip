@@ -5634,108 +5634,121 @@ function sumUtuPaketSlotRow(row) {
   return slotSum + (Number(row.ek_sayim) || 0);
 }
 
-export function getUtuPaketAnalytics(startDate, endDate) {
-  return new Promise((resolve, reject) => {
-    db.all(
-      `SELECT production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
+export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
+  const mid =
+    modelId != null && Number.isFinite(Number(modelId)) && Number(modelId) > 0
+      ? Number(modelId)
+      : null;
+  const slotSql = mid
+    ? `SELECT s.production_date, s.stage, s.h0900, s.h1000, s.h1115, s.h1215, s.h1300, s.h1445, s.h1545, s.h1700, s.h1830, s.ek_sayim
+       FROM utu_paket_slots s
+       INNER JOIN utu_paket_meta m ON m.production_date = s.production_date AND m.model_id = ?
+       WHERE s.production_date BETWEEN ? AND ?
+       ORDER BY s.production_date ASC, s.stage ASC`
+    : `SELECT production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
        FROM utu_paket_slots
        WHERE production_date BETWEEN ? AND ?
-       ORDER BY production_date ASC, stage ASC`,
-      [startDate, endDate],
-      (slotErr, slotRows) => {
-        if (slotErr) return reject(slotErr);
-        db.all(
-          `SELECT production_date, size_code, count
-           FROM utu_paket_beden
-           WHERE production_date BETWEEN ? AND ?
-           ORDER BY production_date ASC, size_code ASC`,
-          [startDate, endDate],
-          (bedenErr, bedenRows) => {
-            if (bedenErr) return reject(bedenErr);
+       ORDER BY production_date ASC, stage ASC`;
+  const slotParams = mid ? [mid, startDate, endDate] : [startDate, endDate];
+  const bedenSql = mid
+    ? `SELECT b.production_date, b.size_code, b.count
+       FROM utu_paket_beden b
+       INNER JOIN utu_paket_meta m ON m.production_date = b.production_date AND m.model_id = ?
+       WHERE b.production_date BETWEEN ? AND ?
+       ORDER BY b.production_date ASC, b.size_code ASC`
+    : `SELECT production_date, size_code, count
+       FROM utu_paket_beden
+       WHERE production_date BETWEEN ? AND ?
+       ORDER BY production_date ASC, size_code ASC`;
+  const bedenParams = mid ? [mid, startDate, endDate] : [startDate, endDate];
 
-            const datesSet = new Set();
-            for (const r of slotRows || []) datesSet.add(r.production_date);
-            for (const r of bedenRows || []) datesSet.add(r.production_date);
-            const dates = [...datesSet].sort();
+  return new Promise((resolve, reject) => {
+    db.all(slotSql, slotParams, (slotErr, slotRows) => {
+      if (slotErr) return reject(slotErr);
+      db.all(bedenSql, bedenParams, (bedenErr, bedenRows) => {
+        if (bedenErr) return reject(bedenErr);
 
-            const dailyMap = new Map();
-            for (const d of dates) {
-              dailyMap.set(d, {
-                date: d,
-                stages: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
-                beden: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
-                pipelineMin: 0,
-              });
-            }
+        const datesSet = new Set();
+        for (const r of slotRows || []) datesSet.add(r.production_date);
+        for (const r of bedenRows || []) datesSet.add(r.production_date);
+        const dates = [...datesSet].sort();
 
-            for (const r of slotRows || []) {
-              const day = dailyMap.get(r.production_date);
-              if (!day) continue;
-              day.stages[r.stage] = sumUtuPaketSlotRow(r);
-            }
+        const dailyMap = new Map();
+        for (const d of dates) {
+          dailyMap.set(d, {
+            date: d,
+            stages: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
+            beden: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+            pipelineMin: 0,
+          });
+        }
 
-            for (const r of bedenRows || []) {
-              const day = dailyMap.get(r.production_date);
-              if (!day) continue;
-              const code = String(r.size_code || "").trim();
-              if (code) day.beden[code] = (day.beden[code] || 0) + (Number(r.count) || 0);
-            }
+        for (const r of slotRows || []) {
+          const day = dailyMap.get(r.production_date);
+          if (!day) continue;
+          day.stages[r.stage] = sumUtuPaketSlotRow(r);
+        }
 
-            const daily = [];
-            const periodTotals = Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0]));
-            const bedenTotals = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+        for (const r of bedenRows || []) {
+          const day = dailyMap.get(r.production_date);
+          if (!day) continue;
+          const code = String(r.size_code || "").trim();
+          if (code) day.beden[code] = (day.beden[code] || 0) + (Number(r.count) || 0);
+        }
 
-            for (const d of dates) {
-              const day = dailyMap.get(d);
-              const stageVals = UTU_PAKET_STAGES.map((st) => day.stages[st] || 0);
-              const nonZero = stageVals.filter((n) => n > 0);
-              day.pipelineMin = nonZero.length ? Math.min(...nonZero) : 0;
-              for (const st of UTU_PAKET_STAGES) {
-                periodTotals[st] += day.stages[st] || 0;
-              }
-              for (const code of UTU_PAKET_SIZE_CODES) {
-                bedenTotals[code] += day.beden[code] || 0;
-              }
-              daily.push(day);
-            }
+        const daily = [];
+        const periodTotals = Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0]));
+        const bedenTotals = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
 
-            const daysWithData = daily.filter((day) =>
-              UTU_PAKET_STAGES.some((st) => (day.stages[st] || 0) > 0)
-            ).length;
-
-            const avgDailyByStage = Object.fromEntries(
-              UTU_PAKET_STAGES.map((st) => [
-                st,
-                daysWithData > 0 ? Math.round(periodTotals[st] / daysWithData) : 0,
-              ])
-            );
-
-            const slotTotalsByStage = {};
-            for (const st of UTU_PAKET_STAGES) {
-              slotTotalsByStage[st] = Object.fromEntries(UTU_PAKET_SLOT_KEYS.map((k) => [k, 0]));
-            }
-            for (const r of slotRows || []) {
-              const bucket = slotTotalsByStage[r.stage];
-              if (!bucket) continue;
-              for (const k of UTU_PAKET_SLOT_KEYS) {
-                bucket[k] += Number(r[k]) || 0;
-              }
-            }
-
-            resolve({
-              startDate,
-              endDate,
-              daysWithData,
-              periodTotals,
-              bedenTotals,
-              avgDailyByStage,
-              daily,
-              slotTotalsByStage,
-            });
+        for (const d of dates) {
+          const day = dailyMap.get(d);
+          const stageVals = UTU_PAKET_STAGES.map((st) => day.stages[st] || 0);
+          const nonZero = stageVals.filter((n) => n > 0);
+          day.pipelineMin = nonZero.length ? Math.min(...nonZero) : 0;
+          for (const st of UTU_PAKET_STAGES) {
+            periodTotals[st] += day.stages[st] || 0;
           }
+          for (const code of UTU_PAKET_SIZE_CODES) {
+            bedenTotals[code] += day.beden[code] || 0;
+          }
+          daily.push(day);
+        }
+
+        const daysWithData = daily.filter((day) =>
+          UTU_PAKET_STAGES.some((st) => (day.stages[st] || 0) > 0)
+        ).length;
+
+        const avgDailyByStage = Object.fromEntries(
+          UTU_PAKET_STAGES.map((st) => [
+            st,
+            daysWithData > 0 ? Math.round(periodTotals[st] / daysWithData) : 0,
+          ])
         );
-      }
-    );
+
+        const slotTotalsByStage = {};
+        for (const st of UTU_PAKET_STAGES) {
+          slotTotalsByStage[st] = Object.fromEntries(UTU_PAKET_SLOT_KEYS.map((k) => [k, 0]));
+        }
+        for (const r of slotRows || []) {
+          const bucket = slotTotalsByStage[r.stage];
+          if (!bucket) continue;
+          for (const k of UTU_PAKET_SLOT_KEYS) {
+            bucket[k] += Number(r[k]) || 0;
+          }
+        }
+
+        resolve({
+          startDate,
+          endDate,
+          daysWithData,
+          periodTotals,
+          bedenTotals,
+          avgDailyByStage,
+          daily,
+          slotTotalsByStage,
+        });
+      });
+    });
   });
 }
 

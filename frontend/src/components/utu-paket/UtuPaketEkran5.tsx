@@ -656,7 +656,7 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         getUtuPaket(date),
         mid ? getEkran5Target(mid).catch(() => ({ ekran5Target: null, targetQuantity: null })) : Promise.resolve({ ekran5Target: null, targetQuantity: null }),
         startDate && startDate <= date
-          ? getUtuPaketAnalytics({ startDate, endDate: date }).catch(() => null)
+          ? getUtuPaketAnalytics({ startDate, endDate: date, modelId: mid ?? undefined }).catch(() => null)
           : Promise.resolve(null),
       ]);
 
@@ -736,9 +736,17 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       setBedenTargets(normalizedTargets);
       // Takipsan yoksa DB analytics toplamını kullan (Takipsan varsa zaten üstte set edildi)
       if (!takipsanOk) {
+        const todayBedenRow = emptyUtuPaketBeden();
+        for (const code of UTU_PAKET_SIZE_CODES) {
+          todayBedenRow[code] = Math.max(0, Math.floor(Number(data.beden[code]) || 0));
+        }
+        const todayFromAnalytics = analytics?.daily?.find((d) => d.date === date)?.beden ?? {};
         const periodBeden = emptyUtuPaketBeden();
         for (const code of UTU_PAKET_SIZE_CODES) {
-          periodBeden[code] = Math.max(0, Math.floor(Number(analytics?.bedenTotals?.[code]) || 0));
+          const period = Math.max(0, Math.floor(Number(analytics?.bedenTotals?.[code]) || 0));
+          const todaySaved = Math.max(0, Math.floor(Number(todayFromAnalytics[code]) || 0));
+          const beforeToday = Math.max(0, period - todaySaved);
+          periodBeden[code] = beforeToday + todayBedenRow[code];
         }
         setBedenTotals(periodBeden);
       }

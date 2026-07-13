@@ -156,7 +156,11 @@ export default function UtuPaketPage() {
         const model = await getProductModel(modelId);
         const startDate = model?.utuPaketSessionStartDate?.trim() || date;
         const rangeStart = startDate <= date ? startDate : date;
-        const analytics = await getUtuPaketAnalytics({ startDate: rangeStart, endDate: date });
+        const analytics = await getUtuPaketAnalytics({
+          startDate: rangeStart,
+          endDate: date,
+          modelId,
+        });
         const period = Math.max(0, Math.floor(Number(analytics.periodTotals?.paketleme) || 0));
         setPeriodPaketBeforeToday(Math.max(0, period - todayTotal));
 
@@ -438,10 +442,28 @@ export default function UtuPaketPage() {
     return data.beden;
   }, [isManualPackagingDay, dayTakipsanSynced, allDayPackages, selectedDate, data.beden]);
 
-  const bedenTotal = useMemo(
-    () => UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (displayBeden[c] || 0), 0),
-    [displayBeden]
-  );
+  const bedenSessionTotals = useMemo(() => {
+    if (dayTakipsanSynced) return displayBeden;
+    const out = emptyUtuPaketBeden();
+    for (const code of UTU_PAKET_SIZE_CODES) {
+      const today = Math.max(0, Math.floor(Number(data.beden[code]) || 0));
+      out[code] = periodBedenBeforeToday[code] + today;
+    }
+    return out;
+  }, [dayTakipsanSynced, periodBedenBeforeToday, data.beden, displayBeden]);
+
+  const bedenTotal = useMemo(() => {
+    const src = dayTakipsanSynced ? displayBeden : bedenSessionTotals;
+    return UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (src[c] || 0), 0);
+  }, [dayTakipsanSynced, displayBeden, bedenSessionTotals]);
+
+  const bedenCekiProgress = useMemo(() => {
+    const out = emptyUtuPaketBeden();
+    for (const code of UTU_PAKET_SIZE_CODES) {
+      out[code] = bedenSessionTotals[code] || 0;
+    }
+    return out;
+  }, [bedenSessionTotals]);
 
   const gunPaketOzeti = useMemo(
     () => sumGunPaketlenen(allDayPackages, selectedDate),
@@ -464,15 +486,6 @@ export default function UtuPaketPage() {
   const paketPackageCount = dayTakipsanSynced ? gunPaketOzeti.paket : 0;
   const paketOrderQty = resolveUtuPaketLineTarget(data, 0);
   const paketRemaining = Math.max(0, paketOrderQty - paketReadCount);
-
-  const bedenCekiProgress = useMemo(() => {
-    const out = emptyUtuPaketBeden();
-    for (const code of UTU_PAKET_SIZE_CODES) {
-      const today = Math.max(0, Math.floor(Number(displayBeden[code]) || 0));
-      out[code] = periodBedenBeforeToday[code] + today;
-    }
-    return out;
-  }, [periodBedenBeforeToday, displayBeden]);
 
   const gunPaketLabel =
     selectedDate === todayIsoTurkey()
@@ -1039,18 +1052,21 @@ export default function UtuPaketPage() {
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Beden dağılımı</h3>
               {bedenTotal > 0 && (
                 <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold tabular-nums text-slate-500 dark:bg-slate-700/60 dark:text-slate-400">
-                  Toplam {bedenTotal.toLocaleString("tr-TR")}
+                  {!dayTakipsanSynced ? "Oturum " : ""}
+                  {bedenTotal.toLocaleString("tr-TR")}
                 </span>
               )}
             </div>
             <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
               {!dayTakipsanSynced
-                ? "Gün sonu toplam beden dağılımını tek seferde girin. Ekran5 «Beden Tablosu» slaytında gösterilir."
+                ? "Gün sonu beden dağılımını girin. Oturum toplamı (önceki günler + bugün) Ekran5 «Beden Tablosu» slaytına yansır."
                 : "Takipsan paketlerinden otomatik hesaplanır. Ekran5 «Beden Tablosu» slaytında gösterilir."}
             </p>
             {!dayTakipsanSynced ? (
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-                {UTU_PAKET_SIZE_CODES.map((code) => (
+                {UTU_PAKET_SIZE_CODES.map((code) => {
+                  const sessionTotal = bedenSessionTotals[code] || 0;
+                  return (
                   <label
                     key={code}
                     className="flex flex-col rounded-2xl border border-slate-200/90 bg-slate-50/80 p-3 transition focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-500/30 dark:border-slate-600/80 dark:bg-slate-800/50"
@@ -1065,10 +1081,14 @@ export default function UtuPaketPage() {
                       className="mt-2 w-full rounded-xl border-0 bg-white px-2 py-2.5 text-center text-xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-teal-500 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
                       value={data.beden[code] || ""}
                       onChange={(e) => setBeden(code, e.target.value)}
-                      aria-label={`Beden ${code}`}
+                      aria-label={`Beden ${code} bugün`}
                     />
+                    <span className="mt-1.5 text-center text-[10px] font-semibold tabular-nums text-sky-700 dark:text-sky-400">
+                      Oturum: {sessionTotal > 0 ? sessionTotal.toLocaleString("tr-TR") : "—"}
+                    </span>
                   </label>
-                ))}
+                  );
+                })}
               </div>
             ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">

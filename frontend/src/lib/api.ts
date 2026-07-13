@@ -1554,12 +1554,16 @@ export async function getRepairsHistory(params: {
 export async function getUtuPaketAnalytics(params: {
   startDate: string;
   endDate: string;
+  modelId?: number | null;
 }): Promise<UtuPaketAnalytics> {
   const q = new URLSearchParams({
     startDate: params.startDate,
     endDate: params.endDate,
-  }).toString();
-  const res = await apiFetch(`${apiBase()}/utu-paket/analytics?${q}`, {
+  });
+  if (params.modelId != null && Number.isFinite(Number(params.modelId))) {
+    q.set("modelId", String(params.modelId));
+  }
+  const res = await apiFetch(`${apiBase()}/utu-paket/analytics?${q.toString()}`, {
     cache: "no-store",
     headers: authHeaders(),
   });

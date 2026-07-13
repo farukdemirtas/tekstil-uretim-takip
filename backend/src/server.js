@@ -1768,12 +1768,16 @@ app.get("/api/repairs/history", requireAuth, async (req, res) => {
 // ─── Ütü–Paket (ana üretimden bağımsız hat) ─────────────────────────────────
 
 app.get("/api/utu-paket/analytics", requirePermission("utuPaket"), async (req, res) => {
-  const { startDate, endDate } = req.query;
+  const { startDate, endDate, modelId } = req.query;
   if (!startDate || !endDate) {
     return res.status(400).json({ message: "startDate ve endDate zorunlu" });
   }
+  const mid =
+    modelId != null && String(modelId).trim() !== "" && Number.isFinite(Number(modelId))
+      ? Number(modelId)
+      : null;
   try {
-    const data = await getUtuPaketAnalytics(String(startDate), String(endDate));
+    const data = await getUtuPaketAnalytics(String(startDate), String(endDate), mid);
     return res.json(data);
   } catch (err) {
     return res.status(500).json({ message: "Ütü–paket analizi alınamadı", error: String(err) });
@@ -1811,6 +1815,7 @@ app.put("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
       date: String(date),
       ...buildUtuPaketLogSummaryFromPayload({ stages, beden, stageEkSayim, paketlemeSlotBeden, paketlemeEkBeden }),
     });
+    void bumpEkranRefreshSignal().catch(() => {});
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: "Ütü–paket verisi kaydedilemedi", error: String(err) });
