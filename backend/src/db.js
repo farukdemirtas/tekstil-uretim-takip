@@ -795,6 +795,19 @@ export function initDb() {
     db.run(`CREATE INDEX IF NOT EXISTS idx_utu_paket_beden_date ON utu_paket_beden (production_date)`);
 
     db.run(`
+      CREATE TABLE IF NOT EXISTS utu_paket_slot_beden (
+        production_date TEXT NOT NULL,
+        slot_key TEXT NOT NULL,
+        size_code TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(production_date, slot_key, size_code)
+      )
+    `);
+    db.run(
+      `CREATE INDEX IF NOT EXISTS idx_utu_paket_slot_beden_date ON utu_paket_slot_beden (production_date)`
+    );
+
+    db.run(`
       CREATE TABLE IF NOT EXISTS utu_paket_meta (
         production_date TEXT PRIMARY KEY,
         packaging_target INTEGER NOT NULL DEFAULT 0

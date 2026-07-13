@@ -1687,7 +1687,12 @@ export async function refreshProductModelTarget(
 
 export async function saveUtuPaket(
   payload: Pick<UtuPaketDayPayload, "date" | "stages"> &
-    Partial<Pick<UtuPaketDayPayload, "beden" | "packagingTarget" | "stageEkSayim" | "modelReferenceDate">>
+    Partial<
+      Pick<
+        UtuPaketDayPayload,
+        "beden" | "packagingTarget" | "stageEkSayim" | "modelReferenceDate" | "paketlemeSlotBeden"
+      >
+    >
 ): Promise<void> {
   const res = await apiFetch(`${apiBase()}/utu-paket`, {
     method: "PUT",

@@ -168,6 +168,9 @@ export type UtuPaketModelRef = {
   productModel: string;
 };
 
+export type UtuPaketBedenRow = Record<UtuPaketSizeCode, number>;
+export type UtuPaketSlotBedenGrid = Record<UtuPaketSlotKey, UtuPaketBedenRow>;
+
 export type UtuPaketDayPayload = {
   date: string;
   /** @deprecated Ayarlardan utuPaketModel kullanın */
@@ -178,6 +181,8 @@ export type UtuPaketDayPayload = {
   /** Optik ve ütü için saat toplamına eklenen ek adet */
   stageEkSayim?: Partial<Record<UtuPaketStage, number>>;
   beden: Record<string, number>;
+  /** Manuel paketleme: saat dilimi başına beden girişi */
+  paketlemeSlotBeden?: UtuPaketSlotBedenGrid;
   /** TV bar hedefi — sipariş sayısından gelir */
   packagingTarget: number;
   /** Ayarlardan atanan manuel model — Takipsan paketleme kapalı */
@@ -198,6 +203,64 @@ export function emptyUtuPaketStages(): Record<UtuPaketStage, UtuPaketSlots> {
 
 export function emptyUtuPaketBeden(): Record<UtuPaketSizeCode, number> {
   return Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])) as Record<UtuPaketSizeCode, number>;
+}
+
+export function emptyUtuPaketBeden(): Record<UtuPaketSizeCode, number> {
+  return Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])) as Record<UtuPaketSizeCode, number>;
+}
+
+export function emptyPaketlemeSlotBeden(): UtuPaketSlotBedenGrid {
+  return Object.fromEntries(
+    UTU_PAKET_SLOT_DEFS.map(({ key }) => [key, emptyUtuPaketBeden()])
+  ) as UtuPaketSlotBedenGrid;
+}
+
+export function sumSlotBedenRow(row: UtuPaketBedenRow | undefined): number {
+  return UTU_PAKET_SIZE_CODES.reduce((s, c) => s + Math.max(0, Math.floor(Number(row?.[c]) || 0)), 0);
+}
+
+export function syncPaketlemeFromSlotBeden(
+  stages: Record<UtuPaketStage, UtuPaketSlots>,
+  slotBeden: UtuPaketSlotBedenGrid
+): Record<UtuPaketStage, UtuPaketSlots> {
+  const paketleme = { ...stages.paketleme };
+  for (const { key } of UTU_PAKET_SLOT_DEFS) {
+    paketleme[key] = sumSlotBedenRow(slotBeden[key]);
+  }
+  return { ...stages, paketleme };
+}
+
+export function aggregateBedenFromPaketlemeSlots(
+  slotBeden: UtuPaketSlotBedenGrid
+): Record<UtuPaketSizeCode, number> {
+  const beden = emptyUtuPaketBeden();
+  for (const { key } of UTU_PAKET_SLOT_DEFS) {
+    const row = slotBeden[key];
+    for (const code of UTU_PAKET_SIZE_CODES) {
+      beden[code] += Math.max(0, Math.floor(Number(row?.[code]) || 0));
+    }
+  }
+  return beden;
+}
+
+export function normalizePaketlemeSlotBeden(
+  raw: UtuPaketSlotBedenGrid | undefined
+): UtuPaketSlotBedenGrid {
+  const grid = emptyPaketlemeSlotBeden();
+  if (!raw || typeof raw !== "object") return grid;
+  for (const { key } of UTU_PAKET_SLOT_DEFS) {
+    const row = raw[key];
+    if (!row || typeof row !== "object") continue;
+    for (const code of UTU_PAKET_SIZE_CODES) {
+      grid[key][code] = Math.max(0, Math.floor(Number(row[code]) || 0));
+    }
+  }
+  return grid;
+}
+
+export function paketlemeSlotBedenHasData(slotBeden: UtuPaketSlotBedenGrid | undefined): boolean {
+  if (!slotBeden) return false;
+  return UTU_PAKET_SLOT_DEFS.some(({ key }) => sumSlotBedenRow(slotBeden[key]) > 0);
 }
 
 export function sumUtuPaketSlots(slots: UtuPaketSlots): number {
@@ -243,6 +306,11 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
       (beden as Record<string, number>)[k] = Math.max(0, Math.floor(Number(v) || 0));
     }
   }
+  const paketlemeSlotBeden = normalizePaketlemeSlotBeden(raw.paketlemeSlotBeden);
+  if (paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
+    Object.assign(stages, syncPaketlemeFromSlotBeden(stages, paketlemeSlotBeden));
+    Object.assign(beden, aggregateBedenFromPaketlemeSlots(paketlemeSlotBeden));
+  }
   const takipsan = raw.takipsan
     ? {
         packageCount: Math.max(0, Math.floor(Number(raw.takipsan.packageCount) || 0)),
@@ -267,6 +335,7 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
     stages,
     stageEkSayim,
     beden,
+    paketlemeSlotBeden,
     packagingTarget: Math.max(0, Math.floor(Number(raw.packagingTarget) || 0)),
     manualPackaging: raw.manualPackaging === true,
     takipsan,

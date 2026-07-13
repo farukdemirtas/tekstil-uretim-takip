@@ -2035,6 +2035,7 @@ async function resetUtuPaketPackagingDay(date) {
     [d, ...zeros]
   );
   await dbRun(`DELETE FROM utu_paket_beden WHERE production_date = ?`, [d]);
+  await dbRun(`DELETE FROM utu_paket_slot_beden WHERE production_date = ?`, [d]);
 }
 
 /** Yalnızca Takipsan meta alanlarını temizler — manuel slot/beden korunur */
@@ -2073,6 +2074,7 @@ function dayHasManualPackagingData(day) {
     (s, v) => s + Math.max(0, Math.floor(Number(v) || 0)),
     0
   );
+  if (paketlemeSlotBedenHasData(day?.paketlemeSlotBeden)) return true;
   return slotSum + ekSayim + bedenSum > 0;
 }
 
@@ -2147,6 +2149,7 @@ export async function enrichUtuPaketDayWithModelTarget(day) {
         };
         day.stageEkSayim = { ...(day.stageEkSayim || {}), paketleme: 0 };
         day.beden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
+        day.paketlemeSlotBeden = emptyPaketlemeSlotBedenGrid();
       }
     }
 
@@ -3584,6 +3587,10 @@ export function buildUtuPaketLogSummaryFromPayload(body) {
   const stagesIn = body?.stages && typeof body.stages === "object" ? body.stages : {};
   const ekIn = body?.stageEkSayim && typeof body.stageEkSayim === "object" ? body.stageEkSayim : {};
   const bedenIn = body?.beden && typeof body.beden === "object" ? body.beden : {};
+  const slotBedenIn =
+    body?.paketlemeSlotBeden && typeof body.paketlemeSlotBeden === "object"
+      ? body.paketlemeSlotBeden
+      : null;
   const stages = {};
 
   for (const stage of UTU_PAKET_LOG_STAGE_KEYS) {
@@ -3611,6 +3618,20 @@ export function buildUtuPaketLogSummaryFromPayload(body) {
 
   const out = { stages };
   if (Object.keys(beden).length) out.beden = beden;
+  if (slotBedenIn) {
+    const paketlemeSlotBeden = {};
+    for (const k of UTU_PAKET_SLOT_KEYS) {
+      const row = slotBedenIn[k];
+      if (!row || typeof row !== "object") continue;
+      const sizes = {};
+      for (const c of UTU_PAKET_SIZE_CODES) {
+        const n = Math.max(0, Math.floor(Number(row[c]) || 0));
+        if (n > 0) sizes[c] = n;
+      }
+      if (Object.keys(sizes).length) paketlemeSlotBeden[k] = sizes;
+    }
+    if (Object.keys(paketlemeSlotBeden).length) out.paketlemeSlotBeden = paketlemeSlotBeden;
+  }
   return out;
 }
 
@@ -4980,6 +5001,93 @@ export const UTU_PAKET_SLOT_KEYS = [
 ];
 export const UTU_PAKET_SIZE_CODES = ["XS", "S", "M", "L", "XL"];
 
+function emptyPaketlemeSlotBedenGrid() {
+  return Object.fromEntries(
+    UTU_PAKET_SLOT_KEYS.map((k) => [
+      k,
+      Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+    ])
+  );
+}
+
+function parsePaketlemeSlotBedenRows(rows) {
+  const grid = emptyPaketlemeSlotBedenGrid();
+  for (const r of rows || []) {
+    const slotKey = String(r.slot_key || "").trim();
+    const sizeCode = String(r.size_code || "").trim();
+    if (!slotKey || !sizeCode || !grid[slotKey]) continue;
+    grid[slotKey][sizeCode] = Math.max(0, Math.floor(Number(r.count) || 0));
+  }
+  return grid;
+}
+
+function syncPaketlemeStagesFromSlotBeden(stages, slotBeden) {
+  const paketleme = { ...(stages?.paketleme || emptyUtuPaketSlots()) };
+  for (const k of UTU_PAKET_SLOT_KEYS) {
+    const row = slotBeden?.[k] || {};
+    paketleme[k] = UTU_PAKET_SIZE_CODES.reduce(
+      (s, c) => s + Math.max(0, Math.floor(Number(row[c]) || 0)),
+      0
+    );
+  }
+  return { ...stages, paketleme };
+}
+
+function aggregateDailyBedenFromSlotBeden(slotBeden) {
+  const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  for (const k of UTU_PAKET_SLOT_KEYS) {
+    const row = slotBeden?.[k] || {};
+    for (const c of UTU_PAKET_SIZE_CODES) {
+      beden[c] += Math.max(0, Math.floor(Number(row[c]) || 0));
+    }
+  }
+  return beden;
+}
+
+function paketlemeSlotBedenHasData(slotBeden) {
+  if (!slotBeden || typeof slotBeden !== "object") return false;
+  for (const k of UTU_PAKET_SLOT_KEYS) {
+    const row = slotBeden[k] || {};
+    for (const c of UTU_PAKET_SIZE_CODES) {
+      if (Math.max(0, Math.floor(Number(row[c]) || 0)) > 0) return true;
+    }
+  }
+  return false;
+}
+
+function parsePaketlemeSlotBedenPayload(raw) {
+  const grid = emptyPaketlemeSlotBedenGrid();
+  if (!raw || typeof raw !== "object") return grid;
+  for (const k of UTU_PAKET_SLOT_KEYS) {
+    const row = raw[k];
+    if (!row || typeof row !== "object") continue;
+    for (const c of UTU_PAKET_SIZE_CODES) {
+      grid[k][c] = Math.max(0, Math.floor(Number(row[c]) || 0));
+    }
+  }
+  return grid;
+}
+
+async function savePaketlemeSlotBeden(date, slotBeden) {
+  const d = String(date || "").trim();
+  if (!d) return;
+  await dbRun(`DELETE FROM utu_paket_slot_beden WHERE production_date = ?`, [d]);
+  if (!paketlemeSlotBedenHasData(slotBeden)) return;
+  for (const k of UTU_PAKET_SLOT_KEYS) {
+    const row = slotBeden[k] || {};
+    for (const c of UTU_PAKET_SIZE_CODES) {
+      const n = Math.max(0, Math.floor(Number(row[c]) || 0));
+      if (n > 0) {
+        await dbRun(
+          `INSERT INTO utu_paket_slot_beden (production_date, slot_key, size_code, count)
+           VALUES (?, ?, ?, ?)`,
+          [d, k, c, n]
+        );
+      }
+    }
+  }
+}
+
 const emptyUtuPaketSlots = () =>
   Object.fromEntries(UTU_PAKET_SLOT_KEYS.map((k) => [k, 0]));
 
@@ -5120,6 +5228,11 @@ export function getUtuPaketDay(date) {
               [date],
               (metaErr, metaRow) => {
                 if (metaErr) return reject(metaErr);
+                db.all(
+                  `SELECT slot_key, size_code, count FROM utu_paket_slot_beden WHERE production_date = ? ORDER BY slot_key, size_code`,
+                  [date],
+                  (slotBedenErr, slotBedenRows) => {
+                    if (slotBedenErr) return reject(slotBedenErr);
                 const stages = {};
                 const stageEkSayim = {};
                 for (const st of UTU_PAKET_STAGES) {
@@ -5127,10 +5240,18 @@ export function getUtuPaketDay(date) {
                   stages[st] = rowToUtuPaketSlots(row);
                   stageEkSayim[st] = Number(row?.ek_sayim) || 0;
                 }
-                const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
-                for (const r of bedenRows || []) {
-                  const code = String(r.size_code || "").trim();
-                  if (code) beden[code] = Number(r.count) || 0;
+                const paketlemeSlotBeden = parsePaketlemeSlotBedenRows(slotBedenRows);
+                if (paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
+                  stages.paketleme = syncPaketlemeStagesFromSlotBeden(stages, paketlemeSlotBeden).paketleme;
+                }
+                const beden = paketlemeSlotBedenHasData(paketlemeSlotBeden)
+                  ? aggregateDailyBedenFromSlotBeden(paketlemeSlotBeden)
+                  : Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+                if (!paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
+                  for (const r of bedenRows || []) {
+                    const code = String(r.size_code || "").trim();
+                    if (code) beden[code] = Number(r.count) || 0;
+                  }
                 }
                 const packagingTarget = Math.max(
                   0,
@@ -5164,6 +5285,7 @@ export function getUtuPaketDay(date) {
                   stages,
                   stageEkSayim,
                   beden,
+                  paketlemeSlotBeden,
                   packagingTarget,
                   takipsan: {
                     packageCount: Math.max(
@@ -5177,6 +5299,8 @@ export function getUtuPaketDay(date) {
                     packages,
                   },
                 });
+                  }
+                );
               }
             );
           }
@@ -5201,8 +5325,13 @@ export function setUtuPaketModelReferenceDate(productionDate, modelReferenceDate
 }
 
 export function saveUtuPaketDay(date, payload) {
-  const stagesIn = payload?.stages && typeof payload.stages === "object" ? payload.stages : {};
-  const bedenIn = payload?.beden && typeof payload.beden === "object" ? payload.beden : {};
+  const stagesIn = payload?.stages && typeof payload.stages === "object" ? { ...payload.stages } : {};
+  let bedenIn = payload?.beden && typeof payload.beden === "object" ? { ...payload.beden } : {};
+  const paketlemeSlotBeden = parsePaketlemeSlotBedenPayload(payload?.paketlemeSlotBeden);
+  if (paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
+    stagesIn.paketleme = syncPaketlemeStagesFromSlotBeden(stagesIn, paketlemeSlotBeden).paketleme;
+    bedenIn = aggregateDailyBedenFromSlotBeden(paketlemeSlotBeden);
+  }
   const takipsanSync = payload?.takipsanSyncedAt != null;
   const z = (n) => Math.max(0, Math.floor(Number(n) || 0));
 
@@ -5237,7 +5366,9 @@ export function saveUtuPaketDay(date, payload) {
           payload?.stageEkSayim && typeof payload.stageEkSayim === "object"
             ? z(payload.stageEkSayim.paketleme)
             : 0;
-        const manualPaketlemeEntry = !takipsanSync && paketlemeSlotSum + paketlemeEk > 0;
+        const manualPaketlemeEntry =
+          !takipsanSync &&
+          (paketlemeSlotSum + paketlemeEk > 0 || paketlemeSlotBedenHasData(paketlemeSlotBeden));
         if (manualPaketlemeEntry) {
           takipsanPackageCount = 0;
           takipsanOrderCode = "";
@@ -5317,6 +5448,35 @@ export function saveUtuPaketDay(date, payload) {
             }
 
             const bedenEntries = Object.entries(bedenIn).filter(([, v]) => z(v) > 0);
+            const commitSlotBeden = (onDone) => {
+              db.run(`DELETE FROM utu_paket_slot_beden WHERE production_date = ?`, [date], (delSbErr) => {
+                if (delSbErr) {
+                  db.run("ROLLBACK");
+                  return reject(delSbErr);
+                }
+                if (!paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
+                  onDone();
+                  return;
+                }
+                const sbStmt = db.prepare(
+                  `INSERT INTO utu_paket_slot_beden (production_date, slot_key, size_code, count) VALUES (?, ?, ?, ?)`
+                );
+                for (const k of UTU_PAKET_SLOT_KEYS) {
+                  const row = paketlemeSlotBeden[k] || {};
+                  for (const c of UTU_PAKET_SIZE_CODES) {
+                    const n = z(row[c]);
+                    if (n > 0) sbStmt.run([date, k, c, n]);
+                  }
+                }
+                sbStmt.finalize((sbFinalErr) => {
+                  if (sbFinalErr) {
+                    db.run("ROLLBACK");
+                    return reject(sbFinalErr);
+                  }
+                  onDone();
+                });
+              });
+            };
             const commitMeta = () => {
               db.run(
                 `INSERT INTO utu_paket_meta (
@@ -5346,7 +5506,7 @@ export function saveUtuPaketDay(date, payload) {
               );
             };
             if (bedenEntries.length === 0) {
-              commitMeta();
+              commitSlotBeden(commitMeta);
               return;
             }
 
@@ -5363,7 +5523,7 @@ export function saveUtuPaketDay(date, payload) {
                 db.run("ROLLBACK");
                 return reject(bedenFinalErr);
               }
-              commitMeta();
+              commitSlotBeden(commitMeta);
             });
           });
         });
@@ -5500,15 +5660,21 @@ export function deleteUtuPaketDay(date) {
               db.run("ROLLBACK");
               return reject(e2);
             }
-            db.run(`DELETE FROM utu_paket_meta WHERE production_date = ?`, [date], function (e3) {
-              if (e3) {
+            db.run(`DELETE FROM utu_paket_slot_beden WHERE production_date = ?`, [date], (e2b) => {
+              if (e2b) {
                 db.run("ROLLBACK");
-                return reject(e3);
+                return reject(e2b);
               }
-              const deleted = this.changes;
-              db.run("COMMIT", (commitErr) => {
-                if (commitErr) return reject(commitErr);
-                resolve({ deleted });
+              db.run(`DELETE FROM utu_paket_meta WHERE production_date = ?`, [date], function (e3) {
+                if (e3) {
+                  db.run("ROLLBACK");
+                  return reject(e3);
+                }
+                const deleted = this.changes;
+                db.run("COMMIT", (commitErr) => {
+                  if (commitErr) return reject(commitErr);
+                  resolve({ deleted });
+                });
               });
             });
           });
