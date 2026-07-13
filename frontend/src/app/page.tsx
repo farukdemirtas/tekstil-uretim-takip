@@ -1518,6 +1518,25 @@ export default function HomePage() {
                   </span>
                 </Link>
               ) : null}
+              {hasPermission("utuPaket") ? (
+                <Link
+                  href="/analysis/utu-paket"
+                  onClick={() => setAnalysisMenuOpen(false)}
+                  className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-cyan-400 hover:bg-cyan-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-cyan-500 dark:hover:bg-cyan-950/50"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("analysisHub.utuPaketTitle")}</span>
+                    <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {t("analysisHub.utuPaketDesc")}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-cyan-100 p-2 text-cyan-700 dark:bg-cyan-900/80 dark:text-cyan-200">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                </Link>
+              ) : null}
               {hasPermission("modelAnalizi") ? (
                 <Link
                   href="/model-analizi"

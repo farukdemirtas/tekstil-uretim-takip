@@ -101,6 +101,8 @@ export const messages: Messages = {
     modelAnalysisDesc: "Tages- und Prozessübersicht nach Produktmodell",
     comparisonTitle: "Vergleich",
     comparisonDesc: "Produktionsvergleich zweier Mitarbeiter",
+    utuPaketTitle: "Bügeln–Verpackung Analyse",
+    utuPaketDesc: "Optik, Bügeln und Verpackung — PDF und Excel",
   },
   analysisSubnav: {
     navLabel: "Analyseseiten",
@@ -110,6 +112,15 @@ export const messages: Messages = {
     generalCompletedDesc: "Täglicher Produktionstrend",
     personAnalysisLabel: "Personenanalyse",
     personAnalysisDesc: "Detail pro Person",
+    utuPaketLabel: "Bügeln–Verpackung",
+    utuPaketDesc: "Endlinien-Periodenanalyse",
+  },
+  utuPaketAnalizi: {
+    badge: "Analyse",
+    section: "Bügeln–Verpackung",
+    pageTitle: "Bügeln–Verpackung Periodenanalyse",
+    pageDesc: "Periodensummen, Tagestrend, Größenverteilung und Stundenaufteilung. Filtern und als PDF oder Excel exportieren.",
+    dataEntry: "Dateneingabe",
   },
   genelTamamlanan: {
     badge: "Analyse",

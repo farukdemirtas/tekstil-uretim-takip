@@ -98,6 +98,8 @@ export type Messages = {
     modelAnalysisDesc: string;
     comparisonTitle: string;
     comparisonDesc: string;
+    utuPaketTitle: string;
+    utuPaketDesc: string;
   };
   analysisSubnav: {
     navLabel: string;
@@ -107,6 +109,15 @@ export type Messages = {
     generalCompletedDesc: string;
     personAnalysisLabel: string;
     personAnalysisDesc: string;
+    utuPaketLabel: string;
+    utuPaketDesc: string;
+  };
+  utuPaketAnalizi: {
+    badge: string;
+    section: string;
+    pageTitle: string;
+    pageDesc: string;
+    dataEntry: string;
   };
   genelTamamlanan: {
     badge: string;

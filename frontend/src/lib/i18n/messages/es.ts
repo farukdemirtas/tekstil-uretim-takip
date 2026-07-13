@@ -101,6 +101,8 @@ export const messages: Messages = {
     modelAnalysisDesc: "Resumen diario y por proceso según modelo",
     comparisonTitle: "Comparación",
     comparisonDesc: "Comparación de producción de dos personas",
+    utuPaketTitle: "Análisis Planchado–Empaque",
+    utuPaketDesc: "Óptica, planchado y empaque — PDF y Excel",
   },
   analysisSubnav: {
     navLabel: "Páginas de análisis",
@@ -110,6 +112,15 @@ export const messages: Messages = {
     generalCompletedDesc: "Tendencia de producción diaria",
     personAnalysisLabel: "Análisis por persona",
     personAnalysisDesc: "Detalle por persona",
+    utuPaketLabel: "Planchado–Empaque",
+    utuPaketDesc: "Análisis de período de línea de acabado",
+  },
+  utuPaketAnalizi: {
+    badge: "Análisis",
+    section: "Planchado–Empaque",
+    pageTitle: "Análisis de período Planchado–Empaque",
+    pageDesc: "Totales del período, tendencia diaria, distribución por talla y desglose por hora. Filtrar y exportar en PDF o Excel.",
+    dataEntry: "Entrada de datos",
   },
   genelTamamlanan: {
     badge: "Análisis",

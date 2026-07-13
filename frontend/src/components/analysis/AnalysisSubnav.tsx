@@ -28,6 +28,12 @@ export default function AnalysisSubnav() {
       description: t("analysisSubnav.personAnalysisDesc"),
       show: () => hasPermission("analysis") || hasPermission("ekran2"),
     },
+    {
+      href: "/analysis/utu-paket",
+      label: t("analysisSubnav.utuPaketLabel"),
+      description: t("analysisSubnav.utuPaketDesc"),
+      show: () => hasPermission("utuPaket"),
+    },
   ] as const;
 
   const visible = links.filter((l) => l.show());

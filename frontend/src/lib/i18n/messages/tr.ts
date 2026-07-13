@@ -101,6 +101,8 @@ export const messages: Messages = {
     modelAnalysisDesc: "Ürün modeline göre günlük ve proses özeti",
     comparisonTitle: "Karşılaştırma",
     comparisonDesc: "İki personelin üretim karşılaştırması",
+    utuPaketTitle: "Ütü–Paket analizi",
+    utuPaketDesc: "Optik, ütü ve paketleme dönem özeti — PDF ve Excel",
   },
   analysisSubnav: {
     navLabel: "Analiz sayfaları",
@@ -110,6 +112,16 @@ export const messages: Messages = {
     generalCompletedDesc: "Günlük özet üretim trendi",
     personAnalysisLabel: "Kişi analizi",
     personAnalysisDesc: "Kişi bazında detay",
+    utuPaketLabel: "Ütü–Paket",
+    utuPaketDesc: "Bitim hattı dönem analizi",
+  },
+  utuPaketAnalizi: {
+    badge: "Analiz",
+    section: "Ütü–Paket",
+    pageTitle: "Ütü–Paket dönem analizi",
+    pageDesc:
+      "Optik, ütü ve paketleme aşamalarının dönem toplamları, günlük trend, beden dağılımı ve saat dilimi kırılımı. Filtreleyip PDF veya Excel olarak indirebilirsiniz.",
+    dataEntry: "Veri girişi",
   },
   genelTamamlanan: {
     badge: "Analiz",

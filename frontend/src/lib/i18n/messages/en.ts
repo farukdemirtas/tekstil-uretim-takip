@@ -101,6 +101,8 @@ export const messages: Messages = {
     modelAnalysisDesc: "Daily and process summary by product model",
     comparisonTitle: "Comparison",
     comparisonDesc: "Production comparison of two workers",
+    utuPaketTitle: "Ironing–Packaging analysis",
+    utuPaketDesc: "Optic, ironing and packaging period summary — PDF and Excel",
   },
   analysisSubnav: {
     navLabel: "Analysis pages",
@@ -110,6 +112,16 @@ export const messages: Messages = {
     generalCompletedDesc: "Daily summary production trend",
     personAnalysisLabel: "Person analysis",
     personAnalysisDesc: "Detail by person",
+    utuPaketLabel: "Ironing–Packaging",
+    utuPaketDesc: "Finishing line period analysis",
+  },
+  utuPaketAnalizi: {
+    badge: "Analysis",
+    section: "Ironing–Packaging",
+    pageTitle: "Ironing–Packaging period analysis",
+    pageDesc:
+      "Period totals, daily trend, size distribution and hourly breakdown for optic, ironing and packaging. Filter and export as PDF or Excel.",
+    dataEntry: "Data entry",
   },
   genelTamamlanan: {
     badge: "Analysis",
