@@ -917,21 +917,21 @@ export default function UtuPaketPage() {
           })()}
 
           {/* ── Manuel saatlik giriş (paketleme) ── */}
-          <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+          <div className="border-b border-slate-200/80 px-3 py-4 dark:border-slate-700/80 sm:px-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Manuel saatlik giriş</h3>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                   Her saat dilimine beden (XS–XL) girin. Saat toplamı otomatik hesaplanır; günlük beden dağılımı ve Ekran5 beden tablosuna yansır.
                 </p>
-                <p className="mt-2 text-2xl font-black tabular-nums text-emerald-700 dark:text-emerald-400">
+                <p className="mt-2 text-xl font-black tabular-nums text-emerald-700 dark:text-emerald-400 sm:text-2xl">
                   Günlük toplam: {stageTotals.paketleme.toLocaleString("tr-TR")} adet
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setEkSayimOpen((o) => !o)}
-                className={`mt-0.5 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm transition ${
+                className={`shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm transition ${
                   ekSayimOpen
                     ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -946,11 +946,51 @@ export default function UtuPaketPage() {
               </button>
             </div>
 
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[640px] border-separate border-spacing-0 text-sm">
+            {/* Mobil: kart düzeni — yatay kaydırma yok */}
+            <div className="mt-4 space-y-2.5 sm:hidden">
+              {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => {
+                const row = data.paketlemeSlotBeden?.[key] ?? emptyPaketlemeSlotBeden()[key];
+                const rowTotal = sumSlotBedenRow(row);
+                return (
+                  <div
+                    key={key}
+                    className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-3 dark:border-slate-600/80 dark:bg-slate-800/50"
+                  >
+                    <div className="mb-2.5 flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-black tabular-nums text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                        {rowTotal > 0 ? `${rowTotal.toLocaleString("tr-TR")} adet` : "—"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {UTU_PAKET_SIZE_CODES.map((code) => (
+                        <label key={code} className="flex min-w-0 flex-col items-center gap-1">
+                          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {code}
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            inputMode="numeric"
+                            className="w-full min-w-0 rounded-lg border-0 bg-white px-1 py-2 text-center text-sm font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
+                            value={row[code] || ""}
+                            onChange={(e) => setPaketlemeSlotBeden(key, code, e.target.value)}
+                            aria-label={`Paketleme ${label} ${code}`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Masaüstü: tablo */}
+            <div className="mt-4 hidden sm:block">
+              <table className="w-full border-separate border-spacing-0 text-sm">
                 <thead>
                   <tr>
-                    <th className="sticky left-0 z-10 bg-white px-2 py-2 text-left text-xs font-bold uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                    <th className="px-2 py-2 text-left text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                       Saat
                     </th>
                     {UTU_PAKET_SIZE_CODES.map((code) => (
@@ -972,7 +1012,7 @@ export default function UtuPaketPage() {
                     const rowTotal = sumSlotBedenRow(row);
                     return (
                       <tr key={key} className="border-t border-slate-100 dark:border-slate-700/60">
-                        <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-2 text-xs font-bold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                        <td className="whitespace-nowrap px-2 py-2 text-xs font-bold text-slate-600 dark:text-slate-300">
                           {label}
                         </td>
                         {UTU_PAKET_SIZE_CODES.map((code) => (
@@ -981,7 +1021,7 @@ export default function UtuPaketPage() {
                               type="number"
                               min={0}
                               inputMode="numeric"
-                              className="w-full min-w-[3rem] rounded-lg border-0 bg-slate-50 px-2 py-2 text-center text-base font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:text-white dark:ring-slate-600"
+                              className="w-full rounded-lg border-0 bg-slate-50 px-2 py-2 text-center text-base font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:text-white dark:ring-slate-600"
                               value={row[code] || ""}
                               onChange={(e) => setPaketlemeSlotBeden(key, code, e.target.value)}
                               aria-label={`Paketleme ${label} ${code}`}
