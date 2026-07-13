@@ -121,6 +121,10 @@ export default function UtuPaketPage() {
   const [bedenCekiMsg, setBedenCekiMsg] = useState<string | null>(null);
   /** Model oturumu başından seçili güne kadar kümülatif paketleme (bugün hariç) */
   const [periodPaketBeforeToday, setPeriodPaketBeforeToday] = useState(0);
+  /** Model oturumu başından seçili güne kadar kümülatif beden (bugün hariç) */
+  const [periodBedenBeforeToday, setPeriodBedenBeforeToday] = useState<Record<UtuPaketSizeCode, number>>(
+    () => emptyUtuPaketBeden()
+  );
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const f5RefreshBusy = useRef(false);
   /** Paketleme sekmesinde tarih/model başına otomatik sync yalnızca bir kez */
@@ -141,9 +145,15 @@ export default function UtuPaketPage() {
   }, [router]);
 
   const loadPeriodPaketTotal = useCallback(
-    async (date: string, modelId: number | null, todayTotal: number) => {
+    async (
+      date: string,
+      modelId: number | null,
+      todayTotal: number,
+      todayBeden: Record<string, number>
+    ) => {
       if (!modelId) {
         setPeriodPaketBeforeToday(0);
+        setPeriodBedenBeforeToday(emptyUtuPaketBeden());
         return;
       }
       try {
@@ -153,8 +163,17 @@ export default function UtuPaketPage() {
         const analytics = await getUtuPaketAnalytics({ startDate: rangeStart, endDate: date });
         const period = Math.max(0, Math.floor(Number(analytics.periodTotals?.paketleme) || 0));
         setPeriodPaketBeforeToday(Math.max(0, period - todayTotal));
+
+        const beforeTodayBeden = emptyUtuPaketBeden();
+        for (const code of UTU_PAKET_SIZE_CODES) {
+          const periodBeden = Math.max(0, Math.floor(Number(analytics.bedenTotals?.[code]) || 0));
+          const today = Math.max(0, Math.floor(Number(todayBeden[code]) || 0));
+          beforeTodayBeden[code] = Math.max(0, periodBeden - today);
+        }
+        setPeriodBedenBeforeToday(beforeTodayBeden);
       } catch {
         setPeriodPaketBeforeToday(0);
+        setPeriodBedenBeforeToday(emptyUtuPaketBeden());
       }
     },
     []
@@ -171,7 +190,12 @@ export default function UtuPaketPage() {
       const todayPaket =
         sumUtuPaketSlots(normalized.stages.paketleme) +
         Math.max(0, Math.floor(Number(normalized.stageEkSayim?.paketleme) || 0));
-      await loadPeriodPaketTotal(date, normalized.utuPaketModel?.modelId ?? null, todayPaket);
+      await loadPeriodPaketTotal(
+        date,
+        normalized.utuPaketModel?.modelId ?? null,
+        todayPaket,
+        normalized.beden
+      );
       setDayMeta(
         raw.utuPaketModel
           ? {
@@ -193,6 +217,7 @@ export default function UtuPaketPage() {
         })
       );
       setPeriodPaketBeforeToday(0);
+      setPeriodBedenBeforeToday(emptyUtuPaketBeden());
       if (!silent) {
         setSaveMsg({
           ok: false,
@@ -444,6 +469,15 @@ export default function UtuPaketPage() {
   const paketOrderQty = resolveUtuPaketLineTarget(data, 0);
   const paketRemaining = Math.max(0, paketOrderQty - paketReadCount);
 
+  const bedenCekiProgress = useMemo(() => {
+    const out = emptyUtuPaketBeden();
+    for (const code of UTU_PAKET_SIZE_CODES) {
+      const today = Math.max(0, Math.floor(Number(displayBeden[code]) || 0));
+      out[code] = periodBedenBeforeToday[code] + today;
+    }
+    return out;
+  }, [periodBedenBeforeToday, displayBeden]);
+
   const gunPaketLabel =
     selectedDate === todayIsoTurkey()
       ? "Bugün paketlenen"
@@ -471,7 +505,12 @@ export default function UtuPaketPage() {
       const todayPaket =
         sumUtuPaketSlots(payload.stages.paketleme) +
         Math.max(0, Math.floor(Number(payload.stageEkSayim?.paketleme) || 0));
-      await loadPeriodPaketTotal(selectedDate, payload.utuPaketModel?.modelId ?? null, todayPaket);
+      await loadPeriodPaketTotal(
+        selectedDate,
+        payload.utuPaketModel?.modelId ?? null,
+        todayPaket,
+        payload.beden
+      );
       setSaveMsg({ ok: true, text: "Kaydedildi" });
       window.setTimeout(() => setSaveMsg(null), 2500);
     } catch (e) {
@@ -1107,17 +1146,16 @@ export default function UtuPaketPage() {
 
           {/* ── Beden çeki hedefleri (Ekran5) ── */}
           {(() => {
-            const bedenToplam = isManualPackagingDay
-              ? displayBeden
-              : countAdetByBeden(paketPackages);
+            const bedenToplam = bedenCekiProgress;
             const hedefToplam = UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (bedenCekiTargets[c] || 0), 0);
+            const bedenCekiToplamAdet = UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (bedenToplam[c] || 0), 0);
             return (
               <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Beden çeki hedefleri</h3>
                     <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                      Ekran5 «Beden Tablosu» slaytında gösterilir.
+                      Ekran5 «Beden Tablosu» slaytında gösterilir. Kart altındaki sayılar oturum başından beri toplam adettir.
                     </p>
                   </div>
                   <button
@@ -1162,8 +1200,8 @@ export default function UtuPaketPage() {
                               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-center text-base font-black tabular-nums text-slate-900 outline-none focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-400/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                               placeholder="—"
                             />
-                            {/* Toplam (Takipsan) */}
-                            <p className="text-center text-[11px] font-semibold tabular-nums text-slate-400 dark:text-slate-500">
+                            {/* Oturum toplamı */}
+                            <p className="text-center text-[11px] font-semibold tabular-nums text-slate-500 dark:text-slate-400">
                               {toplam > 0 ? toplam.toLocaleString("tr-TR") : "—"}
                             </p>
                             {/* İnce progress bar */}
@@ -1184,6 +1222,12 @@ export default function UtuPaketPage() {
                       <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Toplam hedef</span>
                       <span className="text-sm font-black tabular-nums text-slate-800 dark:text-slate-100">
                         {hedefToplam > 0 ? hedefToplam.toLocaleString("tr-TR") : "—"}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between rounded-xl bg-sky-50/80 px-3 py-2 ring-1 ring-sky-100/80 dark:bg-sky-950/20 dark:ring-sky-900/30">
+                      <span className="text-xs font-semibold text-sky-700 dark:text-sky-300">Toplam paketlenen</span>
+                      <span className="text-sm font-black tabular-nums text-sky-800 dark:text-sky-200">
+                        {bedenCekiToplamAdet > 0 ? bedenCekiToplamAdet.toLocaleString("tr-TR") : "—"}
                       </span>
                     </div>
                   </>
