@@ -26,7 +26,6 @@ import {
   UTU_PAKET_STAGE_META,
   UTU_PAKET_STAGES,
   countAdetByBeden,
-  emptyPaketlemeSlotBeden,
   emptyUtuPaketBeden,
   emptyUtuPaketStages,
   emptyBedenCekiTargets,
@@ -35,10 +34,6 @@ import {
   packageCreatedOnDate,
   resolveUtuPaketLineTarget,
   sumGunPaketlenen,
-  aggregateBedenFromPaketlemeSlots,
-  syncPaketlemeFromSlotBeden,
-  sumPaketlemeEkBeden,
-  sumSlotBedenRow,
   sumUtuPaketSlots,
   type UtuPaketDayPayload,
   type UtuPaketSlotKey,
@@ -499,8 +494,6 @@ export default function UtuPaketPage() {
         stages: payload.stages,
         beden: payload.beden,
         stageEkSayim: payload.stageEkSayim,
-        paketlemeSlotBeden: payload.paketlemeSlotBeden,
-        paketlemeEkBeden: payload.paketlemeEkBeden,
       });
       setData(payload);
       setDirty(false);
@@ -533,46 +526,6 @@ export default function UtuPaketPage() {
     }, 900);
   }
 
-  function setPaketlemeSlotBeden(slotKey: UtuPaketSlotKey, sizeCode: UtuPaketSizeCode, raw: string) {
-    const v = Math.max(0, parseInt(raw, 10) || 0);
-    setData((prev) => {
-      const slotBeden = prev.paketlemeSlotBeden ?? emptyPaketlemeSlotBeden();
-      const ekBeden = prev.paketlemeEkBeden ?? emptyUtuPaketBeden();
-      const nextSlotBeden = {
-        ...slotBeden,
-        [slotKey]: { ...slotBeden[slotKey], [sizeCode]: v },
-      };
-      const next = {
-        ...prev,
-        paketlemeSlotBeden: nextSlotBeden,
-        stages: syncPaketlemeFromSlotBeden(prev.stages, nextSlotBeden),
-        beden: aggregateBedenFromPaketlemeSlots(nextSlotBeden, ekBeden),
-      };
-      scheduleSave(next);
-      return next;
-    });
-  }
-
-  function setPaketlemeEkBeden(sizeCode: UtuPaketSizeCode, raw: string) {
-    const v = Math.max(0, parseInt(raw, 10) || 0);
-    setData((prev) => {
-      const slotBeden = prev.paketlemeSlotBeden ?? emptyPaketlemeSlotBeden();
-      const nextEkBeden = {
-        ...(prev.paketlemeEkBeden ?? emptyUtuPaketBeden()),
-        [sizeCode]: v,
-      };
-      const ekTotal = sumPaketlemeEkBeden(nextEkBeden);
-      const next = {
-        ...prev,
-        paketlemeEkBeden: nextEkBeden,
-        stageEkSayim: { ...prev.stageEkSayim, paketleme: ekTotal },
-        beden: aggregateBedenFromPaketlemeSlots(slotBeden, nextEkBeden),
-      };
-      scheduleSave(next);
-      return next;
-    });
-  }
-
   function setSlot(stage: UtuPaketStage, key: UtuPaketSlotKey, raw: string) {
     const v = Math.max(0, parseInt(raw, 10) || 0);
     setData((prev) => {
@@ -582,6 +535,18 @@ export default function UtuPaketPage() {
           ...prev.stages,
           [stage]: { ...prev.stages[stage], [key]: v },
         },
+      };
+      scheduleSave(next);
+      return next;
+    });
+  }
+
+  function setBeden(code: UtuPaketSizeCode, raw: string) {
+    const v = Math.max(0, parseInt(raw, 10) || 0);
+    setData((prev) => {
+      const next = {
+        ...prev,
+        beden: { ...prev.beden, [code]: v },
       };
       scheduleSave(next);
       return next;
@@ -979,12 +944,13 @@ export default function UtuPaketPage() {
           })()}
 
           {/* ── Manuel saatlik giriş (paketleme) ── */}
+          {!dayTakipsanSynced ? (
           <div className="border-b border-slate-200/80 px-3 py-4 dark:border-slate-700/80 sm:px-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Manuel saatlik giriş</h3>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                  Her saat dilimine beden (XS–XL) girin. Saat toplamı otomatik hesaplanır; günlük beden dağılımı ve Ekran5 beden tablosuna yansır.
+                  Ütü ve optikteki gibi her saat dilimine toplam adet girin. Gün sonu beden dağılımını aşağıdan tek seferde girin.
                 </p>
                 <p className="mt-2 text-xl font-black tabular-nums text-emerald-700 dark:text-emerald-400 sm:text-2xl">
                   Günlük toplam: {stageTotals.paketleme.toLocaleString("tr-TR")} adet
@@ -1008,133 +974,64 @@ export default function UtuPaketPage() {
               </button>
             </div>
 
-            {/* Mobil: kart düzeni — yatay kaydırma yok */}
-            <div className="mt-4 space-y-2.5 sm:hidden">
-              {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => {
-                const row = data.paketlemeSlotBeden?.[key] ?? emptyPaketlemeSlotBeden()[key];
-                const rowTotal = sumSlotBedenRow(row);
-                return (
-                  <div
-                    key={key}
-                    className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-3 dark:border-slate-600/80 dark:bg-slate-800/50"
-                  >
-                    <div className="mb-2.5 flex items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-black tabular-nums text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                        {rowTotal > 0 ? `${rowTotal.toLocaleString("tr-TR")} adet` : "—"}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-5 gap-1.5">
-                      {UTU_PAKET_SIZE_CODES.map((code) => (
-                        <label key={code} className="flex min-w-0 flex-col items-center gap-1">
-                          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            {code}
-                          </span>
-                          <input
-                            type="number"
-                            min={0}
-                            inputMode="numeric"
-                            className="w-full min-w-0 rounded-lg border-0 bg-white px-1 py-2 text-center text-sm font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
-                            value={row[code] || ""}
-                            onChange={(e) => setPaketlemeSlotBeden(key, code, e.target.value)}
-                            aria-label={`Paketleme ${label} ${code}`}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Masaüstü: tablo */}
-            <div className="mt-4 hidden sm:block">
-              <table className="w-full border-separate border-spacing-0 text-sm">
-                <thead>
-                  <tr>
-                    <th className="px-2 py-2 text-left text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      Saat
-                    </th>
-                    {UTU_PAKET_SIZE_CODES.map((code) => (
-                      <th
-                        key={code}
-                        className="px-2 py-2 text-center text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400"
-                      >
-                        {code}
-                      </th>
-                    ))}
-                    <th className="px-2 py-2 text-center text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-                      Toplam
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => {
-                    const row = data.paketlemeSlotBeden?.[key] ?? emptyPaketlemeSlotBeden()[key];
-                    const rowTotal = sumSlotBedenRow(row);
-                    return (
-                      <tr key={key} className="border-t border-slate-100 dark:border-slate-700/60">
-                        <td className="whitespace-nowrap px-2 py-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-                          {label}
-                        </td>
-                        {UTU_PAKET_SIZE_CODES.map((code) => (
-                          <td key={code} className="px-1 py-1">
-                            <input
-                              type="number"
-                              min={0}
-                              inputMode="numeric"
-                              className="w-full rounded-lg border-0 bg-slate-50 px-2 py-2 text-center text-base font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:text-white dark:ring-slate-600"
-                              value={row[code] || ""}
-                              onChange={(e) => setPaketlemeSlotBeden(key, code, e.target.value)}
-                              aria-label={`Paketleme ${label} ${code}`}
-                            />
-                          </td>
-                        ))}
-                        <td className="px-2 py-2 text-center text-base font-black tabular-nums text-emerald-700 dark:text-emerald-400">
-                          {rowTotal > 0 ? rowTotal.toLocaleString("tr-TR") : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => (
+                <label
+                  key={key}
+                  className="group flex flex-col rounded-2xl border border-slate-200/90 bg-slate-50/80 p-3 transition focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/30 dark:border-slate-600/80 dark:bg-slate-800/50"
+                >
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {label}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 text-center text-2xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
+                    value={data.stages.paketleme[key] || ""}
+                    onChange={(e) => setSlot("paketleme", key, e.target.value)}
+                    aria-label={`Paketleme ${label}`}
+                  />
+                </label>
+              ))}
             </div>
 
             {ekSayimOpen && (() => {
-              const ekRow = data.paketlemeEkBeden ?? emptyUtuPaketBeden();
-              const ekTotal = sumPaketlemeEkBeden(ekRow);
+              const ekVal = data.stageEkSayim?.paketleme ?? 0;
               return (
               <div className="mt-4 border-t border-slate-200/80 pt-4 dark:border-slate-700/80">
                 <p className="mb-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                  Ek adet için beden (XS–XL) girin. Saatlik tabloya eklenerek paketleme günlük toplamını ve beden dağılımını günceller.
+                  Ek adet saatlik tabloya eklenerek paketleme günlük toplamını günceller.
                 </p>
-                <div className="grid grid-cols-5 gap-1.5 sm:max-w-md">
-                  {UTU_PAKET_SIZE_CODES.map((code) => (
-                    <label key={code} className="flex min-w-0 flex-col items-center gap-1">
-                      <span className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        {code}
-                      </span>
-                      <input
-                        type="number"
-                        min={0}
-                        inputMode="numeric"
-                        className="w-full min-w-0 rounded-lg border-0 bg-slate-50 px-1 py-2 text-center text-sm font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:text-white dark:ring-slate-600"
-                        value={ekRow[code] || ""}
-                        onChange={(e) => setPaketlemeEkBeden(code, e.target.value)}
-                        aria-label={`Paketleme ek adet ${code}`}
-                      />
-                    </label>
-                  ))}
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      className="w-28 rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-center text-xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
+                      value={ekVal || ""}
+                      onChange={(e) => setEkSayim("paketleme", e.target.value)}
+                      aria-label="Paketleme ek adet"
+                    />
+                    <span className="text-sm text-slate-500 dark:text-slate-400">adet</span>
+                  </label>
+                  <p className="text-sm tabular-nums text-slate-600 dark:text-slate-300">
+                    Saatlik: {sumUtuPaketSlots(data.stages.paketleme).toLocaleString("tr-TR")} + ek:{" "}
+                    {ekVal.toLocaleString("tr-TR")} ={" "}
+                    <strong>{stageTotals.paketleme.toLocaleString("tr-TR")}</strong>
+                  </p>
                 </div>
-                <p className="mt-3 text-sm tabular-nums text-slate-600 dark:text-slate-300">
-                  Saatlik: {sumUtuPaketSlots(data.stages.paketleme).toLocaleString("tr-TR")} + ek:{" "}
-                  {ekTotal.toLocaleString("tr-TR")} ={" "}
-                  <strong>{stageTotals.paketleme.toLocaleString("tr-TR")}</strong>
-                </p>
               </div>
               );
             })()}
+
+            <div className="mt-4 border-t border-slate-200/80 pt-4 dark:border-slate-700/80">
+              <p className="mb-2 text-xs font-semibold text-slate-500">Gün içi dağılım</p>
+              <MiniSpark values={UTU_PAKET_SLOT_DEFS.map(({ key }) => data.stages.paketleme[key])} />
+            </div>
           </div>
+          ) : null}
 
           {/* ── Beden dağılımı ── */}
           <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
@@ -1147,8 +1044,33 @@ export default function UtuPaketPage() {
               )}
             </div>
             <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-              Saatlik beden girişlerinden otomatik hesaplanır. Ekran5 «Beden Tablosu» slaytında gösterilir.
+              {!dayTakipsanSynced
+                ? "Gün sonu toplam beden dağılımını tek seferde girin. Ekran5 «Beden Tablosu» slaytında gösterilir."
+                : "Takipsan paketlerinden otomatik hesaplanır. Ekran5 «Beden Tablosu» slaytında gösterilir."}
             </p>
+            {!dayTakipsanSynced ? (
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                {UTU_PAKET_SIZE_CODES.map((code) => (
+                  <label
+                    key={code}
+                    className="flex flex-col rounded-2xl border border-slate-200/90 bg-slate-50/80 p-3 transition focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-500/30 dark:border-slate-600/80 dark:bg-slate-800/50"
+                  >
+                    <span className="text-center text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      {code}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      className="mt-2 w-full rounded-xl border-0 bg-white px-2 py-2.5 text-center text-xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-teal-500 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
+                      value={data.beden[code] || ""}
+                      onChange={(e) => setBeden(code, e.target.value)}
+                      aria-label={`Beden ${code}`}
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {UTU_PAKET_SIZE_CODES.map((code) => {
                 const count = displayBeden[code] || 0;
@@ -1159,7 +1081,6 @@ export default function UtuPaketPage() {
                     <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       {code}
                     </span>
-                    {/* Bar */}
                     <div className="relative w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700/60" style={{ height: "6px" }}>
                       <div
                         className="absolute inset-y-0 left-0 rounded-full bg-teal-500 transition-all duration-500"
@@ -1173,6 +1094,7 @@ export default function UtuPaketPage() {
                 );
               })}
             </div>
+            )}
           </div>
 
           {/* ── Beden çeki hedefleri (Ekran5) ── */}

@@ -330,15 +330,6 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
   }
   const paketlemeSlotBeden = normalizePaketlemeSlotBeden(raw.paketlemeSlotBeden);
   const paketlemeEkBeden = normalizePaketlemeEkBeden(raw.paketlemeEkBeden);
-  if (paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
-    Object.assign(stages, syncPaketlemeFromSlotBeden(stages, paketlemeSlotBeden));
-  }
-  if (paketlemeEkBedenHasData(paketlemeEkBeden)) {
-    stageEkSayim.paketleme = sumPaketlemeEkBeden(paketlemeEkBeden);
-  }
-  if (paketlemeSlotBedenHasData(paketlemeSlotBeden) || paketlemeEkBedenHasData(paketlemeEkBeden)) {
-    Object.assign(beden, aggregateBedenFromPaketlemeSlots(paketlemeSlotBeden, paketlemeEkBeden));
-  }
   const takipsan = raw.takipsan
     ? {
         packageCount: Math.max(0, Math.floor(Number(raw.takipsan.packageCount) || 0)),
