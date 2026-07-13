@@ -7,8 +7,10 @@ import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import {
   deleteUtuPaket,
   getBedenCekiTargets,
+  getProductModel,
   getTakipsanStatus,
   getUtuPaket,
+  getUtuPaketAnalytics,
   saveUtuPaket,
   setAuthToken,
   setBedenCekiTargets,
@@ -117,6 +119,8 @@ export default function UtuPaketPage() {
   const [bedenCekiDirty, setBedenCekiDirty] = useState(false);
   const [bedenCekiSaving, setBedenCekiSaving] = useState(false);
   const [bedenCekiMsg, setBedenCekiMsg] = useState<string | null>(null);
+  /** Model oturumu başından seçili güne kadar kümülatif paketleme (bugün hariç) */
+  const [periodPaketBeforeToday, setPeriodPaketBeforeToday] = useState(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const f5RefreshBusy = useRef(false);
   /** Paketleme sekmesinde tarih/model başına otomatik sync yalnızca bir kez */
@@ -136,13 +140,38 @@ export default function UtuPaketPage() {
     setAuthorized(true);
   }, [router]);
 
+  const loadPeriodPaketTotal = useCallback(
+    async (date: string, modelId: number | null, todayTotal: number) => {
+      if (!modelId) {
+        setPeriodPaketBeforeToday(0);
+        return;
+      }
+      try {
+        const model = await getProductModel(modelId);
+        const startDate = model?.utuPaketSessionStartDate?.trim() || date;
+        const rangeStart = startDate <= date ? startDate : date;
+        const analytics = await getUtuPaketAnalytics({ startDate: rangeStart, endDate: date });
+        const period = Math.max(0, Math.floor(Number(analytics.periodTotals?.paketleme) || 0));
+        setPeriodPaketBeforeToday(Math.max(0, period - todayTotal));
+      } catch {
+        setPeriodPaketBeforeToday(0);
+      }
+    },
+    []
+  );
+
   const loadDay = useCallback(async (date: string, opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
     if (!silent) setLoading(true);
     setSaveMsg(null);
     try {
       const raw = await getUtuPaket(date);
-      setData(normalizeUtuPaketPayload({ ...raw, date }));
+      const normalized = normalizeUtuPaketPayload({ ...raw, date });
+      setData(normalized);
+      const todayPaket =
+        sumUtuPaketSlots(normalized.stages.paketleme) +
+        Math.max(0, Math.floor(Number(normalized.stageEkSayim?.paketleme) || 0));
+      await loadPeriodPaketTotal(date, normalized.utuPaketModel?.modelId ?? null, todayPaket);
       setDayMeta(
         raw.utuPaketModel
           ? {
@@ -163,6 +192,7 @@ export default function UtuPaketPage() {
           packagingTarget: 0,
         })
       );
+      setPeriodPaketBeforeToday(0);
       if (!silent) {
         setSaveMsg({
           ok: false,
@@ -172,7 +202,7 @@ export default function UtuPaketPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [loadPeriodPaketTotal]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -401,9 +431,15 @@ export default function UtuPaketPage() {
   const gunPaketAdet = isManualPackagingDay ? stageTotals.paketleme : gunPaketOzeti.adet;
   const gunPaketPaket = isManualPackagingDay ? 0 : gunPaketOzeti.paket;
 
-  const paketReadCount = dayTakipsanSynced
-    ? Math.max(gunPaketOzeti.adet, stageTotals.paketleme)
-    : stageTotals.paketleme;
+  const paketReadCount = isManualPackagingDay
+    ? periodPaketBeforeToday + stageTotals.paketleme
+    : dayTakipsanSynced
+      ? Math.max(
+          Math.floor(Number(data.takipsan?.readCount) || 0),
+          gunPaketOzeti.adet,
+          stageTotals.paketleme
+        )
+      : periodPaketBeforeToday + stageTotals.paketleme;
   const paketPackageCount = dayTakipsanSynced ? gunPaketOzeti.paket : 0;
   const paketOrderQty = resolveUtuPaketLineTarget(data, 0);
   const paketRemaining = Math.max(0, paketOrderQty - paketReadCount);
@@ -432,6 +468,10 @@ export default function UtuPaketPage() {
       });
       setData(payload);
       setDirty(false);
+      const todayPaket =
+        sumUtuPaketSlots(payload.stages.paketleme) +
+        Math.max(0, Math.floor(Number(payload.stageEkSayim?.paketleme) || 0));
+      await loadPeriodPaketTotal(selectedDate, payload.utuPaketModel?.modelId ?? null, todayPaket);
       setSaveMsg({ ok: true, text: "Kaydedildi" });
       window.setTimeout(() => setSaveMsg(null), 2500);
     } catch (e) {
