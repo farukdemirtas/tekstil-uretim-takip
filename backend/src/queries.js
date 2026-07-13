@@ -3549,6 +3549,163 @@ export function listActivityLogs(options = {}) {
   });
 }
 
+const PRODUCTION_SLOT_LOG_KEYS = [
+  "h0900",
+  "h1000",
+  "h1115",
+  "h1215",
+  "h1300",
+  "h1445",
+  "h1545",
+  "h1700",
+  "h1830",
+  "t1000",
+  "t1300",
+  "t1600",
+  "t1830",
+];
+
+const UTU_PAKET_LOG_STAGE_KEYS = ["optik", "utu", "paketleme"];
+
+/** Aktivite logu için yalnızca dolu saat dilimleri + toplam */
+export function buildProductionSlotsLogFields(values) {
+  const slots = {};
+  let total = 0;
+  for (const key of PRODUCTION_SLOT_LOG_KEYS) {
+    const n = Math.max(0, Math.floor(Number(values?.[key]) || 0));
+    if (n > 0) slots[key] = n;
+    total += n;
+  }
+  return { slots, total };
+}
+
+/** Ütü–paket kayıt özeti (log detayı) */
+export function buildUtuPaketLogSummaryFromPayload(body) {
+  const stagesIn = body?.stages && typeof body.stages === "object" ? body.stages : {};
+  const ekIn = body?.stageEkSayim && typeof body.stageEkSayim === "object" ? body.stageEkSayim : {};
+  const bedenIn = body?.beden && typeof body.beden === "object" ? body.beden : {};
+  const stages = {};
+
+  for (const stage of UTU_PAKET_LOG_STAGE_KEYS) {
+    const raw = stagesIn[stage] && typeof stagesIn[stage] === "object" ? stagesIn[stage] : {};
+    const slots = {};
+    let slotSum = 0;
+    for (const [key, value] of Object.entries(raw)) {
+      const n = Math.max(0, Math.floor(Number(value) || 0));
+      if (n > 0) {
+        slots[key] = n;
+        slotSum += n;
+      }
+    }
+    const ek = Math.max(0, Math.floor(Number(ekIn[stage]) || 0));
+    if (slotSum > 0 || ek > 0) {
+      stages[stage] = { slots, ek, total: slotSum + ek };
+    }
+  }
+
+  const beden = {};
+  for (const [code, value] of Object.entries(bedenIn)) {
+    const n = Math.max(0, Math.floor(Number(value) || 0));
+    if (n > 0) beden[String(code).trim()] = n;
+  }
+
+  const out = { stages };
+  if (Object.keys(beden).length) out.beden = beden;
+  return out;
+}
+
+function parseActivityLogDetails(raw) {
+  if (!raw?.trim()) return null;
+  try {
+    const o = JSON.parse(raw);
+    if (o && typeof o === "object" && !Array.isArray(o)) return o;
+  } catch {
+    /* düz metin */
+  }
+  return null;
+}
+
+function productionLogNeedsEnrichment(details) {
+  if (!details || typeof details !== "object") return false;
+  if (!details.workerId || !details.date) return false;
+  if (!details.slots || typeof details.slots !== "object") return true;
+  return Object.keys(details.slots).length === 0 && !details.total;
+}
+
+function utuPaketLogNeedsEnrichment(details) {
+  if (!details || typeof details !== "object") return false;
+  if (!details.date) return false;
+  if (!details.stages || typeof details.stages !== "object") return true;
+  return Object.keys(details.stages).length === 0;
+}
+
+/** Eski log satırlarına üretim / ütü–paket sayılarını DB'den ekler (gösterim için) */
+export async function enrichActivityLogRows(rows) {
+  if (!rows?.length) return rows || [];
+
+  const parsed = rows.map((row) => ({ row, details: parseActivityLogDetails(row.details) }));
+  const prodKeys = new Map();
+  const utuDates = new Set();
+
+  for (const { row, details } of parsed) {
+    if (row.action === "uretim_kayit" && productionLogNeedsEnrichment(details)) {
+      const workerId = Number(details.workerId);
+      const date = String(details.date).trim();
+      if (Number.isFinite(workerId) && workerId > 0 && date) {
+        prodKeys.set(`${workerId}|${date}`, { workerId, date });
+      }
+    }
+    if (row.action === "utu_paket_kaydet" && utuPaketLogNeedsEnrichment(details)) {
+      const date = String(details.date).trim();
+      if (date) utuDates.add(date);
+    }
+  }
+
+  const prodCache = new Map();
+  for (const { workerId, date } of prodKeys.values()) {
+    const entry = await getProductionEntrySlots(workerId, date);
+    if (entry) {
+      prodCache.set(`${workerId}|${date}`, buildProductionSlotsLogFields(entry));
+    }
+  }
+
+  const utuCache = new Map();
+  for (const date of utuDates) {
+    try {
+      const day = await getUtuPaketDay(date);
+      const summary = buildUtuPaketLogSummaryFromPayload(day);
+      if (Object.keys(summary.stages || {}).length || summary.beden) {
+        utuCache.set(date, summary);
+      }
+    } catch {
+      /* gün yok */
+    }
+  }
+
+  return parsed.map(({ row, details }) => {
+    if (!details) return row;
+
+    let next = details;
+    if (row.action === "uretim_kayit" && productionLogNeedsEnrichment(details)) {
+      const workerId = Number(details.workerId);
+      const date = String(details.date).trim();
+      const hit = prodCache.get(`${workerId}|${date}`);
+      if (hit) next = { ...details, slots: hit.slots, total: hit.total };
+    }
+    if (row.action === "utu_paket_kaydet" && utuPaketLogNeedsEnrichment(details)) {
+      const date = String(details.date).trim();
+      const hit = utuCache.get(date);
+      if (hit) {
+        next = { ...details, stages: hit.stages };
+        if (hit.beden) next.beden = hit.beden;
+      }
+    }
+
+    if (next === details) return row;
+    return { ...row, details: JSON.stringify(next) };
+  });
+}
+
 // ─── Tamir Oranı ─────────────────────────────────────────────────────────────
 
 export function getRepairEntries(date) {
