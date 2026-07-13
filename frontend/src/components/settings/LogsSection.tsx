@@ -33,6 +33,7 @@ const ACTION_LABELS: Record<string, string> = {
   uretim_toplu: "Üretim kaydı (toplu)",
   veritabani_yedek: "Veritabanı yedek alma",
   veritabani_geri_yukle: "Veritabanı geri yükleme",
+  utu_paket_kaydet: "Ütü–paket kaydı",
 };
 
 type FilterForm = {
@@ -73,6 +74,101 @@ function val(d: Record<string, unknown> | null, key: string): string {
   const v = d[key];
   if (v == null) return "";
   return String(v);
+}
+
+const PRODUCTION_SLOT_LABELS: Record<string, string> = {
+  h0900: "09:00",
+  h1000: "10:00",
+  h1115: "11:15",
+  h1215: "12:15",
+  h1300: "13:00",
+  h1445: "14:45",
+  h1545: "15:45",
+  h1700: "17:00",
+  h1830: "18:30",
+  t1000: "10:00",
+  t1300: "13:00",
+  t1600: "16:00",
+  t1830: "18:30",
+};
+
+const PRODUCTION_SLOT_ORDER = [
+  "h0900",
+  "h1000",
+  "h1115",
+  "h1215",
+  "h1300",
+  "h1445",
+  "h1545",
+  "h1700",
+  "h1830",
+  "t1000",
+  "t1300",
+  "t1600",
+  "t1830",
+] as const;
+
+const UTU_PAKET_STAGE_LABELS: Record<string, string> = {
+  optik: "Optik",
+  utu: "Ütü",
+  paketleme: "Paketleme",
+};
+
+function formatProductionSlotsText(slots: unknown, total?: unknown): string {
+  if (!slots || typeof slots !== "object" || Array.isArray(slots)) return "";
+  const o = slots as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const key of PRODUCTION_SLOT_ORDER) {
+    const n = Number(o[key]);
+    if (Number.isFinite(n) && n > 0) {
+      parts.push(`${PRODUCTION_SLOT_LABELS[key] ?? key}: ${n.toLocaleString("tr-TR")}`);
+    }
+  }
+  if (!parts.length) return "";
+  const sum = Number(total);
+  const totalPart =
+    Number.isFinite(sum) && sum > 0 ? ` — toplam ${sum.toLocaleString("tr-TR")} adet` : "";
+  return ` Kaydedilen: ${parts.join(", ")}${totalPart}.`;
+}
+
+function formatUtuPaketStagesText(stages: unknown): string {
+  if (!stages || typeof stages !== "object" || Array.isArray(stages)) return "";
+  const o = stages as Record<string, { slots?: Record<string, number>; ek?: number; total?: number }>;
+  const parts: string[] = [];
+  for (const stage of ["optik", "utu", "paketleme"] as const) {
+    const row = o[stage];
+    if (!row) continue;
+    const slotParts: string[] = [];
+    const rawSlots = row.slots && typeof row.slots === "object" ? row.slots : {};
+    for (const key of PRODUCTION_SLOT_ORDER) {
+      const n = Number(rawSlots[key]);
+      if (Number.isFinite(n) && n > 0) {
+        slotParts.push(`${PRODUCTION_SLOT_LABELS[key] ?? key}: ${n.toLocaleString("tr-TR")}`);
+      }
+    }
+    const ek = Number(row.ek);
+    if (Number.isFinite(ek) && ek > 0) {
+      slotParts.push(`ek: ${ek.toLocaleString("tr-TR")}`);
+    }
+    const total = Number(row.total);
+    if (slotParts.length) {
+      const totalPart =
+        Number.isFinite(total) && total > 0 ? ` (toplam ${total.toLocaleString("tr-TR")})` : "";
+      parts.push(`${UTU_PAKET_STAGE_LABELS[stage]}: ${slotParts.join(", ")}${totalPart}`);
+    }
+  }
+  return parts.length ? ` ${parts.join(" · ")}.` : "";
+}
+
+function formatUtuPaketBedenText(beden: unknown): string {
+  if (!beden || typeof beden !== "object" || Array.isArray(beden)) return "";
+  const parts = Object.entries(beden as Record<string, unknown>)
+    .map(([code, v]) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? `${code}: ${n.toLocaleString("tr-TR")}` : "";
+    })
+    .filter(Boolean);
+  return parts.length ? ` Beden: ${parts.join(", ")}.` : "";
 }
 
 /** Log detayında çalışan adı varsa göster, yoksa #id (eski kayıtlar). */
@@ -203,7 +299,12 @@ function logIslemDetayi(row: ActivityLogRow): string {
     case "uretim_kayit":
       if (d) {
         const who = calisanEtiketi(d, "workerId");
-        return `${val(d, "date")} tarihinde ${who} için saatlik üretim rakamları kaydedildi.`;
+        return `${val(d, "date")} tarihinde ${who} için saatlik üretim rakamları kaydedildi.${formatProductionSlotsText(d.slots, d.total)}`;
+      }
+      break;
+    case "utu_paket_kaydet":
+      if (d) {
+        return `${val(d, "date")} ütü–paket kaydı.${formatUtuPaketStagesText(d.stages)}${formatUtuPaketBedenText(d.beden)}`;
       }
       break;
     case "uretim_toplu":

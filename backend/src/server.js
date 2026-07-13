@@ -251,6 +251,69 @@ function logActivity(req, action, resource, details) {
   });
 }
 
+const PRODUCTION_SLOT_KEYS = [
+  "h0900",
+  "h1000",
+  "h1115",
+  "h1215",
+  "h1300",
+  "h1445",
+  "h1545",
+  "h1700",
+  "h1830",
+  "t1000",
+  "t1300",
+  "t1600",
+  "t1830",
+];
+
+function nonZeroSlotsForLog(values) {
+  const slots = {};
+  let total = 0;
+  for (const key of PRODUCTION_SLOT_KEYS) {
+    const n = Math.max(0, Math.floor(Number(values?.[key]) || 0));
+    if (n > 0) slots[key] = n;
+    total += n;
+  }
+  return { slots, total };
+}
+
+const UTU_PAKET_STAGE_KEYS = ["optik", "utu", "paketleme"];
+
+function utuPaketSaveSummaryForLog(body) {
+  const stagesIn = body?.stages && typeof body.stages === "object" ? body.stages : {};
+  const ekIn = body?.stageEkSayim && typeof body.stageEkSayim === "object" ? body.stageEkSayim : {};
+  const bedenIn = body?.beden && typeof body.beden === "object" ? body.beden : {};
+  const stages = {};
+
+  for (const stage of UTU_PAKET_STAGE_KEYS) {
+    const raw = stagesIn[stage] && typeof stagesIn[stage] === "object" ? stagesIn[stage] : {};
+    const slots = {};
+    let slotSum = 0;
+    for (const [key, value] of Object.entries(raw)) {
+      const n = Math.max(0, Math.floor(Number(value) || 0));
+      if (n > 0) {
+        slots[key] = n;
+        slotSum += n;
+      }
+    }
+    const ek = Math.max(0, Math.floor(Number(ekIn[stage]) || 0));
+    if (slotSum > 0 || ek > 0) {
+      stages[stage] = { slots, ek, total: slotSum + ek };
+    }
+  }
+
+  const beden = {};
+  for (const [code, value] of Object.entries(bedenIn)) {
+    const n = Math.max(0, Math.floor(Number(value) || 0));
+    if (n > 0) beden[String(code).trim()] = n;
+  }
+
+  const out = { stages };
+  if (Object.keys(beden).length) out.beden = beden;
+  return out;
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -1625,10 +1688,27 @@ app.post("/api/production", async (req, res) => {
     });
     if (!unchanged) {
       const workerName = await getWorkerNameById(wid);
+      const { slots, total } = nonZeroSlotsForLog({
+        t1000: t1000n,
+        t1300: t1300n,
+        t1600: t1600n,
+        t1830: t1830n,
+        h0900: h0900n,
+        h1000: h1000n,
+        h1115: h1115n,
+        h1215: h1215n,
+        h1300: h1300n,
+        h1445: h1445n,
+        h1545: h1545n,
+        h1700: h1700n,
+        h1830: h1830n,
+      });
       logActivity(req, "uretim_kayit", "production_entries", {
         workerId: wid,
         date: dateStr,
         workerName: workerName || undefined,
+        slots,
+        total,
       });
     }
     res.json({ ok: true });
@@ -1785,7 +1865,10 @@ app.put("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
   if (!date) return res.status(400).json({ message: "date zorunlu" });
   try {
     await saveUtuPaketDay(String(date), { stages, beden, packagingTarget, stageEkSayim, modelReferenceDate });
-    logActivity(req, "utu_paket_kaydet", "utu_paket_slots", { date: String(date) });
+    logActivity(req, "utu_paket_kaydet", "utu_paket_slots", {
+      date: String(date),
+      ...utuPaketSaveSummaryForLog({ stages, beden, stageEkSayim }),
+    });
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: "Ütü–paket verisi kaydedilemedi", error: String(err) });
