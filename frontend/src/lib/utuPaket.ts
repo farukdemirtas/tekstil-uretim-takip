@@ -205,10 +205,6 @@ export function emptyUtuPaketBeden(): Record<UtuPaketSizeCode, number> {
   return Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])) as Record<UtuPaketSizeCode, number>;
 }
 
-export function emptyUtuPaketBeden(): Record<UtuPaketSizeCode, number> {
-  return Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])) as Record<UtuPaketSizeCode, number>;
-}
-
 export function emptyPaketlemeSlotBeden(): UtuPaketSlotBedenGrid {
   return Object.fromEntries(
     UTU_PAKET_SLOT_DEFS.map(({ key }) => [key, emptyUtuPaketBeden()])
