@@ -1993,7 +1993,7 @@ async function syncUtuPaketPackagingTargetForModel(modelId, targetQuantity, { is
   for (const row of dateRows || []) {
     const d = String(row.productionDate || "").trim();
     if (!d) continue;
-    await purgeManualUtuPaketTakipsanArtifacts(d);
+    await purgeUtuPaketTakipsanMetaOnly(d);
     if (t > 0) {
       await dbRun(`UPDATE utu_paket_meta SET packaging_target = ? WHERE production_date = ?`, [t, d]);
     }
@@ -2037,9 +2037,48 @@ async function resetUtuPaketPackagingDay(date) {
   await dbRun(`DELETE FROM utu_paket_beden WHERE production_date = ?`, [d]);
 }
 
-/** @deprecated resetUtuPaketPackagingDay kullanın */
+/** Yalnızca Takipsan meta alanlarını temizler — manuel slot/beden korunur */
+async function purgeUtuPaketTakipsanMetaOnly(date) {
+  const d = String(date || "").trim();
+  if (!d) return;
+  await dbRun(
+    `UPDATE utu_paket_meta SET
+       takipsan_synced_at = NULL,
+       takipsan_order_code = '',
+       takipsan_package_count = 0,
+       takipsan_packages_json = NULL
+     WHERE production_date = ?`,
+    [d]
+  );
+}
+
+function dayHasManualPackagingData(day) {
+  const slotKeys = [
+    "h0900",
+    "h1000",
+    "h1115",
+    "h1215",
+    "h1300",
+    "h1445",
+    "h1545",
+    "h1700",
+    "h1830",
+  ];
+  const slotSum = slotKeys.reduce(
+    (s, k) => s + Math.max(0, Math.floor(Number(day?.stages?.paketleme?.[k]) || 0)),
+    0
+  );
+  const ekSayim = Math.max(0, Math.floor(Number(day?.stageEkSayim?.paketleme) || 0));
+  const bedenSum = Object.values(day?.beden || {}).reduce(
+    (s, v) => s + Math.max(0, Math.floor(Number(v) || 0)),
+    0
+  );
+  return slotSum + ekSayim + bedenSum > 0;
+}
+
+/** @deprecated purgeUtuPaketTakipsanMetaOnly veya resetUtuPaketPackagingDay kullanın */
 async function purgeManualUtuPaketTakipsanArtifacts(date) {
-  return resetUtuPaketPackagingDay(date);
+  return purgeUtuPaketTakipsanMetaOnly(date);
 }
 
 /** Gün verisine modele bağlı hedefi uygular (manuel modelde eski Takipsan hedefini ezer) */
@@ -2098,13 +2137,17 @@ export async function enrichUtuPaketDayWithModelTarget(day) {
       String(day.takipsan?.orderCode || "").trim().length > 0;
 
     if (hasTakipsanContamination) {
-      await resetUtuPaketPackagingDay(day.date);
-      day.stages = {
-        ...(day.stages || {}),
-        paketleme: Object.fromEntries(slotKeys.map((k) => [k, 0])),
-      };
-      day.stageEkSayim = { ...(day.stageEkSayim || {}), paketleme: 0 };
-      day.beden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
+      if (dayHasManualPackagingData(day)) {
+        await purgeUtuPaketTakipsanMetaOnly(day.date);
+      } else {
+        await resetUtuPaketPackagingDay(day.date);
+        day.stages = {
+          ...(day.stages || {}),
+          paketleme: Object.fromEntries(slotKeys.map((k) => [k, 0])),
+        };
+        day.stageEkSayim = { ...(day.stageEkSayim || {}), paketleme: 0 };
+        day.beden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
+      }
     }
 
     const slotSum = slotKeys.reduce(
@@ -2194,8 +2237,20 @@ export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, 
     });
     await dbRun(`UPDATE product_models SET utu_paket_session_start_date = ? WHERE id = ?`, [start, mid]);
     for (const d of dates) {
+      const prev = await dbGet(
+        `SELECT model_id AS modelId FROM utu_paket_meta WHERE production_date = ?`,
+        [d]
+      );
+      const prevModelId =
+        prev?.modelId != null && Number.isFinite(Number(prev.modelId)) ? Number(prev.modelId) : null;
+      const modelChanged = prevModelId !== mid;
+
       await dbRun(upsertSql, [d, packagingTarget, mid, name, model, d]);
-      await resetUtuPaketPackagingDay(d);
+      if (modelChanged || isTakipsanLinked) {
+        await resetUtuPaketPackagingDay(d);
+      } else if (!isTakipsanLinked) {
+        await purgeUtuPaketTakipsanMetaOnly(d);
+      }
     }
     await dbRun("COMMIT");
     return { ok: true, datesUpdated: dates.length, datesCleared, sessionStartDate: start };
@@ -5006,18 +5061,32 @@ export function saveUtuPaketDay(date, payload) {
         const packagingTarget = takipsanSync
           ? z(payload?.packagingTarget)
           : z(metaRow?.packaging_target);
-        const takipsanPackageCount = takipsanSync
+        let takipsanPackageCount = takipsanSync
           ? z(payload?.takipsanPackageCount)
           : z(metaRow?.takipsan_package_count);
-        const takipsanOrderCode = takipsanSync
+        let takipsanOrderCode = takipsanSync
           ? String(payload?.takipsanOrderCode || "").trim()
           : String(metaRow?.takipsan_order_code || "").trim();
-        const takipsanSyncedAt = takipsanSync
+        let takipsanSyncedAt = takipsanSync
           ? String(payload.takipsanSyncedAt)
           : metaRow?.takipsan_synced_at || null;
-        const takipsanPackagesJson = takipsanSync
+        let takipsanPackagesJson = takipsanSync
           ? serializeTakipsanPackages(payload?.takipsanPackages)
           : metaRow?.takipsan_packages_json || null;
+
+        const paketlemeSlots = stagesIn.paketleme || {};
+        const paketlemeSlotSum = UTU_PAKET_SLOT_KEYS.reduce((s, k) => s + z(paketlemeSlots[k]), 0);
+        const paketlemeEk =
+          payload?.stageEkSayim && typeof payload.stageEkSayim === "object"
+            ? z(payload.stageEkSayim.paketleme)
+            : 0;
+        const manualPaketlemeEntry = !takipsanSync && paketlemeSlotSum + paketlemeEk > 0;
+        if (manualPaketlemeEntry) {
+          takipsanPackageCount = 0;
+          takipsanOrderCode = "";
+          takipsanSyncedAt = null;
+          takipsanPackagesJson = null;
+        }
         const modelReferenceDate =
           payload?.modelReferenceDate !== undefined
             ? String(payload.modelReferenceDate || date).trim()
