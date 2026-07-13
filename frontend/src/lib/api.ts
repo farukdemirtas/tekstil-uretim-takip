@@ -1690,7 +1690,7 @@ export async function saveUtuPaket(
     Partial<
       Pick<
         UtuPaketDayPayload,
-        "beden" | "packagingTarget" | "stageEkSayim" | "modelReferenceDate" | "paketlemeSlotBeden"
+        "beden" | "packagingTarget" | "stageEkSayim" | "modelReferenceDate" | "paketlemeSlotBeden" | "paketlemeEkBeden"
       >
     >
 ): Promise<void> {

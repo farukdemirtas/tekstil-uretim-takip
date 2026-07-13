@@ -1803,13 +1803,13 @@ app.get("/api/utu-paket/ekran1-summary", requireAnyPermission(["ekran1", "utuPak
 });
 
 app.put("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => {
-  const { date, stages, beden, packagingTarget, stageEkSayim, modelReferenceDate, paketlemeSlotBeden } = req.body || {};
+  const { date, stages, beden, packagingTarget, stageEkSayim, modelReferenceDate, paketlemeSlotBeden, paketlemeEkBeden } = req.body || {};
   if (!date) return res.status(400).json({ message: "date zorunlu" });
   try {
-    await saveUtuPaketDay(String(date), { stages, beden, packagingTarget, stageEkSayim, modelReferenceDate, paketlemeSlotBeden });
+    await saveUtuPaketDay(String(date), { stages, beden, packagingTarget, stageEkSayim, modelReferenceDate, paketlemeSlotBeden, paketlemeEkBeden });
     logActivity(req, "utu_paket_kaydet", "utu_paket_slots", {
       date: String(date),
-      ...buildUtuPaketLogSummaryFromPayload({ stages, beden, stageEkSayim, paketlemeSlotBeden }),
+      ...buildUtuPaketLogSummaryFromPayload({ stages, beden, stageEkSayim, paketlemeSlotBeden, paketlemeEkBeden }),
     });
     return res.json({ ok: true });
   } catch (err) {

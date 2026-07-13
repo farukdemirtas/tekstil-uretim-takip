@@ -183,6 +183,8 @@ export type UtuPaketDayPayload = {
   beden: Record<string, number>;
   /** Manuel paketleme: saat dilimi başına beden girişi */
   paketlemeSlotBeden?: UtuPaketSlotBedenGrid;
+  /** Manuel paketleme ek adet beden girişi */
+  paketlemeEkBeden?: UtuPaketBedenRow;
   /** TV bar hedefi — sipariş sayısından gelir */
   packagingTarget: number;
   /** Ayarlardan atanan manuel model — Takipsan paketleme kapalı */
@@ -227,7 +229,8 @@ export function syncPaketlemeFromSlotBeden(
 }
 
 export function aggregateBedenFromPaketlemeSlots(
-  slotBeden: UtuPaketSlotBedenGrid
+  slotBeden: UtuPaketSlotBedenGrid,
+  ekBeden?: UtuPaketBedenRow
 ): Record<UtuPaketSizeCode, number> {
   const beden = emptyUtuPaketBeden();
   for (const { key } of UTU_PAKET_SLOT_DEFS) {
@@ -236,7 +239,30 @@ export function aggregateBedenFromPaketlemeSlots(
       beden[code] += Math.max(0, Math.floor(Number(row?.[code]) || 0));
     }
   }
+  for (const code of UTU_PAKET_SIZE_CODES) {
+    beden[code] += Math.max(0, Math.floor(Number(ekBeden?.[code]) || 0));
+  }
   return beden;
+}
+
+export function normalizePaketlemeEkBeden(raw: UtuPaketBedenRow | undefined): UtuPaketBedenRow {
+  const out = emptyUtuPaketBeden();
+  if (!raw || typeof raw !== "object") return out;
+  for (const code of UTU_PAKET_SIZE_CODES) {
+    out[code] = Math.max(0, Math.floor(Number(raw[code]) || 0));
+  }
+  return out;
+}
+
+export function sumPaketlemeEkBeden(ekBeden: UtuPaketBedenRow | undefined): number {
+  return UTU_PAKET_SIZE_CODES.reduce(
+    (s, c) => s + Math.max(0, Math.floor(Number(ekBeden?.[c]) || 0)),
+    0
+  );
+}
+
+export function paketlemeEkBedenHasData(ekBeden: UtuPaketBedenRow | undefined): boolean {
+  return sumPaketlemeEkBeden(ekBeden) > 0;
 }
 
 export function normalizePaketlemeSlotBeden(
@@ -303,9 +329,15 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
     }
   }
   const paketlemeSlotBeden = normalizePaketlemeSlotBeden(raw.paketlemeSlotBeden);
+  const paketlemeEkBeden = normalizePaketlemeEkBeden(raw.paketlemeEkBeden);
   if (paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
     Object.assign(stages, syncPaketlemeFromSlotBeden(stages, paketlemeSlotBeden));
-    Object.assign(beden, aggregateBedenFromPaketlemeSlots(paketlemeSlotBeden));
+  }
+  if (paketlemeEkBedenHasData(paketlemeEkBeden)) {
+    stageEkSayim.paketleme = sumPaketlemeEkBeden(paketlemeEkBeden);
+  }
+  if (paketlemeSlotBedenHasData(paketlemeSlotBeden) || paketlemeEkBedenHasData(paketlemeEkBeden)) {
+    Object.assign(beden, aggregateBedenFromPaketlemeSlots(paketlemeSlotBeden, paketlemeEkBeden));
   }
   const takipsan = raw.takipsan
     ? {
@@ -332,6 +364,7 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
     stageEkSayim,
     beden,
     paketlemeSlotBeden,
+    paketlemeEkBeden,
     packagingTarget: Math.max(0, Math.floor(Number(raw.packagingTarget) || 0)),
     manualPackaging: raw.manualPackaging === true,
     takipsan,

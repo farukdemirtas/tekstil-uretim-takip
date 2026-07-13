@@ -2075,6 +2075,7 @@ function dayHasManualPackagingData(day) {
     0
   );
   if (paketlemeSlotBedenHasData(day?.paketlemeSlotBeden)) return true;
+  if (paketlemeEkBedenHasData(day?.paketlemeEkBeden)) return true;
   return slotSum + ekSayim + bedenSum > 0;
 }
 
@@ -2150,6 +2151,7 @@ export async function enrichUtuPaketDayWithModelTarget(day) {
         day.stageEkSayim = { ...(day.stageEkSayim || {}), paketleme: 0 };
         day.beden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
         day.paketlemeSlotBeden = emptyPaketlemeSlotBedenGrid();
+        day.paketlemeEkBeden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
       }
     }
 
@@ -3591,6 +3593,10 @@ export function buildUtuPaketLogSummaryFromPayload(body) {
     body?.paketlemeSlotBeden && typeof body.paketlemeSlotBeden === "object"
       ? body.paketlemeSlotBeden
       : null;
+  const ekBedenIn =
+    body?.paketlemeEkBeden && typeof body.paketlemeEkBeden === "object"
+      ? body.paketlemeEkBeden
+      : null;
   const stages = {};
 
   for (const stage of UTU_PAKET_LOG_STAGE_KEYS) {
@@ -3631,6 +3637,14 @@ export function buildUtuPaketLogSummaryFromPayload(body) {
       if (Object.keys(sizes).length) paketlemeSlotBeden[k] = sizes;
     }
     if (Object.keys(paketlemeSlotBeden).length) out.paketlemeSlotBeden = paketlemeSlotBeden;
+  }
+  if (ekBedenIn) {
+    const paketlemeEkBeden = {};
+    for (const c of UTU_PAKET_SIZE_CODES) {
+      const n = Math.max(0, Math.floor(Number(ekBedenIn[c]) || 0));
+      if (n > 0) paketlemeEkBeden[c] = n;
+    }
+    if (Object.keys(paketlemeEkBeden).length) out.paketlemeEkBeden = paketlemeEkBeden;
   }
   return out;
 }
@@ -4999,6 +5013,8 @@ export const UTU_PAKET_SLOT_KEYS = [
   "h1700",
   "h1830",
 ];
+/** Manuel paketleme ek adet beden satırı (utu_paket_slot_beden.slot_key = ek) */
+export const PAKETLEME_EK_SLOT_KEY = "ek";
 export const UTU_PAKET_SIZE_CODES = ["XS", "S", "M", "L", "XL"];
 
 function emptyPaketlemeSlotBedenGrid() {
@@ -5008,6 +5024,17 @@ function emptyPaketlemeSlotBedenGrid() {
       Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
     ])
   );
+}
+
+function parsePaketlemeEkBedenRows(rows) {
+  const out = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  for (const r of rows || []) {
+    if (String(r.slot_key || "").trim() !== PAKETLEME_EK_SLOT_KEY) continue;
+    const sizeCode = String(r.size_code || "").trim();
+    if (!UTU_PAKET_SIZE_CODES.includes(sizeCode)) continue;
+    out[sizeCode] = Math.max(0, Math.floor(Number(r.count) || 0));
+  }
+  return out;
 }
 
 function parsePaketlemeSlotBedenRows(rows) {
@@ -5033,7 +5060,7 @@ function syncPaketlemeStagesFromSlotBeden(stages, slotBeden) {
   return { ...stages, paketleme };
 }
 
-function aggregateDailyBedenFromSlotBeden(slotBeden) {
+function aggregateDailyBedenFromSlotBeden(slotBeden, ekBeden) {
   const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
   for (const k of UTU_PAKET_SLOT_KEYS) {
     const row = slotBeden?.[k] || {};
@@ -5041,7 +5068,31 @@ function aggregateDailyBedenFromSlotBeden(slotBeden) {
       beden[c] += Math.max(0, Math.floor(Number(row[c]) || 0));
     }
   }
+  for (const c of UTU_PAKET_SIZE_CODES) {
+    beden[c] += Math.max(0, Math.floor(Number(ekBeden?.[c]) || 0));
+  }
   return beden;
+}
+
+function paketlemeEkBedenHasData(ekBeden) {
+  if (!ekBeden || typeof ekBeden !== "object") return false;
+  for (const c of UTU_PAKET_SIZE_CODES) {
+    if (Math.max(0, Math.floor(Number(ekBeden[c]) || 0)) > 0) return true;
+  }
+  return false;
+}
+
+function sumPaketlemeEkBeden(ekBeden) {
+  return UTU_PAKET_SIZE_CODES.reduce((s, c) => s + Math.max(0, Math.floor(Number(ekBeden?.[c]) || 0)), 0);
+}
+
+function parsePaketlemeEkBedenPayload(raw) {
+  const out = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  if (!raw || typeof raw !== "object") return out;
+  for (const c of UTU_PAKET_SIZE_CODES) {
+    out[c] = Math.max(0, Math.floor(Number(raw[c]) || 0));
+  }
+  return out;
 }
 
 function paketlemeSlotBedenHasData(slotBeden) {
@@ -5241,13 +5292,20 @@ export function getUtuPaketDay(date) {
                   stageEkSayim[st] = Number(row?.ek_sayim) || 0;
                 }
                 const paketlemeSlotBeden = parsePaketlemeSlotBedenRows(slotBedenRows);
+                const paketlemeEkBeden = parsePaketlemeEkBedenRows(slotBedenRows);
                 if (paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
                   stages.paketleme = syncPaketlemeStagesFromSlotBeden(stages, paketlemeSlotBeden).paketleme;
                 }
-                const beden = paketlemeSlotBedenHasData(paketlemeSlotBeden)
-                  ? aggregateDailyBedenFromSlotBeden(paketlemeSlotBeden)
+                if (paketlemeEkBedenHasData(paketlemeEkBeden)) {
+                  stageEkSayim.paketleme = sumPaketlemeEkBeden(paketlemeEkBeden);
+                }
+                const hasManualPaketlemeBeden =
+                  paketlemeSlotBedenHasData(paketlemeSlotBeden) ||
+                  paketlemeEkBedenHasData(paketlemeEkBeden);
+                const beden = hasManualPaketlemeBeden
+                  ? aggregateDailyBedenFromSlotBeden(paketlemeSlotBeden, paketlemeEkBeden)
                   : Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
-                if (!paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
+                if (!hasManualPaketlemeBeden) {
                   for (const r of bedenRows || []) {
                     const code = String(r.size_code || "").trim();
                     if (code) beden[code] = Number(r.count) || 0;
@@ -5286,6 +5344,7 @@ export function getUtuPaketDay(date) {
                   stageEkSayim,
                   beden,
                   paketlemeSlotBeden,
+                  paketlemeEkBeden,
                   packagingTarget,
                   takipsan: {
                     packageCount: Math.max(
@@ -5328,9 +5387,15 @@ export function saveUtuPaketDay(date, payload) {
   const stagesIn = payload?.stages && typeof payload.stages === "object" ? { ...payload.stages } : {};
   let bedenIn = payload?.beden && typeof payload.beden === "object" ? { ...payload.beden } : {};
   const paketlemeSlotBeden = parsePaketlemeSlotBedenPayload(payload?.paketlemeSlotBeden);
-  if (paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
-    stagesIn.paketleme = syncPaketlemeStagesFromSlotBeden(stagesIn, paketlemeSlotBeden).paketleme;
-    bedenIn = aggregateDailyBedenFromSlotBeden(paketlemeSlotBeden);
+  const paketlemeEkBeden = parsePaketlemeEkBedenPayload(payload?.paketlemeEkBeden);
+  if (
+    paketlemeSlotBedenHasData(paketlemeSlotBeden) ||
+    paketlemeEkBedenHasData(paketlemeEkBeden)
+  ) {
+    if (paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
+      stagesIn.paketleme = syncPaketlemeStagesFromSlotBeden(stagesIn, paketlemeSlotBeden).paketleme;
+    }
+    bedenIn = aggregateDailyBedenFromSlotBeden(paketlemeSlotBeden, paketlemeEkBeden);
   }
   const takipsanSync = payload?.takipsanSyncedAt != null;
   const z = (n) => Math.max(0, Math.floor(Number(n) || 0));
@@ -5362,13 +5427,16 @@ export function saveUtuPaketDay(date, payload) {
 
         const paketlemeSlots = stagesIn.paketleme || {};
         const paketlemeSlotSum = UTU_PAKET_SLOT_KEYS.reduce((s, k) => s + z(paketlemeSlots[k]), 0);
-        const paketlemeEk =
-          payload?.stageEkSayim && typeof payload.stageEkSayim === "object"
+        const paketlemeEk = paketlemeEkBedenHasData(paketlemeEkBeden)
+          ? sumPaketlemeEkBeden(paketlemeEkBeden)
+          : payload?.stageEkSayim && typeof payload.stageEkSayim === "object"
             ? z(payload.stageEkSayim.paketleme)
             : 0;
         const manualPaketlemeEntry =
           !takipsanSync &&
-          (paketlemeSlotSum + paketlemeEk > 0 || paketlemeSlotBedenHasData(paketlemeSlotBeden));
+          (paketlemeSlotSum + paketlemeEk > 0 ||
+            paketlemeSlotBedenHasData(paketlemeSlotBeden) ||
+            paketlemeEkBedenHasData(paketlemeEkBeden));
         if (manualPaketlemeEntry) {
           takipsanPackageCount = 0;
           takipsanOrderCode = "";
@@ -5394,10 +5462,20 @@ export function saveUtuPaketDay(date, payload) {
       db.run("BEGIN", (beginErr) => {
         if (beginErr) return reject(beginErr);
 
-        const stageEkSayimIn =
+        let stageEkSayimIn =
           payload?.stageEkSayim && typeof payload.stageEkSayim === "object"
-            ? payload.stageEkSayim
+            ? { ...payload.stageEkSayim }
             : null;
+        if (paketlemeEkBedenHasData(paketlemeEkBeden)) {
+          if (!stageEkSayimIn) stageEkSayimIn = {};
+          stageEkSayimIn.paketleme = sumPaketlemeEkBeden(paketlemeEkBeden);
+        } else if (
+          payload?.paketlemeEkBeden &&
+          typeof payload.paketlemeEkBeden === "object" &&
+          stageEkSayimIn
+        ) {
+          stageEkSayimIn.paketleme = 0;
+        }
 
         const slotStmt = db.prepare(
           `INSERT INTO utu_paket_slots (
@@ -5454,7 +5532,7 @@ export function saveUtuPaketDay(date, payload) {
                   db.run("ROLLBACK");
                   return reject(delSbErr);
                 }
-                if (!paketlemeSlotBedenHasData(paketlemeSlotBeden)) {
+                if (!paketlemeSlotBedenHasData(paketlemeSlotBeden) && !paketlemeEkBedenHasData(paketlemeEkBeden)) {
                   onDone();
                   return;
                 }
@@ -5467,6 +5545,10 @@ export function saveUtuPaketDay(date, payload) {
                     const n = z(row[c]);
                     if (n > 0) sbStmt.run([date, k, c, n]);
                   }
+                }
+                for (const c of UTU_PAKET_SIZE_CODES) {
+                  const n = z(paketlemeEkBeden[c]);
+                  if (n > 0) sbStmt.run([date, PAKETLEME_EK_SLOT_KEY, c, n]);
                 }
                 sbStmt.finalize((sbFinalErr) => {
                   if (sbFinalErr) {

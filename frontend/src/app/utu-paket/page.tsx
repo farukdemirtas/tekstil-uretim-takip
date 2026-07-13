@@ -37,6 +37,7 @@ import {
   sumGunPaketlenen,
   aggregateBedenFromPaketlemeSlots,
   syncPaketlemeFromSlotBeden,
+  sumPaketlemeEkBeden,
   sumSlotBedenRow,
   sumUtuPaketSlots,
   type UtuPaketDayPayload,
@@ -499,6 +500,7 @@ export default function UtuPaketPage() {
         beden: payload.beden,
         stageEkSayim: payload.stageEkSayim,
         paketlemeSlotBeden: payload.paketlemeSlotBeden,
+        paketlemeEkBeden: payload.paketlemeEkBeden,
       });
       setData(payload);
       setDirty(false);
@@ -535,6 +537,7 @@ export default function UtuPaketPage() {
     const v = Math.max(0, parseInt(raw, 10) || 0);
     setData((prev) => {
       const slotBeden = prev.paketlemeSlotBeden ?? emptyPaketlemeSlotBeden();
+      const ekBeden = prev.paketlemeEkBeden ?? emptyUtuPaketBeden();
       const nextSlotBeden = {
         ...slotBeden,
         [slotKey]: { ...slotBeden[slotKey], [sizeCode]: v },
@@ -543,7 +546,27 @@ export default function UtuPaketPage() {
         ...prev,
         paketlemeSlotBeden: nextSlotBeden,
         stages: syncPaketlemeFromSlotBeden(prev.stages, nextSlotBeden),
-        beden: aggregateBedenFromPaketlemeSlots(nextSlotBeden),
+        beden: aggregateBedenFromPaketlemeSlots(nextSlotBeden, ekBeden),
+      };
+      scheduleSave(next);
+      return next;
+    });
+  }
+
+  function setPaketlemeEkBeden(sizeCode: UtuPaketSizeCode, raw: string) {
+    const v = Math.max(0, parseInt(raw, 10) || 0);
+    setData((prev) => {
+      const slotBeden = prev.paketlemeSlotBeden ?? emptyPaketlemeSlotBeden();
+      const nextEkBeden = {
+        ...(prev.paketlemeEkBeden ?? emptyUtuPaketBeden()),
+        [sizeCode]: v,
+      };
+      const ekTotal = sumPaketlemeEkBeden(nextEkBeden);
+      const next = {
+        ...prev,
+        paketlemeEkBeden: nextEkBeden,
+        stageEkSayim: { ...prev.stageEkSayim, paketleme: ekTotal },
+        beden: aggregateBedenFromPaketlemeSlots(slotBeden, nextEkBeden),
       };
       scheduleSave(next);
       return next;
@@ -1077,32 +1100,40 @@ export default function UtuPaketPage() {
               </table>
             </div>
 
-            {ekSayimOpen && (
+            {ekSayimOpen && (() => {
+              const ekRow = data.paketlemeEkBeden ?? emptyUtuPaketBeden();
+              const ekTotal = sumPaketlemeEkBeden(ekRow);
+              return (
               <div className="mt-4 border-t border-slate-200/80 pt-4 dark:border-slate-700/80">
                 <p className="mb-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                  Ek adet saatlik tabloya eklenerek paketleme günlük toplamını günceller.
+                  Ek adet için beden (XS–XL) girin. Saatlik tabloya eklenerek paketleme günlük toplamını ve beden dağılımını günceller.
                 </p>
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      inputMode="numeric"
-                      className="w-28 rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-center text-xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:ring-slate-600"
-                      value={data.stageEkSayim?.paketleme || ""}
-                      onChange={(e) => setEkSayim("paketleme", e.target.value)}
-                      aria-label="Paketleme ek adet"
-                    />
-                    <span className="text-sm text-slate-500 dark:text-slate-400">adet</span>
-                  </label>
-                  <p className="text-sm tabular-nums text-slate-600 dark:text-slate-300">
-                    Saatlik: {sumUtuPaketSlots(data.stages.paketleme).toLocaleString("tr-TR")} + ek:{" "}
-                    {(data.stageEkSayim?.paketleme ?? 0).toLocaleString("tr-TR")} ={" "}
-                    <strong>{stageTotals.paketleme.toLocaleString("tr-TR")}</strong>
-                  </p>
+                <div className="grid grid-cols-5 gap-1.5 sm:max-w-md">
+                  {UTU_PAKET_SIZE_CODES.map((code) => (
+                    <label key={code} className="flex min-w-0 flex-col items-center gap-1">
+                      <span className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        {code}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        className="w-full min-w-0 rounded-lg border-0 bg-slate-50 px-1 py-2 text-center text-sm font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-slate-200/80 focus:ring-2 focus:ring-emerald-500 dark:bg-slate-800 dark:text-white dark:ring-slate-600"
+                        value={ekRow[code] || ""}
+                        onChange={(e) => setPaketlemeEkBeden(code, e.target.value)}
+                        aria-label={`Paketleme ek adet ${code}`}
+                      />
+                    </label>
+                  ))}
                 </div>
+                <p className="mt-3 text-sm tabular-nums text-slate-600 dark:text-slate-300">
+                  Saatlik: {sumUtuPaketSlots(data.stages.paketleme).toLocaleString("tr-TR")} + ek:{" "}
+                  {ekTotal.toLocaleString("tr-TR")} ={" "}
+                  <strong>{stageTotals.paketleme.toLocaleString("tr-TR")}</strong>
+                </p>
               </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* ── Beden dağılımı ── */}
