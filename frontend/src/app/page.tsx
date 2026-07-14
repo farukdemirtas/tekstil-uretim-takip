@@ -116,6 +116,17 @@ function orderedExportRows(rows: ProductionRow[], teamMeta: Array<{ code: string
   return out;
 }
 
+/** Aynı isimli birden fazla proses satırını tek personel sayar (günlük özet çalışan sayısı). */
+function countUniquePersonnel(rows: ProductionRow[]): number {
+  const names = new Set<string>();
+  for (const row of rows) {
+    if (row.absentForDay) continue;
+    const key = row.name.trim().toLocaleLowerCase("tr");
+    if (key) names.add(key);
+  }
+  return names.size;
+}
+
 /** ProductionTable ile aynı: bölüm sırası + her bölümde o günkü tablodaki satır sırası. */
 function rowsByTeamSections(
   rows: ProductionRow[],
@@ -530,6 +541,8 @@ export default function HomePage() {
     }
     return { avg: agg.avg, count: agg.count, presentCount, withTarget };
   }, [rows, useIntradayEfficiency, genelProsesTick]);
+
+  const uniquePersonnelCount = useMemo(() => countUniquePersonnel(rows), [rows]);
 
   const ekSayimTeamSections = useMemo(
     () => rowsByTeamSections(rows, teamMeta),
@@ -1746,7 +1759,7 @@ export default function HomePage() {
       ) : null}
 
       <AdminPanel
-        workerCount={rows.length}
+        workerCount={uniquePersonnelCount}
         stageTotals={hedefStageTotals}
         stageError={hedefStageError}
         ekran1TotalCompleted={ekran1Summary?.totalCompleted ?? null}

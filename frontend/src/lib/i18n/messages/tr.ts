@@ -232,7 +232,7 @@ export const messages: Messages = {
   },
   adminPanel: {
     title: "Günlük Özet",
-    workers: "Çalışan",
+    workers: "Çalışan personel",
     generalCompleted: "Genel tamamlanan",
     todayCompleted: "Bugün tamamlanan",
     stageSection: "Bölüm aşaması",

@@ -231,7 +231,7 @@ export const messages: Messages = {
   },
   adminPanel: {
     title: "Tageszusammenfassung",
-    workers: "Mitarbeiter",
+    workers: "Aktives Personal",
     generalCompleted: "Gesamt abgeschlossen",
     todayCompleted: "Heute abgeschlossen",
     stageSection: "Stufenabschnitt",

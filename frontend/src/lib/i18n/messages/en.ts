@@ -232,7 +232,7 @@ export const messages: Messages = {
   },
   adminPanel: {
     title: "Daily summary",
-    workers: "Workers",
+    workers: "Active personnel",
     generalCompleted: "Overall completed",
     todayCompleted: "Completed today",
     stageSection: "Stage section",
