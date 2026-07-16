@@ -523,10 +523,11 @@ app.delete("/api/personnel-birthdays/:id", requirePermission("ayarlar"), async (
 
 app.post("/api/personnel-birthdays/bulk", requirePermission("ayarlar"), async (req, res) => {
   const rows = req.body?.rows;
+  const replaceAll = req.body?.replaceAll === true;
   if (!Array.isArray(rows)) return res.status(400).json({ message: "rows[] gerekli" });
   try {
-    const r = await bulkInsertPersonnelBirthdays(rows);
-    logActivity(req, "dogum_gunu_toplu", "personnel_birthdays", r);
+    const r = await bulkInsertPersonnelBirthdays(rows, { replaceAll });
+    logActivity(req, "dogum_gunu_toplu", "personnel_birthdays", { ...r, replaceAll });
     res.json(r);
   } catch (e) {
     res.status(500).json({ message: String(e) });

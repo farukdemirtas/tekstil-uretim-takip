@@ -130,21 +130,22 @@ export default function BirthdaysSection() {
       const out = parseBirthdaysFromRows(rows, XLSX);
       if (out.length === 0) {
         setExcelMsg(
-          "Geçerli satır yok. Yeşil İmaj: B=ad, C=soyad, doğum sütunu (çoğunlukla L). Dar tablo: A–B ad/soyad. Tarih hücresi doğru mu kontrol edin."
+          "Geçerli satır yok. Yeşil İmaj listesinde başlık satırında AD, SOYAD ve DOGUMTARIHI sütunları olmalı. Tarih hücresini kontrol edin."
         );
         return;
       }
-      const res = await bulkInsertPersonnelBirthdays(out);
-      const parts: string[] = [];
-      parts.push(`Yeni eklenen: ${res.inserted}`);
-      if (res.updated > 0) parts.push(`doğum tarihi güncellenen: ${res.updated}`);
-      if (res.skippedInvalid > 0) parts.push(`geçersiz satır: ${res.skippedInvalid}`);
-      if (res.duplicateSame > 0) {
-        parts.push(`aynı isim ve aynı doğum tarihi (zaten kayıtlı, yüklenmedi): ${res.duplicateSame}`);
-        window.alert(
-          `${res.duplicateSame} satır, sistemde zaten aynı ad, soyad ve doğum tarihiyle kayıtlı olduğu için tekrar eklenmedi. Aynı kişi ve aynı veri tekrar yüklenemez.`
-        );
+      if (
+        !window.confirm(
+          `Mevcut ${list.length} doğum günü kaydı silinip Excel'deki ${out.length} kişi yüklenecek. Devam edilsin mi?`
+        )
+      ) {
+        return;
       }
+      const res = await bulkInsertPersonnelBirthdays(out, { replaceAll: true });
+      const parts: string[] = [];
+      if ((res.deleted ?? 0) > 0) parts.push(`silinen eski kayıt: ${res.deleted}`);
+      parts.push(`yüklenen: ${res.inserted}`);
+      if (res.skippedInvalid > 0) parts.push(`geçersiz satır: ${res.skippedInvalid}`);
       setExcelMsg(parts.join(" · "));
       await load();
     } catch (e) {
@@ -158,9 +159,9 @@ export default function BirthdaysSection() {
     <div className="flex flex-col gap-5">
       <p className="text-sm text-slate-600 dark:text-slate-300">
         Bugün doğum günü olan personel <strong>EKRAN1</strong> üzerinde her dakika yaklaşık 10 saniye kutlama mesajı görür.
-        Her <strong>ad + soyad</strong> yalnızca bir kez kayıtlıdır; aynı isim ve tarih tekrar yüklenemez. Farklı kişiler aynı doğum
-        gününde olabilir. İsimler büyük harfle saklanır. Toplu Excel: Yeşil İmaj listesinde <strong>A</strong> sıra, <strong>B</strong> ad,{" "}
-        <strong>C</strong> soyad, doğum genelde <strong>L</strong>. Dar tabloda doğum <strong>C</strong> veya <strong>L</strong>.
+        Her <strong>ad + soyad</strong> yalnızca bir kez kayıtlıdır. İsimler büyük harfle saklanır. Toplu Excel yüklemede
+        mevcut kayıtlar silinir ve dosyadaki liste yüklenir. Yeşil İmaj personel listesinde <strong>AD</strong>,{" "}
+        <strong>SOYAD</strong> ve <strong>DOGUMTARIHI</strong> sütunları kullanılır.
       </p>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">

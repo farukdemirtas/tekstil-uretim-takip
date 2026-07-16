@@ -211,15 +211,17 @@ export type BulkPersonnelBirthdaysResult = {
   skippedInvalid: number;
   duplicateSame: number;
   updated: number;
+  deleted?: number;
 };
 
 export async function bulkInsertPersonnelBirthdays(
-  rows: { firstName: string; lastName: string; birthDate: string }[]
+  rows: { firstName: string; lastName: string; birthDate: string }[],
+  options?: { replaceAll?: boolean }
 ): Promise<BulkPersonnelBirthdaysResult> {
   const res = await apiFetch(`${apiBase()}/personnel-birthdays/bulk`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ rows }),
+    body: JSON.stringify({ rows, replaceAll: options?.replaceAll === true }),
   });
   const d = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((d as { message?: string }).message ?? "Toplu aktarım başarısız");

@@ -4355,20 +4355,21 @@ export function deletePersonnelBirthday(id) {
 }
 
 /**
- * Toplu Excel: aynı (ad, soyad) tek kayıt; aynı tarih tekrarı → duplicateSame.
- * Farklı kişiler aynı doğum gününde olabilir. Ad/soyad var ama tarih farklıysa → updated.
+ * Toplu Excel: replaceAll=true ise önce tüm kayıtlar silinir, sonra dosyadaki liste yüklenir.
+ * replaceAll=false: aynı (ad, soyad) tek kayıt; aynı tarih tekrarı → duplicateSame.
  */
-export function bulkInsertPersonnelBirthdays(rows) {
+export function bulkInsertPersonnelBirthdays(rows, { replaceAll = false } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   return new Promise((resolve, reject) => {
-    if (list.length === 0) {
-      resolve({ inserted: 0, skippedInvalid: 0, duplicateSame: 0, updated: 0 });
+    if (list.length === 0 && !replaceAll) {
+      resolve({ inserted: 0, skippedInvalid: 0, duplicateSame: 0, updated: 0, deleted: 0 });
       return;
     }
     let inserted = 0;
     let skippedInvalid = 0;
     let duplicateSame = 0;
     let updated = 0;
+    let deleted = 0;
 
     db.run("BEGIN", (bErr) => {
       if (bErr) return reject(bErr);
@@ -4381,7 +4382,7 @@ export function bulkInsertPersonnelBirthdays(rows) {
         if (i >= list.length) {
           db.run("COMMIT", (cErr) => {
             if (cErr) return reject(cErr);
-            resolve({ inserted, skippedInvalid, duplicateSame, updated });
+            resolve({ inserted, skippedInvalid, duplicateSame, updated, deleted });
           });
           return;
         }
@@ -4392,6 +4393,18 @@ export function bulkInsertPersonnelBirthdays(rows) {
         if (!fn || !ln || !/^\d{4}-\d{2}-\d{2}$/.test(bd)) {
           skippedInvalid++;
           step(i + 1);
+          return;
+        }
+        if (replaceAll) {
+          db.run(
+            "INSERT INTO personnel_birthdays (first_name, last_name, birth_date) VALUES (?, ?, ?)",
+            [fn, ln, bd],
+            function (insErr) {
+              if (insErr) return fail(insErr);
+              inserted++;
+              step(i + 1);
+            }
+          );
           return;
         }
         db.get(
@@ -4429,7 +4442,18 @@ export function bulkInsertPersonnelBirthdays(rows) {
         );
       };
 
-      step(0);
+      const startInsert = () => step(0);
+
+      if (replaceAll) {
+        db.run("DELETE FROM personnel_birthdays", function (delErr) {
+          if (delErr) return fail(delErr);
+          deleted = this.changes;
+          startInsert();
+        });
+        return;
+      }
+
+      startInsert();
     });
   });
 }

@@ -75,6 +75,33 @@ function findDogumColumnIndex(headerRow: unknown[]): number {
   return idx >= 0 ? idx : COL_L_TARIH;
 }
 
+function findHeaderRowIndex(rows: unknown[][]): number {
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    const line = rows[i] as unknown[];
+    if (!line?.length) continue;
+    const h = line.map(normHdr);
+    const hasAd = h.some(
+      (x) => x === "ad" || x === "adi" || x === "isim" || (x.includes("ad") && !x.includes("soyad") && !x.includes("gorev"))
+    );
+    const hasSoyad = h.some((x) => x.includes("soyad") || x.includes("soyisim") || x === "soy ad");
+    if (hasAd && hasSoyad) return i;
+  }
+  return -1;
+}
+
+function resolveColumnsFromHeaderRow(headerRow: unknown[]): { ad: number; soyad: number; tarih: number } {
+  const h = headerRow.map(normHdr);
+  const ad = h.findIndex(
+    (x) => x === "ad" || x === "adi" || x === "isim" || (x.includes("ad") && !x.includes("soyad") && !x.includes("gorev"))
+  );
+  const soyad = h.findIndex((x) => x.includes("soyad") || x.includes("soyisim") || x === "soy ad");
+  return {
+    ad: ad >= 0 ? ad : COL_B,
+    soyad: soyad >= 0 ? soyad : COL_C,
+    tarih: findDogumColumnIndex(headerRow),
+  };
+}
+
 /**
  * Yeşil İmaj: başlıkta B=AD, C=SOYAD.
  * Dar tablo: A=ad, B=soyad (veya A=sıra, B=ad, C=soyad).
@@ -85,6 +112,12 @@ export function resolvePersonnelExcelColumns(rows: unknown[][]): {
   dataStart: number;
 } {
   if (rows.length === 0) return { ad: 0, soyad: 1, dataStart: 0 };
+
+  const headerIdx = findHeaderRowIndex(rows);
+  if (headerIdx >= 0) {
+    const { ad, soyad } = resolveColumnsFromHeaderRow(rows[headerIdx] as unknown[]);
+    return { ad, soyad, dataStart: headerIdx + 1 };
+  }
 
   const r0 = rows[0] as unknown[];
   const h1 = normHdr(r0[COL_B]);
@@ -128,6 +161,11 @@ export function resolveBirthdayExcelColumns(rows: unknown[][]): {
   tarih: number;
   dataStart: number;
 } {
+  const headerIdx = findHeaderRowIndex(rows);
+  if (headerIdx >= 0) {
+    const cols = resolveColumnsFromHeaderRow(rows[headerIdx] as unknown[]);
+    return { ...cols, dataStart: headerIdx + 1 };
+  }
   const { ad, soyad, dataStart } = resolvePersonnelExcelColumns(rows);
   const r0 = rows[0] as unknown[];
   const tarih = rows.length ? findDogumColumnIndex(r0) : COL_L_TARIH;
