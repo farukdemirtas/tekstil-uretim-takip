@@ -83,6 +83,11 @@ export type WorkerProductionDayDetail = {
   h1545?: number;
   h1700?: number;
   h1830?: number;
+  /** O günkü ana ürün modeli (daily_product_meta) */
+  productName?: string;
+  productModel?: string;
+  /** Personele özel not / açıklama (gün bazlı) */
+  note?: string;
 };
 
 export type HourFilter = "" | "t1000" | "t1300" | "t1600" | "t1830";

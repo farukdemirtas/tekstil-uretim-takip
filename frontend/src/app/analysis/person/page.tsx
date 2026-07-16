@@ -37,6 +37,7 @@ import {
   displaySlotPdfLabel,
   type DisplaySlotKey,
 } from "@/lib/displaySlotAggregation";
+import { buildPersonProcessBreakdown } from "@/lib/personAnalysisBreakdown";
 import { sumProductionRow } from "@/lib/productionSlots";
 import { SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
@@ -291,35 +292,7 @@ export default function PersonAnalysisPage() {
   const sortedDates = useMemo(() => [...dateTotals.keys()].sort(), [dateTotals]);
 
   /** Çalışan kayıt no + bölüm/proses bazında dönem özeti */
-  const processBreakdown = useMemo(() => {
-    const byWorker = new Map<
-      number,
-      { team: string; process: string; days: Set<string>; total: number }
-    >();
-    for (const r of rows) {
-      const id = r.workerId ?? 0;
-      if (!byWorker.has(id)) {
-        byWorker.set(id, { team: r.team, process: r.process, days: new Set(), total: 0 });
-      }
-      const e = byWorker.get(id)!;
-      e.days.add(r.productionDate);
-      e.total += dayTotal(r);
-    }
-    return [...byWorker.entries()]
-      .map(([workerId, v]) => ({
-        workerId,
-        team: v.team,
-        process: v.process,
-        dayCount: v.days.size,
-        total: v.total,
-      }))
-      .sort(
-        (a, b) =>
-          a.team.localeCompare(b.team, "tr", { sensitivity: "base" }) ||
-          a.process.localeCompare(b.process, "tr", { sensitivity: "base" }) ||
-          a.workerId - b.workerId
-      );
-  }, [rows]);
+  const processBreakdown = useMemo(() => buildPersonProcessBreakdown(rows), [rows]);
 
   const stats = useMemo(() => {
     if (rows.length === 0) {
@@ -440,6 +413,8 @@ export default function PersonAnalysisPage() {
       processBreakdown.map((pb) => ({
         process: pb.process,
         bolum: teamLabel(pb.team),
+        modelLabel: pb.modelLabel,
+        dayNotes: pb.dayNotes,
         eff: efficiencyPercentFromTotals(
           prosesMap,
           pb.team,
@@ -1126,26 +1101,60 @@ export default function PersonAnalysisPage() {
                       Çalıştığı proses ve verim (dönem)
                     </p>
                     {processBreakdown.length === 1 ? (
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                          {processBreakdown[0].process}
-                        </span>
-                        {pdfHeaderProcessEffRows[0]?.eff !== null ? (
-                          <EfficiencyBadge pct={pdfHeaderProcessEffRows[0].eff!} />
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
+                      <div className="mt-1 flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                            {processBreakdown[0].process}
+                          </span>
+                          {processBreakdown[0].modelLabel ? (
+                            <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
+                              · {processBreakdown[0].modelLabel}
+                            </span>
+                          ) : null}
+                          {pdfHeaderProcessEffRows[0]?.eff !== null ? (
+                            <EfficiencyBadge pct={pdfHeaderProcessEffRows[0].eff!} />
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </div>
+                        {pdfHeaderProcessEffRows[0]?.dayNotes?.length ? (
+                          <div className="max-w-[48%] shrink-0 text-right text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                            {pdfHeaderProcessEffRows[0].dayNotes.map((n) => (
+                              <p key={n.date}>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">{n.date}</span>
+                                {" — "}
+                                <span>{n.note}</span>
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     ) : (
                       <ul className="mt-1 space-y-1 text-sm">
                         {pdfHeaderProcessEffRows.map((row, idx) => (
                           <li
                             key={`${row.process}-${row.bolum}-${idx}`}
-                            className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                            className="flex items-start justify-between gap-3"
                           >
-                            <span className="font-semibold text-slate-800 dark:text-slate-100">{row.process}</span>
-                            <span className="text-slate-500 dark:text-slate-400">({row.bolum})</span>
-                            {row.eff !== null ? <EfficiencyBadge pct={row.eff} /> : <span className="text-slate-400">—</span>}
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="font-semibold text-slate-800 dark:text-slate-100">{row.process}</span>
+                              <span className="text-slate-500 dark:text-slate-400">({row.bolum})</span>
+                              {row.modelLabel ? (
+                                <span className="text-indigo-700 dark:text-indigo-300">· {row.modelLabel}</span>
+                              ) : null}
+                              {row.eff !== null ? <EfficiencyBadge pct={row.eff} /> : <span className="text-slate-400">—</span>}
+                            </div>
+                            {row.dayNotes?.length ? (
+                              <div className="max-w-[48%] shrink-0 text-right text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                                {row.dayNotes.map((n) => (
+                                  <p key={n.date}>
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">{n.date}</span>
+                                    {" — "}
+                                    <span>{n.note}</span>
+                                  </p>
+                                ))}
+                              </div>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

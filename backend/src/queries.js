@@ -2964,6 +2964,9 @@ export function getWorkerProductionDailyDetail({
           h1545: z(row.h1545),
           h1700: z(row.h1700),
           h1830: z(row.h1830),
+          productName: String(row.productName || "").trim(),
+          productModel: String(row.productModel || "").trim(),
+          note: String(row.note || "").trim(),
         };
       });
 
@@ -2991,9 +2994,13 @@ export function getWorkerProductionDailyDetail({
           COALESCE(p.h1445, 0) AS h1445,
           COALESCE(p.h1545, 0) AS h1545,
           COALESCE(p.h1700, 0) AS h1700,
-          COALESCE(p.h1830, 0) AS h1830
+          COALESCE(p.h1830, 0) AS h1830,
+          COALESCE(m.product_name, '') AS productName,
+          COALESCE(m.product_model, '') AS productModel,
+          COALESCE(p.note, '') AS note
         FROM production_entries p
         JOIN workers w ON w.id = p.worker_id
+        LEFT JOIN daily_product_meta m ON m.production_date = p.production_date
         WHERE p.worker_id IN (${ph})
           AND p.production_date BETWEEN ? AND ?
           AND (w.created_at IS NULL OR w.created_at <= p.production_date)
