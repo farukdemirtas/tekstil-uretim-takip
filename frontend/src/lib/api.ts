@@ -1760,6 +1760,63 @@ export async function syncTakipsan(date?: string): Promise<{
   return d as { ok: boolean; packageCount?: number; readCount?: number; orderQuantity?: number };
 }
 
+export type IzinAttendanceSyncResult = {
+  ok: boolean;
+  date: string;
+  skipped?: boolean;
+  reason?: string;
+  message?: string;
+  attendanceDate?: string;
+  attendanceTitle?: string | null;
+  totalPersonnel?: number | null;
+  attendanceEntryCount?: number;
+  hidden: { workerId: number; name: string; description?: string }[];
+  alreadyHidden: { workerId: number; name: string }[];
+  unmatched: string[];
+};
+
+export type IzinAttendanceSyncStatus = {
+  configured: boolean;
+  syncIntervalMs: number;
+  enabled: boolean;
+  lastSyncAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  lastDate: string | null;
+  lastAttendanceTitle: string | null;
+  lastHiddenCount: number | null;
+  lastAlreadyHiddenCount: number | null;
+  lastUnmatchedNames: string[];
+};
+
+export async function getIzinAttendanceStatus(): Promise<IzinAttendanceSyncStatus> {
+  const res = await apiFetch(`${apiBase()}/izin/status`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "Yoklama durumu alınamadı");
+  }
+  return res.json() as Promise<IzinAttendanceSyncStatus>;
+}
+
+export async function syncIzinAttendance(date?: string): Promise<IzinAttendanceSyncResult> {
+  const res = await apiFetch(`${apiBase()}/izin/sync-attendance`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(date ? { date } : {}),
+  });
+  const d = (await res.json().catch(() => ({}))) as IzinAttendanceSyncResult & {
+    message?: string;
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(d.error ?? d.message ?? "Yoklama senkronu başarısız");
+  }
+  return d;
+}
+
 // ─── Proses Veri Satırları (sunucu kalıcı depolama) ───────────────────────────
 
 export type ProsesVeriRow = {

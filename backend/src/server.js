@@ -121,6 +121,9 @@ import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } fro
 import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
 import { syncTakipsanToUtuPaket, takipsanSyncState, todayTurkeyIso, fetchTakipsanConsignmentProductInfo } from "./takipsanSync.js";
 import { isTakipsanConfigured } from "./takipsanClient.js";
+import { scheduleIzinAttendanceSyncJob } from "./izinAttendanceSyncJob.js";
+import { syncIzinAttendanceToRoster, izinAttendanceSyncState } from "./izinAttendanceSync.js";
+import { isIzinApiConfigured } from "./izinClient.js";
 import {
   exportDatabaseSql,
   getDatabaseInfo,
@@ -1919,6 +1922,41 @@ app.post("/api/takipsan/sync", requireAnyPermission(["utuPaket", "ekran5"]), asy
   }
 });
 
+app.get("/api/izin/status", requireAuth, async (_req, res) => {
+  return res.json({
+    configured: isIzinApiConfigured(),
+    syncIntervalMs: Number(process.env.IZIN_SYNC_INTERVAL_MS) || 15 * 60 * 1000,
+    ...izinAttendanceSyncState,
+  });
+});
+
+app.post("/api/izin/sync-attendance", requireAuth, async (req, res) => {
+  if (!isIzinApiConfigured()) {
+    return res.status(400).json({
+      message:
+        "İzin yoklama entegrasyonu yapılandırılmamış. backend/.env içinde IZIN_API_USERNAME ve IZIN_API_PASSWORD tanımlayın.",
+    });
+  }
+  const date = String(req.body?.date ?? todayTurkeyIso()).trim();
+  try {
+    const result = await syncIzinAttendanceToRoster({ date });
+    if (!result.skipped) {
+      logActivity(req, "izin_yoklama_senkron", "worker_roster_day_hide", {
+        date: result.date,
+        hiddenCount: result.hidden.length,
+        alreadyHiddenCount: result.alreadyHidden.length,
+        unmatchedCount: result.unmatched.length,
+      });
+    }
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({
+      message: "Yoklama senkronu başarısız",
+      error: String(err?.message ?? err),
+    });
+  }
+});
+
 app.get("/api/job-calc/model-worker-stats", requireAuth, async (req, res) => {
   const modelId = Number(req.query.modelId);
   const modelCode = String(req.query.modelCode ?? "").trim();
@@ -2091,4 +2129,5 @@ app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Backend running on http://localhost:${PORT}`);
   scheduleTakipsanSyncJob();
+  scheduleIzinAttendanceSyncJob();
 });

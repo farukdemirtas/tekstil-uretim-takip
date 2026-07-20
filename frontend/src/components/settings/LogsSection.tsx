@@ -34,6 +34,8 @@ const ACTION_LABELS: Record<string, string> = {
   veritabani_yedek: "Veritabanı yedek alma",
   veritabani_geri_yukle: "Veritabanı geri yükleme",
   utu_paket_kaydet: "Ütü–paket kaydı",
+  izin_yoklama_senkron: "İzin yoklamasından sahada yok senkronu",
+  takipsan_senkron: "Takipsan senkronu",
 };
 
 type FilterForm = {
@@ -300,6 +302,11 @@ function logIslemDetayi(row: ActivityLogRow): string {
       if (d) {
         const who = calisanEtiketi(d, "workerId");
         return `${val(d, "date")} tarihinde ${who} için saatlik üretim rakamları kaydedildi.${formatProductionSlotsText(d.slots, d.total)}`;
+      }
+      break;
+    case "izin_yoklama_senkron":
+      if (d) {
+        return `${val(d, "date")} yoklamadan ${val(d, "hiddenCount")} personel sahada yok işaretlendi; ${val(d, "alreadyHiddenCount")} zaten işaretli; ${val(d, "unmatchedCount")} isim eşleşmedi.`;
       }
       break;
     case "utu_paket_kaydet":
