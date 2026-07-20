@@ -4,6 +4,7 @@ import {
   getDailyEntries,
   hideWorkerForSingleCalendarDay,
   listWorkersHiddenForCalendarDay,
+  upsertWorkerNote,
 } from "./queries.js";
 import { todayTurkeyIso } from "./takipsanSync.js";
 
@@ -42,6 +43,16 @@ function buildRosterNameIndex(rows) {
     map.set(key, list);
   }
   return map;
+}
+
+function attendanceDescriptionNote(entry) {
+  return String(entry?.description ?? "").trim();
+}
+
+async function applyAttendanceNote(workerId, date, entry) {
+  const note = attendanceDescriptionNote(entry);
+  if (!note) return;
+  await upsertWorkerNote({ workerId, date, note });
 }
 
 /**
@@ -114,20 +125,31 @@ export async function syncIzinAttendanceToRoster(options = {}) {
       }
 
       for (const match of matches) {
+        const description = attendanceDescriptionNote(entry);
         if (alreadyHiddenIds.has(match.workerId)) {
-          alreadyHidden.push({ workerId: match.workerId, name: match.name });
+          await applyAttendanceNote(match.workerId, date, entry);
+          alreadyHidden.push({
+            workerId: match.workerId,
+            name: match.name,
+            description: description || undefined,
+          });
           continue;
         }
         const { hidden: didHide } = await hideWorkerForSingleCalendarDay(match.workerId, date);
+        await applyAttendanceNote(match.workerId, date, entry);
         if (didHide) {
           alreadyHiddenIds.add(match.workerId);
           hidden.push({
             workerId: match.workerId,
             name: match.name,
-            description: entry.description,
+            description: description || undefined,
           });
         } else {
-          alreadyHidden.push({ workerId: match.workerId, name: match.name });
+          alreadyHidden.push({
+            workerId: match.workerId,
+            name: match.name,
+            description: description || undefined,
+          });
         }
       }
     }

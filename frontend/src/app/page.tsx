@@ -28,7 +28,6 @@ import {
   unhideWorkerForCalendarDay,
   updateWorker,
   saveWorkerNote,
-  syncIzinAttendance,
   type DayProductMeta,
   type HedefStageLineDto,
 } from "@/lib/api";
@@ -180,8 +179,6 @@ export default function HomePage() {
   const [copyRosterEndDate, setCopyRosterEndDate] = useState("");
   const [copyRosterBusy, setCopyRosterBusy] = useState(false);
   const [copyRosterSuccess, setCopyRosterSuccess] = useState<string | null>(null);
-  const [izinSyncBusy, setIzinSyncBusy] = useState(false);
-  const [izinSyncNotice, setIzinSyncNotice] = useState<string | null>(null);
   const [excelPanelOpen, setExcelPanelOpen] = useState(false);
   const [excelPanelTab, setExcelPanelTab] = useState<"export" | "bulk" | "import">("export");
   const [importOpen, setImportOpen] = useState(false);
@@ -920,31 +917,6 @@ export default function HomePage() {
     setCopyRosterOpen(true);
   }
 
-  async function runIzinAttendanceSync() {
-    setError(null);
-    setIzinSyncBusy(true);
-    try {
-      const result = await syncIzinAttendance(selectedDate);
-      await loadDateData(selectedDate);
-      if (result.skipped) {
-        setIzinSyncNotice(result.message ?? "Bu tarih için yoklama kaydı yok.");
-      } else {
-        const unmatchedHint =
-          result.unmatched.length > 0
-            ? ` ${result.unmatched.length} isim üretim listesinde bulunamadı.`
-            : "";
-        setIzinSyncNotice(
-          `${result.hidden.length} personel sahada yok işaretlendi; ${result.alreadyHidden.length} zaten işaretli.${unmatchedHint}`
-        );
-      }
-      window.setTimeout(() => setIzinSyncNotice(null), 8000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Yoklama senkronu başarısız");
-    } finally {
-      setIzinSyncBusy(false);
-    }
-  }
-
   async function runCopyRosterToFuture() {
     if (rows.length === 0) return;
     setError(null);
@@ -1049,19 +1021,6 @@ export default function HomePage() {
             <label htmlFor="date" className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t("common.date")}</label>
             <WeekdayDatePicker id="date" value={selectedDate} onChange={setSelectedDate} />
           </div>
-
-          <button
-            type="button"
-            disabled={izinSyncBusy}
-            onClick={() => void runIzinAttendanceSync()}
-            title="İzin sistemindeki yoklama günlüğünden gelmeyen personeli bu gün için sahada yok işaretle"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-900 transition hover:bg-indigo-100 disabled:opacity-60 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-100 dark:hover:bg-indigo-950"
-          >
-            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            {izinSyncBusy ? "Yoklama…" : "Yoklamadan sahada yok"}
-          </button>
 
           {/* Genel tamamlanan chip */}
           <div
@@ -1332,12 +1291,6 @@ export default function HomePage() {
       {copyRosterSuccess ? (
         <div className="rounded-xl border border-teal-200/90 bg-teal-50/90 px-4 py-3 text-sm text-teal-900 dark:border-teal-900/40 dark:bg-teal-950/30 dark:text-teal-200">
           {copyRosterSuccess}
-        </div>
-      ) : null}
-
-      {izinSyncNotice ? (
-        <div className="rounded-xl border border-indigo-200/90 bg-indigo-50/90 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-200">
-          {izinSyncNotice}
         </div>
       ) : null}
 
