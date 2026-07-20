@@ -113,10 +113,6 @@ function absentMobileTimeShell(absent: boolean) {
     : "border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-700";
 }
 
-function absentInlineLabelClass() {
-  return "shrink-0 text-xs font-bold uppercase tracking-wide text-red-600 dark:text-red-400";
-}
-
 function ProcessSelectEditor({
   value,
   onChange,
@@ -251,22 +247,8 @@ export default function ProductionTable({
     return { ...row, team: editingTeam, process: editingProcess };
   }
 
-  function absentNameLabel() {
-    return <span className={absentInlineLabelClass()}>{t("production.absentBadge")}</span>;
-  }
-
   function efficiencyBadge(absent: boolean, pct: number | null): ReactNode {
-    if (absent) {
-      return (
-        <span
-          className="inline-flex min-w-[3rem] justify-center rounded-md border border-transparent bg-transparent px-2 py-0.5 text-xs font-bold tabular-nums text-slate-400 dark:text-slate-500"
-          title={t("production.absentTitle")}
-          aria-hidden
-        >
-          —
-        </span>
-      );
-    }
+    if (absent) return null;
     if (pct === null) {
       return (
         <span
@@ -768,7 +750,6 @@ export default function ProductionTable({
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                               </svg>
                               <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{group.name}</span>
-                              {group.rows.some((r) => r.absentForDay) ? absentNameLabel() : null}
                               <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
                                 {t("production.processCount", { count: group.rows.length })}
                               </span>
@@ -799,7 +780,6 @@ export default function ProductionTable({
                                       <span className={absentNameText(absent)}>
                                         {row.name}
                                       </span>
-                                      {absent ? absentNameLabel() : null}
                                       {efficiencyBadge(absent, rowEffPct)}
                                     </div>
                                   </div>
@@ -861,7 +841,6 @@ export default function ProductionTable({
                                     <span className={absentNameText(absent)}>
                                       {row.name}
                                     </span>
-                                    {absent ? absentNameLabel() : null}
                                     {efficiencyBadge(absent, rowEffPct)}
                                   </div>
                                   <p className={`mt-0.5 text-xs ${absent ? "text-red-700/80 dark:text-red-300/80" : "text-slate-500 dark:text-slate-400"}`}>{row.process}</p>
@@ -975,7 +954,6 @@ export default function ProductionTable({
                         <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                       </svg>
                       <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{group.name}</span>
-                      {group.rows.some((r) => r.absentForDay) ? absentNameLabel() : null}
                       <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
                         {t("production.processCount", { count: group.rows.length })}
                       </span>
@@ -1007,10 +985,7 @@ export default function ProductionTable({
                                   <span className={absentProcessText(absent)}>{row.process}</span>
                                 </>
                               ) : (
-                                <>
-                                  <span className={absentNameText(absent)}>{row.name}</span>
-                                  {absent ? absentNameLabel() : null}
-                                </>
+                                <span className={absentNameText(absent)}>{row.name}</span>
                               )}
                               {efficiencyBadge(absent, rowEffPctMob)}
                             </div>
