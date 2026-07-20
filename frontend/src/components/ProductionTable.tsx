@@ -67,50 +67,54 @@ function parseTimeCell(raw: string): number {
   return n;
 }
 
-/** Sahada yok satırları — amber vurgu (tüm satır) */
+/** Sahada yok satırları — kırmızı vurgu (tüm satır) */
 function absentRowSurface(absent: boolean, isMulti = false) {
   if (!absent) {
     return isMulti
       ? "bg-indigo-50/20 hover:bg-indigo-50/50 dark:bg-indigo-950/10 dark:hover:bg-indigo-950/25"
       : "bg-white hover:bg-slate-50/80 dark:bg-transparent dark:hover:bg-slate-800/40";
   }
-  return "border-l-4 border-l-amber-500 bg-amber-50/95 text-amber-950/85 dark:border-l-amber-400 dark:bg-amber-950/45 dark:text-amber-100/90";
+  return "border-l-4 border-l-red-500 bg-red-50/95 text-red-950/85 dark:border-l-red-400 dark:bg-red-950/40 dark:text-red-100/90";
 }
 
 function absentNameText(absent: boolean) {
   return absent
-    ? "font-medium text-amber-900 dark:text-amber-50"
+    ? "font-medium text-red-900 dark:text-red-50"
     : "font-medium text-slate-900 dark:text-slate-100";
 }
 
 function absentProcessText(absent: boolean) {
   return absent
-    ? "text-sm font-medium text-amber-800 dark:text-amber-200"
+    ? "text-sm font-medium text-red-800 dark:text-red-200"
     : "text-sm font-medium text-slate-700 dark:text-slate-300";
 }
 
 function absentNoteText(absent: boolean) {
   return absent
-    ? "mt-0.5 text-xs font-semibold text-amber-800 dark:text-amber-200"
+    ? "mt-0.5 text-xs font-semibold text-red-700 dark:text-red-300"
     : "mt-0.5 text-xs italic text-slate-400 dark:text-slate-500";
 }
 
 function absentTimeInput(absent: boolean) {
   return absent
-    ? "cursor-not-allowed border border-amber-300/80 bg-amber-100/70 text-amber-900/45 dark:border-amber-700/60 dark:bg-amber-950/55 dark:text-amber-200/45"
+    ? "cursor-not-allowed border border-red-300/80 bg-red-100/70 text-red-900/45 dark:border-red-700/60 dark:bg-red-950/55 dark:text-red-200/45"
     : "border border-slate-200 bg-white focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-teal-500";
 }
 
 function absentMobileShell(absent: boolean) {
   return absent
-    ? "!bg-amber-50/95 !ring-1 !ring-inset !ring-amber-300/90 dark:!bg-amber-950/45 dark:!ring-amber-600/55"
+    ? "!bg-red-50/95 !ring-1 !ring-inset !ring-red-300/90 dark:!bg-red-950/45 dark:!ring-red-600/55"
     : "";
 }
 
 function absentMobileTimeShell(absent: boolean) {
   return absent
-    ? "border-amber-300/80 bg-amber-100/60 dark:border-amber-700/55 dark:bg-amber-950/40"
+    ? "border-red-300/80 bg-red-100/60 dark:border-red-700/55 dark:bg-red-950/40"
     : "border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-700";
+}
+
+function absentInlineLabelClass() {
+  return "shrink-0 text-xs font-bold uppercase tracking-wide text-red-600 dark:text-red-400";
 }
 
 function ProcessSelectEditor({
@@ -245,6 +249,10 @@ export default function ProductionTable({
   function rowEffectiveForEfficiency(row: ProductionRow, editing: boolean): ProductionRow {
     if (!editing || editingId !== row.workerId) return row;
     return { ...row, team: editingTeam, process: editingProcess };
+  }
+
+  function absentNameLabel() {
+    return <span className={absentInlineLabelClass()}>{t("production.absentBadge")}</span>;
   }
 
   function efficiencyBadge(absent: boolean, pct: number | null): ReactNode {
@@ -760,6 +768,7 @@ export default function ProductionTable({
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                               </svg>
                               <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{group.name}</span>
+                              {group.rows.some((r) => r.absentForDay) ? absentNameLabel() : null}
                               <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
                                 {t("production.processCount", { count: group.rows.length })}
                               </span>
@@ -780,7 +789,7 @@ export default function ProductionTable({
                             id={`production-row-${row.workerId}`}
                             className={`border-b border-slate-100 align-middle transition-colors dark:border-slate-700/60 ${absentRowSurface(absent, isMulti)}`}
                           >
-                            <td className={`px-2 py-2 text-center tabular-nums ${absent ? "text-amber-800/70 dark:text-amber-300/70" : "text-slate-600 dark:text-slate-400"}`}>{no}</td>
+                            <td className={`px-2 py-2 text-center tabular-nums ${absent ? "text-red-800/70 dark:text-red-300/70" : "text-slate-600 dark:text-slate-400"}`}>{no}</td>
                             {/* Ad Soyad + Proses — birleşik hücre */}
                             <td className={`py-2 ${isMulti ? "pl-7 pr-3" : "px-3"}`}>
                               {isEditing ? (
@@ -790,6 +799,7 @@ export default function ProductionTable({
                                       <span className={absentNameText(absent)}>
                                         {row.name}
                                       </span>
+                                      {absent ? absentNameLabel() : null}
                                       {efficiencyBadge(absent, rowEffPct)}
                                     </div>
                                   </div>
@@ -825,11 +835,6 @@ export default function ProductionTable({
                                       {row.process}
                                     </span>
                                     {efficiencyBadge(absent, rowEffPct)}
-                                    {absent ? (
-                                      <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                                        {t("production.absentBadge")}
-                                      </span>
-                                    ) : null}
                                   </div>
                                   {noteEditingId === row.workerId ? (
                                     <div className="mt-1.5 flex flex-col gap-1">
@@ -856,14 +861,10 @@ export default function ProductionTable({
                                     <span className={absentNameText(absent)}>
                                       {row.name}
                                     </span>
+                                    {absent ? absentNameLabel() : null}
                                     {efficiencyBadge(absent, rowEffPct)}
-                                    {absent ? (
-                                      <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                                        {t("production.absentBadge")}
-                                      </span>
-                                    ) : null}
                                   </div>
-                                  <p className={`mt-0.5 text-xs ${absent ? "text-amber-700/80 dark:text-amber-300/80" : "text-slate-500 dark:text-slate-400"}`}>{row.process}</p>
+                                  <p className={`mt-0.5 text-xs ${absent ? "text-red-700/80 dark:text-red-300/80" : "text-slate-500 dark:text-slate-400"}`}>{row.process}</p>
                                   {noteEditingId === row.workerId ? (
                                     <div className="mt-1.5 flex flex-col gap-1">
                                       <textarea autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder={t("production.notePlaceholder")} rows={2}
@@ -898,7 +899,7 @@ export default function ProductionTable({
                                 />
                               </td>
                             ))}
-                            <td className={`px-1.5 py-2 text-center text-[15px] tabular-nums font-bold ${absent ? "text-amber-800/70 dark:text-amber-200/80" : "text-slate-800 dark:text-slate-100"}`}>{total}</td>
+                            <td className={`px-1.5 py-2 text-center text-[15px] tabular-nums font-bold ${absent ? "text-red-800/70 dark:text-red-200/80" : "text-slate-800 dark:text-slate-100"}`}>{total}</td>
                             {(() => {
                               const prosesKey = makeProsesKey(row.team, row.process);
                               const result = calcFromDk(prosesMap[prosesKey] ?? "");
@@ -974,6 +975,7 @@ export default function ProductionTable({
                         <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                       </svg>
                       <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{group.name}</span>
+                      {group.rows.some((r) => r.absentForDay) ? absentNameLabel() : null}
                       <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
                         {t("production.processCount", { count: group.rows.length })}
                       </span>
@@ -1005,17 +1007,15 @@ export default function ProductionTable({
                                   <span className={absentProcessText(absent)}>{row.process}</span>
                                 </>
                               ) : (
-                                <span className={absentNameText(absent)}>{row.name}</span>
+                                <>
+                                  <span className={absentNameText(absent)}>{row.name}</span>
+                                  {absent ? absentNameLabel() : null}
+                                </>
                               )}
                               {efficiencyBadge(absent, rowEffPctMob)}
-                              {absent ? (
-                                <span className="inline-block rounded-md border border-amber-200/90 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-                                  {t("production.absentBadge")}
-                                </span>
-                              ) : null}
                             </div>
                             {!isMulti && !isEditing && (
-                              <p className={`mt-0.5 text-xs ${absent ? "text-amber-700/80 dark:text-amber-300/80" : "text-slate-500 dark:text-slate-400"}`}>{row.process}</p>
+                              <p className={`mt-0.5 text-xs ${absent ? "text-red-700/80 dark:text-red-300/80" : "text-slate-500 dark:text-slate-400"}`}>{row.process}</p>
                             )}
                             {noteEditingId === row.workerId ? (
                               <div className="mt-1.5 flex flex-col gap-1">
@@ -1068,7 +1068,7 @@ export default function ProductionTable({
                                 value={cellInputValue(row[key as keyof ProductionRow] as number)}
                                 onChange={(e) => onCellChange(row.workerId, key, parseTimeCell(e.target.value))}
                                 className={`min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none ${
-                                  absent ? "cursor-not-allowed text-amber-900/45 dark:text-amber-200/45" : "focus:text-blue-600 dark:focus:text-blue-300"
+                                  absent ? "cursor-not-allowed text-red-900/45 dark:text-red-200/45" : "focus:text-blue-600 dark:focus:text-blue-300"
                                 }`}
                               />
                             </div>
