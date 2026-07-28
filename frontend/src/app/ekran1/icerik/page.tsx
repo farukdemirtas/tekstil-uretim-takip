@@ -36,6 +36,7 @@ import { sumProductionRow } from "@/lib/productionSlots";
 import { averageWorkerEfficiency, workerEfficiencyPercent } from "@/lib/workerEfficiency";
 import { hasPermission } from "@/lib/permissions";
 import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker";
+import { useScreenHeartbeat } from "@/lib/useScreenHeartbeat";
 
 const AUTO_REFRESH_MS = 30_000;
 /** Doğum günü: yalnızca periyodik overlay — tek kişide ~10 sn görünür, ardından ~50 sn gizli (döngü 60 sn). Çoklu kişide süre uzar; sırayla dönüş. */
@@ -420,6 +421,7 @@ function Ekran1BirthdayCake({ className, age }: { className?: string; age?: numb
 }
 
 export default function Ekran1IcerikPage() {
+  useScreenHeartbeat("ekran1");
   const [target, setTarget] = useState(5000);
   const [manualTarget, setManualTarget] = useState<number | null>(null);
   const [hedefOpen, setHedefOpen] = useState(false);

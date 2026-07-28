@@ -986,6 +986,70 @@ export async function getEkranRefreshSignal(): Promise<string> {
   }
 }
 
+export type ScreenPresenceId =
+  | "ekran1"
+  | "ekran1b"
+  | "ekran2"
+  | "ekran3"
+  | "ekran4"
+  | "ekran5";
+
+export type ScreenPresenceInstanceRow = {
+  instanceId: string;
+  openedAt: string;
+  lastSeenAt: string;
+  userAgent: string;
+  online: boolean;
+};
+
+export type ScreenPresenceScreenRow = {
+  id: ScreenPresenceId | string;
+  label: string;
+  path: string;
+  online: boolean;
+  lastSeenAt: string | null;
+  openedAt: string | null;
+  instances: ScreenPresenceInstanceRow[];
+};
+
+export type ScreenPresenceStatusPayload = {
+  offlineAfterSec: number;
+  checkedAt: string;
+  screens: ScreenPresenceScreenRow[];
+};
+
+export async function postScreenHeartbeat(
+  screenId: ScreenPresenceId,
+  instanceId: string,
+  opts?: { offline?: boolean; keepalive?: boolean }
+): Promise<void> {
+  const res = await fetch(`${apiBase()}/screens/heartbeat`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      screenId,
+      instanceId,
+      offline: opts?.offline === true,
+    }),
+    keepalive: opts?.keepalive === true,
+  });
+  if (!res.ok && !opts?.keepalive) {
+    throw new Error("Ekran sinyali gönderilemedi");
+  }
+}
+
+export async function getScreenPresenceStatus(
+  offlineAfterSec = 60
+): Promise<ScreenPresenceStatusPayload> {
+  const q = new URLSearchParams({ offlineAfterSec: String(offlineAfterSec) });
+  const res = await apiFetch(`${apiBase()}/screens/status?${q.toString()}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Ekran durumu alınamadı");
+  return res.json() as Promise<ScreenPresenceStatusPayload>;
+}
+
 export async function getEkran5Target(modelId: number): Promise<{ ekran5Target: number | null; targetQuantity: number | null }> {
   const res = await apiFetch(`${apiBase()}/product-models/${modelId}/ekran5-target`, {
     cache: "no-store",

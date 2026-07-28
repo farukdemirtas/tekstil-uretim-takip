@@ -23,6 +23,7 @@ import {
   type ProsesMap,
 } from "@/lib/prosesVeri";
 import { computeShiftHourAverages, SHIFT_NOMINAL_HOURS } from "@/lib/shiftHourAverages";
+import { useScreenHeartbeat } from "@/lib/useScreenHeartbeat";
 
 /** Arka planda API verisi — slayt hızından bağımsız */
 const DATA_REFRESH_MS = 30_000;
@@ -113,6 +114,7 @@ function aggregateGunlukVerimPct(
 }
 
 export default function Ekran4IcerikPage() {
+  useScreenHeartbeat("ekran4");
   const containerRef = useRef<HTMLDivElement>(null);
   const [hasToken, setHasToken] = useState(false);
   const [loading, setLoading] = useState(true);

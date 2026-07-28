@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { todayIsoTurkey, todayWorkdayIsoTurkey } from "@/lib/businessCalendar";
 import { hasPermission } from "@/lib/permissions";
+import { useScreenHeartbeat } from "@/lib/useScreenHeartbeat";
 
 const AUTO_REFRESH_MS = 30_000;
 
@@ -132,6 +133,7 @@ function calcPercent(val: number, target: number) {
 }
 
 export default function Ekran1BIcerikPage() {
+  useScreenHeartbeat("ekran1b");
   const [hasToken, setHasToken] = useState(false);
   const [dayMeta, setDayMeta] = useState<SecondaryDayMeta>({ secondaryModelId: null, modelInfo: null });
   const [stages, setStages] = useState<{ sortOrder: number; teamCode: string; processName: string; teamLabel: string; total: number }[]>([]);

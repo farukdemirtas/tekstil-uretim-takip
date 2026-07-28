@@ -5821,3 +5821,123 @@ export function deleteUtuPaketDay(date) {
     });
   });
 }
+
+const VALID_SCREEN_IDS = new Set([
+  "ekran1",
+  "ekran1b",
+  "ekran2",
+  "ekran3",
+  "ekran4",
+  "ekran5",
+]);
+
+export const SCREEN_PRESENCE_DEFINITIONS = [
+  { id: "ekran1", label: "Ekran 1 — Genel ilerleme", path: "/ekran1/icerik" },
+  { id: "ekran1b", label: "Ekran 1B — 2. model", path: "/ekran1b/icerik" },
+  { id: "ekran2", label: "Ekran 2 — Aşama analizi", path: "/ekran2/icerik" },
+  { id: "ekran3", label: "Ekran 3 — Personel rotasyon", path: "/ekran3/icerik" },
+  { id: "ekran4", label: "Ekran 4 — Fabrika özeti", path: "/ekran4/icerik" },
+  { id: "ekran5", label: "Ekran 5 — Ütü paket", path: "/ekran5/icerik" },
+];
+
+function normalizeScreenId(screenId) {
+  const id = String(screenId || "").trim().toLowerCase();
+  return VALID_SCREEN_IDS.has(id) ? id : null;
+}
+
+function normalizeInstanceId(instanceId) {
+  const id = String(instanceId || "").trim();
+  if (!id || id.length > 80) return null;
+  return id;
+}
+
+export function upsertScreenHeartbeat({ screenId, instanceId, userAgent = "" }) {
+  const sid = normalizeScreenId(screenId);
+  const iid = normalizeInstanceId(instanceId);
+  if (!sid || !iid) {
+    return Promise.reject(new Error("Geçersiz ekran veya oturum kimliği"));
+  }
+  const now = new Date().toISOString();
+  const ua = String(userAgent || "").slice(0, 512);
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO screen_presence (screen_id, instance_id, opened_at, last_seen_at, user_agent)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(screen_id, instance_id) DO UPDATE SET
+         last_seen_at = excluded.last_seen_at,
+         user_agent = CASE WHEN excluded.user_agent != '' THEN excluded.user_agent ELSE screen_presence.user_agent END`,
+      [sid, iid, now, now, ua],
+      (err) => (err ? reject(err) : resolve({ screenId: sid, instanceId: iid, lastSeenAt: now }))
+    );
+  });
+}
+
+export function removeScreenPresence({ screenId, instanceId }) {
+  const sid = normalizeScreenId(screenId);
+  const iid = normalizeInstanceId(instanceId);
+  if (!sid || !iid) {
+    return Promise.reject(new Error("Geçersiz ekran veya oturum kimliği"));
+  }
+  return new Promise((resolve, reject) => {
+    db.run(
+      "DELETE FROM screen_presence WHERE screen_id = ? AND instance_id = ?",
+      [sid, iid],
+      (err) => (err ? reject(err) : resolve({ removed: true }))
+    );
+  });
+}
+
+export function getScreenPresenceStatus({ offlineAfterSec = 60 } = {}) {
+  const thresholdMs = Math.max(15, Number(offlineAfterSec) || 60) * 1000;
+  const now = Date.now();
+  return new Promise((resolve, reject) => {
+    db.all(
+      "SELECT screen_id AS screenId, instance_id AS instanceId, opened_at AS openedAt, last_seen_at AS lastSeenAt, user_agent AS userAgent FROM screen_presence ORDER BY screen_id, last_seen_at DESC",
+      [],
+      (err, rows) => {
+        if (err) return reject(err);
+        const byScreen = new Map();
+        for (const def of SCREEN_PRESENCE_DEFINITIONS) {
+          byScreen.set(def.id, { ...def, online: false, lastSeenAt: null, openedAt: null, instances: [] });
+        }
+        for (const row of rows || []) {
+          const lastSeenMs = Date.parse(String(row.lastSeenAt || ""));
+          const online = Number.isFinite(lastSeenMs) && now - lastSeenMs <= thresholdMs;
+          const inst = {
+            instanceId: row.instanceId,
+            openedAt: row.openedAt,
+            lastSeenAt: row.lastSeenAt,
+            userAgent: row.userAgent || "",
+            online,
+          };
+          let entry = byScreen.get(row.screenId);
+          if (!entry) {
+            entry = {
+              id: row.screenId,
+              label: row.screenId,
+              path: `/${row.screenId}/icerik`,
+              online: false,
+              lastSeenAt: null,
+              openedAt: null,
+              instances: [],
+            };
+            byScreen.set(row.screenId, entry);
+          }
+          entry.instances.push(inst);
+          if (online) entry.online = true;
+          if (!entry.lastSeenAt || String(row.lastSeenAt) > String(entry.lastSeenAt)) {
+            entry.lastSeenAt = row.lastSeenAt;
+          }
+          if (!entry.openedAt || String(row.openedAt) < String(entry.openedAt)) {
+            entry.openedAt = row.openedAt;
+          }
+        }
+        resolve({
+          offlineAfterSec: Math.round(thresholdMs / 1000),
+          checkedAt: new Date().toISOString(),
+          screens: SCREEN_PRESENCE_DEFINITIONS.map((def) => byScreen.get(def.id)),
+        });
+      }
+    );
+  });
+}

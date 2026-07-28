@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
+import TvScreenStatusDots from "@/components/TvScreenStatusDots";
 
 type TabId = "1" | "1b" | "2" | "3" | "4" | "5";
 
@@ -152,12 +153,15 @@ export default function TvEkranlarShell({ active }: { active: TabId }) {
             );
           })}
         </nav>
-        <Link
-          href="/"
-          className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:px-3 sm:py-1.5 sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-        >
-          Üretim ekranı
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <TvScreenStatusDots />
+          <Link
+            href="/"
+            className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:px-3 sm:py-1.5 sm:text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Üretim ekranı
+          </Link>
+        </div>
       </header>
       <iframe
         key={iframeSrc}

@@ -14,6 +14,7 @@ import {
 import { formatIsoLocal, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import type { TopWorkerAnalytics } from "@/lib/types";
+import { useScreenHeartbeat } from "@/lib/useScreenHeartbeat";
 
 const REFRESH_MS = 30_000;
 const TOP_LIMIT = 200;
@@ -49,6 +50,7 @@ function nWorkdaysBack(fromIso: string, n: number): string {
 }
 
 export default function Ekran3Page() {
+  useScreenHeartbeat("ekran3");
   const [hasToken, setHasToken] = useState(false);
   const [allowed, setAllowed] = useState(false);
   const [rotationTick, setRotationTick] = useState(0);

@@ -855,6 +855,20 @@ export function initDb() {
       )
     `);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS screen_presence (
+        screen_id TEXT NOT NULL,
+        instance_id TEXT NOT NULL,
+        opened_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        user_agent TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (screen_id, instance_id)
+      )
+    `);
+    db.run(
+      `CREATE INDEX IF NOT EXISTS idx_screen_presence_last_seen ON screen_presence (last_seen_at)`
+    );
+
     seedTeamsAndProcessesIfEmpty();
     migrateWorkersRemoveTeamCheckIfNeeded();
   });

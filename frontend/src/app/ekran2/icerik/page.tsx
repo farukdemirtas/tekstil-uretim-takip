@@ -13,6 +13,7 @@ import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import { DISPLAY_SLOT_FILTER_LABELS } from "@/lib/displaySlotAggregation";
 import { rankTercileStyles } from "@/lib/rankTercile";
+import { useScreenHeartbeat } from "@/lib/useScreenHeartbeat";
 import type { DailyTrendPoint, HourFilter, Team, TopWorkerAnalytics } from "@/lib/types";
 
 const STORAGE_KEY = "ekran2_settings_v1";
@@ -340,6 +341,7 @@ function Ekran2TeamPanel({
 }
 
 export default function Ekran2Page() {
+  useScreenHeartbeat("ekran2");
   const [hasToken, setHasToken] = useState(false);
   const [canUseEkran2, setCanUseEkran2] = useState(false);
   const [phase, setPhase] = useState<Phase>("setup");

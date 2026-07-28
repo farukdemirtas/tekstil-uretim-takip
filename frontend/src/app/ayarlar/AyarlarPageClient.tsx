@@ -9,11 +9,12 @@ import LogsSection from "@/components/settings/LogsSection";
 import PersonnelNamesSection from "@/components/settings/PersonnelNamesSection";
 import ProductModelsSection from "@/components/settings/ProductModelsSection";
 import TeamsProcessesSection from "@/components/settings/TeamsProcessesSection";
+import TvScreensStatusSection from "@/components/settings/TvScreensStatusSection";
 import UsersSettingsSection from "@/components/settings/UsersSettingsSection";
 import { setAuthToken } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
-type TabId = "kullanici" | "personel" | "dogum" | "proses" | "modeller" | "loglar" | "yedek";
+type TabId = "kullanici" | "personel" | "dogum" | "proses" | "modeller" | "ekranlar" | "loglar" | "yedek";
 
 export default function AyarlarPageClient() {
   const searchParams = useSearchParams();
@@ -21,6 +22,7 @@ export default function AyarlarPageClient() {
   const [admin, setAdmin] = useState(false);
   const [canAyarlar, setCanAyarlar] = useState(false);
   const [canLoglar, setCanLoglar] = useState(false);
+  const [canTvScreens, setCanTvScreens] = useState(false);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -32,19 +34,29 @@ export default function AyarlarPageClient() {
     const isAdmin = isAdminRole();
     const aya = isAdmin || hasPermission("ayarlar");
     const log = isAdmin || hasPermission("loglar");
-    if (!aya && !log) {
+    const tv =
+      isAdmin ||
+      aya ||
+      hasPermission("ekran1") ||
+      hasPermission("ekran2") ||
+      hasPermission("ekran3") ||
+      hasPermission("ekran4") ||
+      hasPermission("ekran5");
+    if (!aya && !log && !tv) {
       window.location.href = "/";
       return;
     }
     setAdmin(isAdmin);
     setCanAyarlar(aya);
     setCanLoglar(log);
+    setCanTvScreens(tv);
     setReady(true);
   }, []);
 
   const activeTab = useMemo((): TabId => {
     const raw = searchParams.get("tab");
     if (raw === "loglar" && canLoglar) return "loglar";
+    if (raw === "ekranlar" && canTvScreens) return "ekranlar";
     if (raw === "yedek" && admin) return "yedek";
     if (raw === "modeller" && canAyarlar) return "modeller";
     if (raw === "proses" && canAyarlar) return "proses";
@@ -53,8 +65,9 @@ export default function AyarlarPageClient() {
     if (raw === "kullanici" && admin) return "kullanici";
     if (canAyarlar) return "personel";
     if (canLoglar) return "loglar";
+    if (canTvScreens) return "ekranlar";
     return "personel";
-  }, [searchParams, admin, canAyarlar, canLoglar]);
+  }, [searchParams, admin, canAyarlar, canLoglar, canTvScreens]);
 
   if (!ready) {
     return (
@@ -74,6 +87,7 @@ export default function AyarlarPageClient() {
           { id: "modeller" as const, label: "Ürün modelleri" },
         ] as const)
       : []),
+    ...(canTvScreens ? [{ id: "ekranlar" as const, label: "TV ekranları" }] : []),
     ...(admin ? [{ id: "yedek" as const, label: "Yedek al" }] : []),
     ...(canLoglar ? [{ id: "loglar" as const, label: "Loglar" }] : []),
   ];
@@ -121,6 +135,7 @@ export default function AyarlarPageClient() {
       {activeTab === "dogum" && canAyarlar && <BirthdaysSection />}
       {activeTab === "proses" && canAyarlar && <TeamsProcessesSection />}
       {activeTab === "modeller" && canAyarlar && <ProductModelsSection />}
+      {activeTab === "ekranlar" && canTvScreens && <TvScreensStatusSection />}
       {activeTab === "yedek" && admin && <DatabaseBackupSection />}
       {activeTab === "loglar" && canLoglar && <LogsSection />}
     </main>

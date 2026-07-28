@@ -76,6 +76,9 @@ import {
   setEkran1Target,
   bumpEkranRefreshSignal,
   getEkranRefreshSignal,
+  upsertScreenHeartbeat,
+  removeScreenPresence,
+  getScreenPresenceStatus,
   applyHedefSessionToDailyMeta,
   applyUtuPaketSessionToMeta,
   findModelSessionConflicts,
@@ -207,6 +210,39 @@ app.get("/api/ekran-refresh-signal", async (_req, res) => {
 });
 
 app.use(requireAuth);
+
+/** TV ekranı canlılık sinyali — açık/kapalı takibi */
+app.post("/api/screens/heartbeat", async (req, res) => {
+  try {
+    const { screenId, instanceId, offline } = req.body || {};
+    if (offline) {
+      await removeScreenPresence({ screenId, instanceId });
+      return res.json({ ok: true, offline: true });
+    }
+    const result = await upsertScreenHeartbeat({
+      screenId,
+      instanceId,
+      userAgent: req.headers["user-agent"] || "",
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(400).json({ message: e instanceof Error ? e.message : "Heartbeat kaydedilemedi" });
+  }
+});
+
+app.get(
+  "/api/screens/status",
+  requireAnyPermission(["ayarlar", "ekran1", "ekran2", "ekran3", "ekran4", "ekran5"]),
+  async (req, res) => {
+    try {
+      const offlineAfterSec = Number(req.query.offlineAfterSec) || 60;
+      const result = await getScreenPresenceStatus({ offlineAfterSec });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ message: e instanceof Error ? e.message : "Ekran durumu alınamadı" });
+    }
+  }
+);
 
 function requireAdmin(req, res, next) {
   const user = req.user;
