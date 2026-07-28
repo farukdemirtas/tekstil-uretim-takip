@@ -88,7 +88,7 @@ export default function AyarlarPageClient() {
           { id: "modeller" as const, label: "Ürün modelleri" },
         ] as const)
       : []),
-    ...(canTvScreens ? [{ id: "ekranlar" as const, label: "TV ekranları" }] : []),
+    ...(canTvScreens ? [{ id: "ekranlar" as const, label: "Ekran takip" }] : []),
     ...(admin ? [{ id: "yedek" as const, label: "Yedek al" }] : []),
     ...(canLoglar ? [{ id: "loglar" as const, label: "Loglar" }] : []),
   ];

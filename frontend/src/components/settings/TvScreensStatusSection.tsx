@@ -65,7 +65,7 @@ export default function TvScreensStatusSection() {
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold">TV ekran durumu</h2>
+          <h2 className="text-lg font-semibold">Ekran takip</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Her TV tarayıcısı yaklaşık 20 saniyede bir sinyal gönderir. Son sinyal{" "}
             {data?.offlineAfterSec ?? 60} saniyeden eskiyse ekran kapalı sayılır.
