@@ -199,6 +199,36 @@ function requireAuth(req, res, next) {
   }
 }
 
+function requireAdmin(req, res, next) {
+  const user = req.user;
+  if (!user || user.role !== "admin") {
+    return res.status(403).json({ message: "Yetersiz yetki" });
+  }
+  return next();
+}
+
+function requirePermission(key) {
+  return (req, res, next) => {
+    const u = req.user;
+    if (!u) return res.status(403).json({ message: "Yetersiz yetki" });
+    if (u.role === "admin") return next();
+    const p = u.permissions || {};
+    if (p[key]) return next();
+    return res.status(403).json({ message: "Yetersiz yetki" });
+  };
+}
+
+function requireAnyPermission(keys) {
+  return (req, res, next) => {
+    const u = req.user;
+    if (!u) return res.status(403).json({ message: "Yetersiz yetki" });
+    if (u.role === "admin") return next();
+    const p = u.permissions || {};
+    if (keys.some((k) => p[k])) return next();
+    return res.status(403).json({ message: "Yetersiz yetki" });
+  };
+}
+
 /** TV ekranları yenileme sinyali — auth gerekmez, sadece timestamp döner */
 app.get("/api/ekran-refresh-signal", async (_req, res) => {
   try {
@@ -230,49 +260,15 @@ app.post("/api/screens/heartbeat", async (req, res) => {
   }
 });
 
-app.get(
-  "/api/screens/status",
-  requireAnyPermission(["ayarlar", "ekran1", "ekran2", "ekran3", "ekran4", "ekran5"]),
-  async (req, res) => {
-    try {
-      const offlineAfterSec = Number(req.query.offlineAfterSec) || 60;
-      const result = await getScreenPresenceStatus({ offlineAfterSec });
-      res.json(result);
-    } catch (e) {
-      res.status(500).json({ message: e instanceof Error ? e.message : "Ekran durumu alınamadı" });
-    }
+app.get("/api/screens/status", async (req, res) => {
+  try {
+    const offlineAfterSec = Number(req.query.offlineAfterSec) || 60;
+    const result = await getScreenPresenceStatus({ offlineAfterSec });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ message: e instanceof Error ? e.message : "Ekran durumu alınamadı" });
   }
-);
-
-function requireAdmin(req, res, next) {
-  const user = req.user;
-  if (!user || user.role !== "admin") {
-    return res.status(403).json({ message: "Yetersiz yetki" });
-  }
-  return next();
-}
-
-function requirePermission(key) {
-  return (req, res, next) => {
-    const u = req.user;
-    if (!u) return res.status(403).json({ message: "Yetersiz yetki" });
-    if (u.role === "admin") return next();
-    const p = u.permissions || {};
-    if (p[key]) return next();
-    return res.status(403).json({ message: "Yetersiz yetki" });
-  };
-}
-
-function requireAnyPermission(keys) {
-  return (req, res, next) => {
-    const u = req.user;
-    if (!u) return res.status(403).json({ message: "Yetersiz yetki" });
-    if (u.role === "admin") return next();
-    const p = u.permissions || {};
-    if (keys.some((k) => p[k])) return next();
-    return res.status(403).json({ message: "Yetersiz yetki" });
-  };
-}
+});
 
 function logActivity(req, action, resource, details) {
   const actor = req.user?.username || "?";

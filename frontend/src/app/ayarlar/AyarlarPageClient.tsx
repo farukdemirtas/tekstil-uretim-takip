@@ -37,6 +37,7 @@ export default function AyarlarPageClient() {
     const tv =
       isAdmin ||
       aya ||
+      log ||
       hasPermission("ekran1") ||
       hasPermission("ekran2") ||
       hasPermission("ekran3") ||

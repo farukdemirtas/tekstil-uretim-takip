@@ -1046,7 +1046,10 @@ export async function getScreenPresenceStatus(
     cache: "no-store",
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error("Ekran durumu alınamadı");
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(data.message?.trim() || "Ekran durumu alınamadı");
+  }
   return res.json() as Promise<ScreenPresenceStatusPayload>;
 }
 

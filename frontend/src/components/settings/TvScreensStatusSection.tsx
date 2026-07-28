@@ -99,7 +99,7 @@ export default function TvScreensStatusSection() {
             <article
               key={screen.id}
               className={`rounded-lg border p-4 transition ${
-                screen.online
+                screen?.online
                   ? "border-emerald-300 bg-emerald-50/80 dark:border-emerald-800 dark:bg-emerald-950/30"
                   : "border-slate-200 bg-slate-50 dark:border-slate-600 dark:bg-slate-900/40"
               }`}
@@ -129,7 +129,7 @@ export default function TvScreensStatusSection() {
                 </Link>
               </div>
 
-              {screen.instances.length > 0 ? (
+              {Array.isArray(screen.instances) && screen.instances.length > 0 ? (
                 <ul className="mt-3 space-y-1.5 border-t border-slate-200/80 pt-3 text-xs dark:border-slate-600/80">
                   {screen.instances.map((inst) => (
                     <li key={inst.instanceId} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-600 dark:text-slate-300">

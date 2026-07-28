@@ -5935,7 +5935,16 @@ export function getScreenPresenceStatus({ offlineAfterSec = 60 } = {}) {
         resolve({
           offlineAfterSec: Math.round(thresholdMs / 1000),
           checkedAt: new Date().toISOString(),
-          screens: SCREEN_PRESENCE_DEFINITIONS.map((def) => byScreen.get(def.id)),
+          screens: SCREEN_PRESENCE_DEFINITIONS.map(
+            (def) =>
+              byScreen.get(def.id) ?? {
+                ...def,
+                online: false,
+                lastSeenAt: null,
+                openedAt: null,
+                instances: [],
+              }
+          ),
         });
       }
     );
