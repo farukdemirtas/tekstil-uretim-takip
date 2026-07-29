@@ -42,6 +42,7 @@ function formatDayLabel(iso: string): string {
 type Props = {
   selectedDate: string;
   primaryModelId: number | null;
+  enabled?: boolean;
 };
 
 function MiniSpark({ values, className = "bg-violet-500/70 dark:bg-violet-400/60" }: { values: number[]; className?: string }) {
@@ -70,7 +71,7 @@ function payloadHasSecondaryData(payload: UtuPaketDayPayload): boolean {
   return false;
 }
 
-export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId }: Props) {
+export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, enabled = true }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [dayMeta, setDayMeta] = useState<UtuPaketSecondaryDayMeta>({
     secondaryModelId: null,
@@ -196,10 +197,12 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId }:
   );
 
   useEffect(() => {
+    if (!enabled) return;
     void listProductModels().then(setModels).catch(() => setModels([]));
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     void (async () => {
       const meta = await loadMeta();
       if (meta.secondaryModelId) {
@@ -216,7 +219,7 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId }:
         setDirty(false);
       }
     })();
-  }, [selectedDate, loadMeta, loadData]);
+  }, [enabled, selectedDate, loadMeta, loadData]);
 
   const modelIdForBeden = dayMeta.secondaryModelId;
 
@@ -520,68 +523,69 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId }:
             </p>
           ) : null}
 
-          <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-            <label className="w-full text-xs font-bold text-violet-800 dark:text-violet-300 sm:w-auto">Günün 2. modeli</label>
-            <select
-              value={dayMeta.secondaryModelId ?? ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                void handleModelSelect(val === "" ? null : Number(val));
-              }}
-              disabled={metaSaving || saving}
-              className="w-full rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-violet-500 dark:border-violet-600 dark:bg-slate-800 dark:text-slate-200 sm:min-w-[12rem] sm:w-auto sm:rounded-xl sm:border-2 sm:py-1.5"
-            >
-              <option value="">— Seçilmedi —</option>
-              {availableModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.productName ? `${m.productName} (${m.modelCode})` : m.modelCode}
-                </option>
-              ))}
-            </select>
+          <div className="mb-3 flex flex-col gap-2 xl:mb-4 xl:flex-row xl:flex-wrap xl:items-center xl:gap-x-3 xl:gap-y-2">
+            <div className="flex min-w-0 items-center gap-2 xl:min-w-[15rem] xl:flex-none">
+              <label className="shrink-0 text-xs font-bold text-violet-800 dark:text-violet-300">Günün 2. modeli</label>
+              <select
+                value={dayMeta.secondaryModelId ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  void handleModelSelect(val === "" ? null : Number(val));
+                }}
+                disabled={metaSaving || saving}
+                className="min-w-0 flex-1 rounded-lg border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-violet-500 dark:border-violet-600 dark:bg-slate-800 dark:text-slate-200 xl:min-w-[11rem] xl:rounded-xl xl:border-2 xl:py-1.5"
+              >
+                <option value="">— Seçilmedi —</option>
+                {availableModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.productName ? `${m.productName} (${m.modelCode})` : m.modelCode}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {dayMeta.secondaryModelId != null ? (
+              <>
+                <label className="flex min-w-0 items-center gap-2 xl:flex-none">
+                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Hedef</span>
+                  <input
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className="w-24 rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 text-sm font-bold tabular-nums text-slate-900 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 dark:border-violet-700 dark:bg-slate-800 dark:text-white sm:w-28"
+                    value={data.packagingTarget || ""}
+                    onChange={(e) => setPackagingTarget(e.target.value)}
+                    placeholder="Adet"
+                    aria-label="Ek model paketleme hedefi"
+                  />
+                  {target <= 0 ? (
+                    <span className="hidden text-[11px] text-slate-400 sm:inline">Ekran 5</span>
+                  ) : null}
+                </label>
+
+                <label className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-violet-100 bg-white/70 px-2.5 py-1.5 dark:border-violet-800/60 dark:bg-slate-900/40 xl:flex-none xl:border-0 xl:bg-transparent xl:px-0 xl:py-0">
+                  <input
+                    type="checkbox"
+                    checked={dayMeta.ekran5ShowPrimary !== false}
+                    onChange={(e) => void handleEkran5ShowPrimaryToggle(e.target.checked)}
+                    disabled={ekran5PrefSaving}
+                    className="h-4 w-4 shrink-0 rounded border-violet-300 text-violet-600 focus:ring-violet-500"
+                  />
+                  <span className="min-w-0 text-xs leading-snug text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">1. model TV&apos;de gözüksün</span>
+                    <span className="text-slate-400"> · {ekran5SlideCount} slayt</span>
+                    {ekran5PrefSaving ? <span className="text-violet-500"> · …</span> : null}
+                  </span>
+                </label>
+              </>
+            ) : null}
+
             {(metaSaving || saving || dirty) && (
-              <span className="text-xs text-violet-600 dark:text-violet-400">
+              <span className="text-xs text-violet-600 dark:text-violet-400 xl:ml-auto">
                 {metaSaving || saving ? "Kaydediliyor…" : "Kaydedilecek…"}
               </span>
             )}
           </div>
-
-          {dayMeta.secondaryModelId != null && (
-            <div className="mb-3 flex flex-col gap-1.5 sm:mb-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
-              <label className="flex w-full items-center gap-2 sm:w-auto">
-                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Hedef</span>
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="numeric"
-                  className="min-w-0 flex-1 rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-sm font-bold tabular-nums text-slate-900 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 dark:border-violet-700 dark:bg-slate-800 dark:text-white sm:w-28 sm:flex-none"
-                  value={data.packagingTarget || ""}
-                  onChange={(e) => setPackagingTarget(e.target.value)}
-                  placeholder="Adet"
-                  aria-label="Ek model paketleme hedefi"
-                />
-              </label>
-              {target <= 0 ? (
-                <p className="text-[11px] text-slate-400">Ekran 5 hedefi</p>
-              ) : null}
-            </div>
-          )}
-
-          {secondaryHasData && (
-            <label className="mb-3 flex cursor-pointer items-center gap-2.5 rounded-lg border border-violet-100 bg-white/70 px-3 py-2 dark:border-violet-800/60 dark:bg-slate-900/40 sm:mb-4">
-              <input
-                type="checkbox"
-                checked={dayMeta.ekran5ShowPrimary !== false}
-                onChange={(e) => void handleEkran5ShowPrimaryToggle(e.target.checked)}
-                disabled={ekran5PrefSaving}
-                className="h-4 w-4 shrink-0 rounded border-violet-300 text-violet-600 focus:ring-violet-500"
-              />
-              <span className="min-w-0 text-xs leading-snug text-slate-600 dark:text-slate-300">
-                <span className="font-semibold text-slate-800 dark:text-slate-200">1. model TV&apos;de gözüksün</span>
-                <span className="text-slate-400"> · {ekran5SlideCount} slayt</span>
-                {ekran5PrefSaving ? <span className="text-violet-500"> · güncelleniyor…</span> : null}
-              </span>
-            </label>
-          )}
 
           {dayMeta.secondaryModelId != null && (
             <>

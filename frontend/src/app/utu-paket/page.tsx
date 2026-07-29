@@ -90,7 +90,14 @@ function MiniSpark({ values }: { values: number[] }) {
 
 export default function UtuPaketPage() {
   const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
+  const [authorized] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const token = window.localStorage.getItem("auth_token");
+    if (!token) return false;
+    if (!isAdminRole() && !hasPermission("utuPaket")) return false;
+    setAuthToken(token);
+    return true;
+  });
   const [selectedDate, setSelectedDate] = useState(todayWeekdayIso);
   const [activeStage, setActiveStage] = useState<UtuPaketStage>("optik");
   const [paketPageSize, setPaketPageSize] = useState<number>(10);
@@ -128,18 +135,8 @@ export default function UtuPaketPage() {
   const paketlemeAutoSyncKey = useRef("");
 
   useEffect(() => {
-    const token = window.localStorage.getItem("auth_token");
-    if (!token) {
-      router.replace("/");
-      return;
-    }
-    if (!isAdminRole() && !hasPermission("utuPaket")) {
-      router.replace("/");
-      return;
-    }
-    setAuthToken(token);
-    setAuthorized(true);
-  }, [router]);
+    if (!authorized) router.replace("/");
+  }, [authorized, router]);
 
   const loadPeriodPaketTotal = useCallback(
     async (
@@ -611,6 +608,14 @@ export default function UtuPaketPage() {
 
   const meta = UTU_PAKET_STAGE_META[activeStage];
   const slotValues = UTU_PAKET_SLOT_DEFS.map(({ key }) => data.stages[activeStage][key]);
+
+  if (!authorized) {
+    return (
+      <main className="mx-auto max-w-6xl px-3 py-12 text-center text-sm text-slate-500">
+        Yönlendiriliyor…
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-3 py-6 pb-20 sm:px-6 sm:pb-16">
