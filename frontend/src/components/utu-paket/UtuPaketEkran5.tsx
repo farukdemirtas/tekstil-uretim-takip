@@ -47,15 +47,15 @@ type ProductionSlideKey = Exclude<SlideKey, "beden">;
 type SlideDef = { key: SlideKey; secondary: boolean };
 
 const SLIDE_LABELS: Record<SlideKey, string> = {
-  paketleme: "Paketleme",
-  optik: "Optik Kontrol",
-  utu: "Ütü",
-  beden: "Beden Tablosu",
+  paketleme: "PAKETLEME",
+  optik: "OPTİK",
+  utu: "ÜTÜ",
+  beden: "BEDEN TABLOSU",
 };
 
 function ekran5SlideHeading(productLabel: string, jobLabel: string): string {
   const name = productLabel.trim();
-  const job = jobLabel.trim();
+  const job = jobLabel.trim().toLocaleUpperCase("tr-TR");
   if (name && job) return `${name} · ${job}`;
   return name || job;
 }
@@ -83,7 +83,7 @@ type SlideMeta = {
 
 const SLIDE_META: Record<ProductionSlideKey, SlideMeta> = {
   paketleme: {
-    label: "Paketleme",
+    label: "PAKETLEME",
     badgeCls: "from-emerald-600 to-teal-600",
     barGradient: "from-emerald-500 via-teal-500 to-cyan-500",
     barGlow: "shadow-[0_0_24px_rgba(16,185,129,0.35)]",
@@ -93,7 +93,7 @@ const SLIDE_META: Record<ProductionSlideKey, SlideMeta> = {
     remainStyle: { box: "border-amber-400 bg-amber-50 ring-1 ring-amber-200/90",       label: "text-amber-700",    value: "text-amber-900"   },
   },
   optik: {
-    label: "Optik Kontrol",
+    label: "OPTİK",
     badgeCls: "from-violet-600 to-purple-600",
     barGradient: "from-violet-500 via-purple-500 to-fuchsia-500",
     barGlow: "shadow-[0_0_24px_rgba(139,92,246,0.35)]",
@@ -103,7 +103,7 @@ const SLIDE_META: Record<ProductionSlideKey, SlideMeta> = {
     remainStyle: { box: "border-amber-400 bg-amber-50 ring-1 ring-amber-200/90",       label: "text-amber-700",    value: "text-amber-900"   },
   },
   utu: {
-    label: "Ütü",
+    label: "ÜTÜ",
     badgeCls: "from-orange-500 to-amber-500",
     barGradient: "from-orange-500 via-amber-500 to-yellow-400",
     barGlow: "shadow-[0_0_24px_rgba(245,158,11,0.35)]",
