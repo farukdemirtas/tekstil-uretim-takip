@@ -96,6 +96,11 @@ import {
   saveUtuPaketDay,
   setUtuPaketModelReferenceDate,
   deleteUtuPaketDay,
+  getUtuPaketSecondaryModelId,
+  setUtuPaketSecondaryModelId,
+  getUtuPaketSecondaryDay,
+  saveUtuPaketSecondaryDay,
+  deleteUtuPaketSecondaryDay,
   getProsesVeriRows,
   saveProsesVeriRows,
   getJobCalcModelWorkerStats,
@@ -1885,6 +1890,80 @@ app.delete("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => 
     return res.json({ ok: true, deleted: result.deleted });
   } catch (err) {
     return res.status(500).json({ message: "Ütü–paket verisi silinemedi", error: String(err) });
+  }
+});
+
+// ─── İkinci model ütü–paket ─────────────────────────────────────────────────
+
+app.get("/api/utu-paket-b/day-meta", requirePermission("utuPaket"), async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    const secondaryModelId = await getUtuPaketSecondaryModelId(String(date));
+    let modelInfo = null;
+    if (secondaryModelId) {
+      const m = await getProductModelWithBaselines(secondaryModelId).catch(() => null);
+      if (m) modelInfo = { id: m.id, modelCode: m.modelCode, productName: m.productName };
+    }
+    res.json({ secondaryModelId, modelInfo });
+  } catch (err) {
+    res.status(500).json({ message: "İkinci model bilgisi alınamadı", error: String(err) });
+  }
+});
+
+app.put("/api/utu-paket-b/day-meta", requirePermission("utuPaket"), async (req, res) => {
+  const { date, secondaryModelId } = req.body || {};
+  if (!date) return res.status(400).json({ message: "date zorunlu" });
+  try {
+    await setUtuPaketSecondaryModelId(String(date), secondaryModelId ?? null);
+    logActivity(req, "utu_paket_ikinci_model_ayarla", "utu_paket_meta", {
+      date: String(date),
+      secondaryModelId: secondaryModelId ?? null,
+    });
+    void bumpEkranRefreshSignal().catch(() => {});
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: "İkinci model ayarlanamadı", error: String(err) });
+  }
+});
+
+app.get("/api/utu-paket-b", requirePermission("utuPaket"), async (req, res) => {
+  const { date, modelId } = req.query;
+  if (!date || !modelId) return res.status(400).json({ message: "date ve modelId zorunlu" });
+  try {
+    const data = await getUtuPaketSecondaryDay(String(date), Number(modelId));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: "İkinci model ütü–paket verisi alınamadı", error: String(err) });
+  }
+});
+
+app.put("/api/utu-paket-b", requirePermission("utuPaket"), async (req, res) => {
+  const { date, modelId, stages, beden, stageEkSayim } = req.body || {};
+  if (!date || !modelId) return res.status(400).json({ message: "date ve modelId zorunlu" });
+  try {
+    await saveUtuPaketSecondaryDay(String(date), Number(modelId), { stages, beden, stageEkSayim });
+    logActivity(req, "utu_paket_ikinci_kaydet", "utu_paket_slots_b", {
+      date: String(date),
+      modelId: Number(modelId),
+      ...buildUtuPaketLogSummaryFromPayload({ stages, beden, stageEkSayim }),
+    });
+    void bumpEkranRefreshSignal().catch(() => {});
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: "İkinci model ütü–paket kaydedilemedi", error: String(err) });
+  }
+});
+
+app.delete("/api/utu-paket-b", requirePermission("utuPaket"), async (req, res) => {
+  const { date, modelId } = req.query;
+  if (!date || !modelId) return res.status(400).json({ message: "date ve modelId zorunlu" });
+  try {
+    await deleteUtuPaketSecondaryDay(String(date), Number(modelId));
+    logActivity(req, "utu_paket_ikinci_sil", "utu_paket_slots_b", { date: String(date), modelId: Number(modelId) });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: "İkinci model ütü–paket silinemedi", error: String(err) });
   }
 });
 

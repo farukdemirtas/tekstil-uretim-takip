@@ -20,6 +20,7 @@ import type { DayProductMeta } from "@/lib/api";
 import { clampToWeekdayIso, todayIsoTurkey, todayWeekdayIso } from "@/lib/businessCalendar";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import UtuPaketAnalysis from "@/components/utu-paket/UtuPaketAnalysis";
+import SecondaryUtuPaketPanel from "@/components/utu-paket/SecondaryUtuPaketPanel";
 import {
   UTU_PAKET_SIZE_CODES,
   UTU_PAKET_SLOT_DEFS,
@@ -1424,6 +1425,11 @@ export default function UtuPaketPage() {
           </div>
         </section>
       )}
+
+      <SecondaryUtuPaketPanel
+        selectedDate={selectedDate}
+        primaryModelId={data.utuPaketModel?.modelId ?? null}
+      />
 
         </>
       )}

@@ -5822,6 +5822,230 @@ export function deleteUtuPaketDay(date) {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  İKİNCİ MODEL ÜTÜ–PAKET (utu_paket_*_b)
+// ═══════════════════════════════════════════════════════════════
+
+export async function getUtuPaketSecondaryModelId(date) {
+  const row = await dbGet(
+    `SELECT secondary_model_id AS secondaryModelId FROM utu_paket_meta WHERE production_date = ?`,
+    [String(date)]
+  );
+  if (!row?.secondaryModelId) return null;
+  return Number(row.secondaryModelId);
+}
+
+function deleteUtuPaketSecondaryData(date, modelId) {
+  const d = String(date);
+  const mid = Number(modelId);
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run("BEGIN", (beginErr) => {
+        if (beginErr) return reject(beginErr);
+        db.run(`DELETE FROM utu_paket_slots_b WHERE production_date = ? AND model_id = ?`, [d, mid], (e1) => {
+          if (e1) {
+            db.run("ROLLBACK");
+            return reject(e1);
+          }
+          db.run(`DELETE FROM utu_paket_beden_b WHERE production_date = ? AND model_id = ?`, [d, mid], (e2) => {
+            if (e2) {
+              db.run("ROLLBACK");
+              return reject(e2);
+            }
+            db.run("COMMIT", (commitErr) => (commitErr ? reject(commitErr) : resolve(true)));
+          });
+        });
+      });
+    });
+  });
+}
+
+export async function setUtuPaketSecondaryModelId(date, modelId) {
+  const d = String(date);
+  const mid = modelId != null && Number.isFinite(Number(modelId)) ? Number(modelId) : null;
+  const prev = await getUtuPaketSecondaryModelId(d);
+  if (prev && prev !== mid) {
+    await deleteUtuPaketSecondaryData(d, prev);
+  }
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO utu_paket_meta (production_date, packaging_target, secondary_model_id)
+       VALUES (?, 0, ?)
+       ON CONFLICT(production_date) DO UPDATE SET secondary_model_id = excluded.secondary_model_id`,
+      [d, mid],
+      (err) => (err ? reject(err) : resolve({ ok: true, secondaryModelId: mid }))
+    );
+  });
+}
+
+export async function getUtuPaketSecondaryDay(date, modelId) {
+  const d = String(date);
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid <= 0) {
+    return {
+      date: d,
+      modelId: mid,
+      stages: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, Object.fromEntries(UTU_PAKET_SLOT_KEYS.map((k) => [k, 0]))])),
+      stageEkSayim: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
+      beden: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+      packagingTarget: 0,
+      utuPaketModel: null,
+    };
+  }
+
+  const modelRow = await dbGet(
+    `SELECT id AS modelId, product_name AS productName, model_code AS productModel FROM product_models WHERE id = ?`,
+    [mid]
+  );
+  const utuPaketModel = modelRow
+    ? {
+        modelId: Number(modelRow.modelId),
+        productName: String(modelRow.productName || ""),
+        productModel: String(modelRow.productModel || ""),
+      }
+    : null;
+
+  const slotRows = await dbAll(
+    `SELECT stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
+     FROM utu_paket_slots_b WHERE production_date = ? AND model_id = ?`,
+    [d, mid]
+  );
+  const bedenRows = await dbAll(
+    `SELECT size_code, count FROM utu_paket_beden_b WHERE production_date = ? AND model_id = ? ORDER BY size_code`,
+    [d, mid]
+  );
+
+  const stages = {};
+  const stageEkSayim = {};
+  for (const st of UTU_PAKET_STAGES) {
+    const row = (slotRows || []).find((r) => r.stage === st);
+    stages[st] = rowToUtuPaketSlots(row);
+    stageEkSayim[st] = Number(row?.ek_sayim) || 0;
+  }
+  const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  for (const r of bedenRows || []) {
+    const code = String(r.size_code || "").trim();
+    if (code) beden[code] = Number(r.count) || 0;
+  }
+
+  const { target: packagingTarget } = await getProductModelPackagingInfo(mid);
+
+  return {
+    date: d,
+    modelId: mid,
+    utuPaketModel,
+    stages,
+    stageEkSayim,
+    beden,
+    packagingTarget: Math.max(0, Math.floor(Number(packagingTarget) || 0)),
+    manualPackaging: true,
+  };
+}
+
+export function saveUtuPaketSecondaryDay(date, modelId, payload) {
+  const d = String(date);
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid <= 0) {
+    return Promise.reject(new Error("Geçersiz model"));
+  }
+  const stagesIn = payload?.stages && typeof payload.stages === "object" ? { ...payload.stages } : {};
+  const bedenIn = payload?.beden && typeof payload.beden === "object" ? { ...payload.beden } : {};
+  const z = (n) => Math.max(0, Math.floor(Number(n) || 0));
+
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run("BEGIN", (beginErr) => {
+        if (beginErr) return reject(beginErr);
+
+        const stageEkSayimIn =
+          payload?.stageEkSayim && typeof payload.stageEkSayim === "object"
+            ? { ...payload.stageEkSayim }
+            : null;
+
+        const slotStmt = db.prepare(
+          `INSERT INTO utu_paket_slots_b (
+            production_date, model_id, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(production_date, model_id, stage) DO UPDATE SET
+            h0900 = excluded.h0900,
+            h1000 = excluded.h1000,
+            h1115 = excluded.h1115,
+            h1215 = excluded.h1215,
+            h1300 = excluded.h1300,
+            h1445 = excluded.h1445,
+            h1545 = excluded.h1545,
+            h1700 = excluded.h1700,
+            h1830 = excluded.h1830,
+            ek_sayim = excluded.ek_sayim`
+        );
+
+        for (const stage of UTU_PAKET_STAGES) {
+          const slots = stagesIn[stage] || {};
+          const vals = UTU_PAKET_SLOT_KEYS.map((k) => z(slots[k]));
+          const ek = stageEkSayimIn && stage in stageEkSayimIn ? z(stageEkSayimIn[stage]) : 0;
+          slotStmt.run([d, mid, stage, ...vals, ek]);
+        }
+
+        slotStmt.finalize((slotFinalErr) => {
+          if (slotFinalErr) {
+            db.run("ROLLBACK");
+            return reject(slotFinalErr);
+          }
+
+          db.run(`DELETE FROM utu_paket_beden_b WHERE production_date = ? AND model_id = ?`, [d, mid], (delErr) => {
+            if (delErr) {
+              db.run("ROLLBACK");
+              return reject(delErr);
+            }
+
+            const bedenEntries = Object.entries(bedenIn).filter(([, v]) => z(v) > 0);
+            const commitMeta = () => {
+              db.run(
+                `INSERT INTO utu_paket_meta (production_date, packaging_target, secondary_model_id)
+                 VALUES (?, 0, ?)
+                 ON CONFLICT(production_date) DO UPDATE SET secondary_model_id = COALESCE(excluded.secondary_model_id, utu_paket_meta.secondary_model_id)`,
+                [d, mid],
+                (metaErr) => {
+                  if (metaErr) {
+                    db.run("ROLLBACK");
+                    return reject(metaErr);
+                  }
+                  db.run("COMMIT", (commitErr) => (commitErr ? reject(commitErr) : resolve({ ok: true })));
+                }
+              );
+            };
+
+            if (bedenEntries.length === 0) {
+              commitMeta();
+              return;
+            }
+
+            const bedenStmt = db.prepare(
+              `INSERT INTO utu_paket_beden_b (production_date, model_id, size_code, count) VALUES (?, ?, ?, ?)`
+            );
+            for (const [sizeCode, count] of bedenEntries) {
+              const code = String(sizeCode).trim();
+              if (!code) continue;
+              bedenStmt.run([d, mid, code, z(count)]);
+            }
+            bedenStmt.finalize((bedenFinalErr) => {
+              if (bedenFinalErr) {
+                db.run("ROLLBACK");
+                return reject(bedenFinalErr);
+              }
+              commitMeta();
+            });
+          });
+        });
+      });
+    });
+  });
+}
+
+export function deleteUtuPaketSecondaryDay(date, modelId) {
+  return deleteUtuPaketSecondaryData(String(date), Number(modelId));
+}
+
 const VALID_SCREEN_IDS = new Set([
   "ekran1",
   "ekran1b",

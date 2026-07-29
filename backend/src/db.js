@@ -827,6 +827,44 @@ export function initDb() {
     db.run("ALTER TABLE utu_paket_meta ADD COLUMN model_id INTEGER", () => {});
     db.run("ALTER TABLE utu_paket_meta ADD COLUMN product_name TEXT NOT NULL DEFAULT ''", () => {});
     db.run("ALTER TABLE utu_paket_meta ADD COLUMN product_model TEXT NOT NULL DEFAULT ''", () => {});
+    db.run("ALTER TABLE utu_paket_meta ADD COLUMN secondary_model_id INTEGER", () => {});
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS utu_paket_slots_b (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        production_date TEXT NOT NULL,
+        model_id INTEGER NOT NULL,
+        stage TEXT NOT NULL CHECK(stage IN ('optik', 'utu', 'paketleme')),
+        h0900 INTEGER NOT NULL DEFAULT 0,
+        h1000 INTEGER NOT NULL DEFAULT 0,
+        h1115 INTEGER NOT NULL DEFAULT 0,
+        h1215 INTEGER NOT NULL DEFAULT 0,
+        h1300 INTEGER NOT NULL DEFAULT 0,
+        h1445 INTEGER NOT NULL DEFAULT 0,
+        h1545 INTEGER NOT NULL DEFAULT 0,
+        h1700 INTEGER NOT NULL DEFAULT 0,
+        h1830 INTEGER NOT NULL DEFAULT 0,
+        ek_sayim INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(production_date, model_id, stage)
+      )
+    `);
+    db.run(
+      `CREATE INDEX IF NOT EXISTS idx_utu_paket_slots_b_date ON utu_paket_slots_b (production_date, model_id)`
+    );
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS utu_paket_beden_b (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        production_date TEXT NOT NULL,
+        model_id INTEGER NOT NULL,
+        size_code TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(production_date, model_id, size_code)
+      )
+    `);
+    db.run(
+      `CREATE INDEX IF NOT EXISTS idx_utu_paket_beden_b_date ON utu_paket_beden_b (production_date, model_id)`
+    );
 
     // ek_sayim: optik ve ütü için elle girilen ek adet (saat toplamına eklenir)
     db.run(

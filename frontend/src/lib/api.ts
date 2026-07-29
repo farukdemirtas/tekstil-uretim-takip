@@ -12,6 +12,7 @@ import {
 } from "./types";
 import { clearStoredPermissions } from "./permissions";
 import type { TakipsanStatus, UtuPaketAnalytics, UtuPaketDayPayload } from "./utuPaket";
+import { normalizeUtuPaketPayload } from "./utuPaket";
 
 /**
  * Geliştirme: tarayıcıda her zaman `/api` — `next.config` rewrite ile backend (varsayılan 127.0.0.1:4000).
@@ -1787,6 +1788,70 @@ export async function deleteUtuPaket(date: string): Promise<void> {
     const d = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(d.message ?? "Ütü–paket verisi silinemedi");
   }
+}
+
+export type UtuPaketSecondaryDayMeta = {
+  secondaryModelId: number | null;
+  modelInfo: { id: number; modelCode: string; productName: string } | null;
+};
+
+export async function getUtuPaketSecondaryDayMeta(date: string): Promise<UtuPaketSecondaryDayMeta> {
+  const res = await apiFetch(`${apiBase()}/utu-paket-b/day-meta?date=${encodeURIComponent(date)}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) return { secondaryModelId: null, modelInfo: null };
+  const raw = (await res.json()) as Record<string, unknown>;
+  const mid = raw.secondaryModelId;
+  const secondaryModelId = mid != null && Number.isFinite(Number(mid)) ? Number(mid) : null;
+  const mi = raw.modelInfo as Record<string, unknown> | null | undefined;
+  const modelInfo =
+    mi && mi.id != null
+      ? { id: Number(mi.id), modelCode: String(mi.modelCode ?? ""), productName: String(mi.productName ?? "") }
+      : null;
+  return { secondaryModelId, modelInfo };
+}
+
+export async function setUtuPaketSecondaryDayMeta(date: string, secondaryModelId: number | null): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/utu-paket-b/day-meta`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ date, secondaryModelId }),
+  });
+  if (!res.ok) throw new Error("İkinci model ayarlanamadı");
+}
+
+export async function getUtuPaketSecondary(date: string, modelId: number): Promise<UtuPaketDayPayload> {
+  const res = await apiFetch(
+    `${apiBase()}/utu-paket-b?date=${encodeURIComponent(date)}&modelId=${modelId}`,
+    { cache: "no-store", headers: authHeaders() }
+  );
+  if (!res.ok) throw new Error("İkinci model ütü–paket verisi alınamadı");
+  const raw = (await res.json()) as UtuPaketDayPayload;
+  return normalizeUtuPaketPayload({ ...raw, date });
+}
+
+export async function saveUtuPaketSecondary(payload: {
+  date: string;
+  modelId: number;
+  stages: UtuPaketDayPayload["stages"];
+  beden?: UtuPaketDayPayload["beden"];
+  stageEkSayim?: UtuPaketDayPayload["stageEkSayim"];
+}): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/utu-paket-b`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("İkinci model ütü–paket kaydedilemedi");
+}
+
+export async function deleteUtuPaketSecondary(date: string, modelId: number): Promise<void> {
+  const res = await apiFetch(
+    `${apiBase()}/utu-paket-b?date=${encodeURIComponent(date)}&modelId=${modelId}`,
+    { method: "DELETE", headers: authHeaders() }
+  );
+  if (!res.ok) throw new Error("İkinci model ütü–paket silinemedi");
 }
 
 export async function getTakipsanStatus(): Promise<TakipsanStatus> {
