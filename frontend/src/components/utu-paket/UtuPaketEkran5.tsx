@@ -10,6 +10,9 @@ import {
   getProductModel,
   getUtuPaket,
   getUtuPaketAnalytics,
+  getUtuPaketSecondary,
+  getUtuPaketSecondaryAnalytics,
+  getUtuPaketSecondaryDayMeta,
   setAuthToken,
   setEkran5Target,
   syncTakipsan,
@@ -33,13 +36,15 @@ import {
   sumUtuPaketSlots,
   type UtuPaketSizeCode,
 } from "@/lib/utuPaket";
+import { subscribeEkranRefresh } from "@/lib/ekranRefresh";
 
 const AUTO_REFRESH_MS = 30_000;
+const REMOTE_SIGNAL_POLL_MS = 2_000;
 const SLIDE_DURATION_MS = 30_000;
-const SLIDE_COUNT = 4;
 const SLIDES = ["paketleme", "beden", "optik", "utu"] as const;
 type SlideKey = (typeof SLIDES)[number];
 type ProductionSlideKey = Exclude<SlideKey, "beden">;
+type SlideDef = { key: SlideKey; secondary: boolean };
 
 const SLIDE_LABELS: Record<SlideKey, string> = {
   paketleme: "Paketleme",
@@ -47,6 +52,21 @@ const SLIDE_LABELS: Record<SlideKey, string> = {
   utu: "Ütü",
   beden: "Beden Tablosu",
 };
+
+function ekran5SlideHeading(productLabel: string, jobLabel: string): string {
+  const name = productLabel.trim();
+  const job = jobLabel.trim();
+  if (name && job) return `${name} · ${job}`;
+  return name || job;
+}
+
+function buildSlideList(opts: { hasSecondaryData: boolean; showPrimary: boolean }): SlideDef[] {
+  const primary = SLIDES.map((key) => ({ key, secondary: false as const }));
+  const secondary = SLIDES.map((key) => ({ key, secondary: true as const }));
+  if (!opts.hasSecondaryData) return primary;
+  if (opts.showPrimary) return [...primary, ...secondary];
+  return secondary;
+}
 
 // ─── Renk / stil tanımları ───────────────────────────────────────────────────
 type BoxStyle = { box: string; label: string; value: string };
@@ -260,20 +280,24 @@ function StatBox({ label, value, style, subLabel }: { label: string; value: stri
 
 // ─── Slayt paneli ────────────────────────────────────────────────────────────
 function SlidePanel({
-  slideKey, total, todayCount, target, koliCount, totalKoliCount,
-}: { slideKey: ProductionSlideKey; total: number; todayCount: number; target: number; koliCount?: number; totalKoliCount?: number }) {
+  slideKey, total, todayCount, target, koliCount, totalKoliCount, productLabel,
+}: { slideKey: ProductionSlideKey; total: number; todayCount: number; target: number; koliCount?: number; totalKoliCount?: number; productLabel?: string }) {
   const m = SLIDE_META[slideKey];
   const pct = calcUtuPaketPercent(total, target);
   const remaining = Math.max(0, target - total);
   const showKoli = slideKey === "paketleme" && koliCount != null;
+  const heading = ekran5SlideHeading(productLabel ?? "", m.label);
+  const isNameHeading = Boolean(productLabel?.trim());
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 md:gap-4">
-      <div className="flex shrink-0 justify-center">
+      <div className="flex shrink-0 flex-col items-center justify-center gap-1.5">
         <h2
-          className={`rounded-2xl bg-gradient-to-r ${m.badgeCls} px-6 py-2.5 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-10 min-[1920px]:py-3`}
+          className={`rounded-2xl bg-gradient-to-r ${m.badgeCls} px-6 py-2.5 text-center font-black text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-10 min-[1920px]:py-3 ${
+            isNameHeading ? "normal-case tracking-normal" : "uppercase tracking-[0.12em]"
+          }`}
           style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}>
-          {m.label}
+          {heading}
         </h2>
       </div>
 
@@ -446,19 +470,26 @@ function BedenTableSlide({
   targets,
   totals,
   today,
+  productLabel,
 }: {
   targets: Record<string, number>;
   totals: Record<string, number>;
   today: Record<string, number>;
+  productLabel?: string;
 }) {
+  const heading = ekran5SlideHeading(productLabel ?? "", SLIDE_LABELS.beden);
+  const isNameHeading = Boolean(productLabel?.trim());
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 md:gap-3">
-      <div className="flex shrink-0 justify-center">
+      <div className="flex shrink-0 flex-col items-center justify-center gap-1.5">
         <h2
-          className="rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 py-2.5 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-10 min-[1920px]:py-3"
+          className={`rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 py-2.5 text-center font-black text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-10 min-[1920px]:py-3 ${
+            isNameHeading ? "normal-case tracking-normal" : "uppercase tracking-[0.12em]"
+          }`}
           style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}
         >
-          Beden Tablosu
+          {heading}
         </h2>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 md:grid-cols-5 md:gap-3">
@@ -595,6 +626,24 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [bedenToday, setBedenToday]       = useState<Record<string, number>>(() => emptyUtuPaketBeden());
   const [bedenKoliTotals, setBedenKoliTotals] = useState<Record<string, number>>(() => emptyUtuPaketBeden());
   const [bedenKoliToday, setBedenKoliToday]   = useState<Record<string, number>>(() => emptyUtuPaketBeden());
+
+  /** Ek model — bantta 2. model dönüyorsa */
+  const [secondaryModelId, setSecondaryModelId] = useState<number | null>(null);
+  const [secondaryHasData, setSecondaryHasData] = useState(false);
+  const [ekran5ShowPrimary, setEkran5ShowPrimary] = useState(true);
+  const [secProductLabel, setSecProductLabel] = useState("");
+  const [secOptikCount, setSecOptikCount] = useState(0);
+  const [secOptikTotal, setSecOptikTotal] = useState(0);
+  const [secUtuCount, setSecUtuCount] = useState(0);
+  const [secUtuTotal, setSecUtuTotal] = useState(0);
+  const [secPaketCount, setSecPaketCount] = useState(0);
+  const [secGunPaketlenen, setSecGunPaketlenen] = useState(0);
+  const [secBedenTargets, setSecBedenTargets] = useState<Record<string, number>>(() => emptyUtuPaketBeden());
+  const [secBedenTotals, setSecBedenTotals] = useState<Record<string, number>>(() => emptyUtuPaketBeden());
+  const [secBedenToday, setSecBedenToday] = useState<Record<string, number>>(() => emptyUtuPaketBeden());
+  const [secApiTarget, setSecApiTarget] = useState(0);
+  const [secManualTarget, setSecManualTarget] = useState<number | null>(null);
+  const secTarget = secManualTarget != null && secManualTarget > 0 ? secManualTarget : secApiTarget;
 
   /** Model hedefi (target_quantity) — el ile hedef yoksa kullanılır */
   const [apiTarget, setApiTarget] = useState(0);
@@ -750,6 +799,119 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         }
         setBedenTotals(periodBeden);
       }
+
+      // ── Ek model (2. model bantta) ──
+      const secMeta = await getUtuPaketSecondaryDayMeta(date).catch(() => ({
+        secondaryModelId: null,
+        modelInfo: null,
+        secondaryHasData: false,
+        ekran5ShowPrimary: true,
+      }));
+      const secMid = secMeta.secondaryModelId;
+      const secFilled = secMeta.secondaryHasData === true;
+      const showPrimaryOnTv = secMeta.ekran5ShowPrimary !== false;
+      setSecondaryModelId(secMid);
+      setSecondaryHasData(secFilled);
+      setEkran5ShowPrimary(showPrimaryOnTv);
+
+      if (secMid && secFilled) {
+        const secRaw = await getUtuPaketSecondary(date, secMid).catch(() => null);
+        const secData = secRaw ? normalizeUtuPaketPayload({ ...secRaw, date }) : null;
+        const secModelDetail = await getProductModel(secMid).catch(() => null);
+        const secGenelOzet = await getEkran1GenelIlerleme(date, secMid).catch(() => null);
+        const secStartDate =
+          secRaw?.sessionStartDate?.trim() ||
+          secModelDetail?.utuPaketSessionStartDate?.trim() ||
+          secGenelOzet?.dataStartDate ||
+          date;
+        const [secEkran5Res, secAnalytics] = await Promise.all([
+          getEkran5Target(secMid).catch(() => ({ ekran5Target: null, targetQuantity: null })),
+          secStartDate && secStartDate <= date
+            ? getUtuPaketSecondaryAnalytics({ startDate: secStartDate, endDate: date, modelId: secMid }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+
+        if (secData) {
+          const todaySecOptik =
+            sumUtuPaketSlots(secData.stages.optik) + Math.max(0, Math.floor(Number(secData.stageEkSayim?.optik) || 0));
+          const todaySecUtu =
+            sumUtuPaketSlots(secData.stages.utu) + Math.max(0, Math.floor(Number(secData.stageEkSayim?.utu) || 0));
+          const todaySecPaket =
+            sumUtuPaketSlots(secData.stages.paketleme) +
+            Math.max(0, Math.floor(Number(secData.stageEkSayim?.paketleme) || 0));
+
+          setSecOptikCount(todaySecOptik);
+          setSecUtuCount(todaySecUtu);
+          setSecOptikTotal(secAnalytics?.periodTotals?.optik ?? todaySecOptik);
+          setSecUtuTotal(secAnalytics?.periodTotals?.utu ?? todaySecUtu);
+          setSecPaketCount(Math.max(todaySecPaket, Math.floor(Number(secAnalytics?.periodTotals?.paketleme) || 0)));
+          setSecGunPaketlenen(todaySecPaket);
+
+          const secModelHedef = secEkran5Res.targetQuantity ?? 0;
+          const secGenelHedef = secGenelOzet?.target ?? 0;
+          const secIsManualUtuModel = Boolean(secModelDetail && !secModelDetail.isTakipsanLinked);
+          const secProductionTarget = secIsManualUtuModel
+            ? secModelHedef
+            : secGenelHedef > 0
+              ? secGenelHedef
+              : secModelHedef > 0
+                ? secModelHedef
+                : 0;
+          const secPanelTarget = Math.max(0, Math.floor(Number(secData.packagingTarget) || 0));
+          setSecApiTarget(
+            secPanelTarget > 0 ? secPanelTarget : resolveUtuPaketLineTarget(secData, secProductionTarget)
+          );
+          setSecManualTarget(
+            secEkran5Res.ekran5Target != null && secEkran5Res.ekran5Target > 0 ? secEkran5Res.ekran5Target : null
+          );
+
+          const secUpm = secData.utuPaketModel ?? null;
+          const secName = secUpm?.productName ?? secMeta.modelInfo?.productName ?? "";
+          const secCode = secUpm?.productModel ?? secMeta.modelInfo?.modelCode ?? "";
+          setSecProductLabel([secName, secCode].filter(Boolean).join(" · "));
+
+          const secBedenTargetsRes = await getBedenCekiTargets(secMid).catch(() => ({ targets: emptyUtuPaketBeden() }));
+          const secNormalizedTargets = emptyUtuPaketBeden();
+          for (const code of UTU_PAKET_SIZE_CODES) {
+            secNormalizedTargets[code] = Math.max(0, Math.floor(Number(secBedenTargetsRes.targets?.[code]) || 0));
+          }
+          setSecBedenTargets(secNormalizedTargets);
+
+          const todaySecBedenRow = emptyUtuPaketBeden();
+          for (const code of UTU_PAKET_SIZE_CODES) {
+            todaySecBedenRow[code] = Math.max(0, Math.floor(Number(secData.beden[code]) || 0));
+          }
+          setSecBedenToday(todaySecBedenRow);
+
+          const todayFromSecAnalytics = secAnalytics?.daily?.find((d) => d.date === date)?.beden ?? {};
+          const periodSecBeden = emptyUtuPaketBeden();
+          for (const code of UTU_PAKET_SIZE_CODES) {
+            const period = Math.max(0, Math.floor(Number(secAnalytics?.bedenTotals?.[code]) || 0));
+            const todaySaved = Math.max(0, Math.floor(Number(todayFromSecAnalytics[code]) || 0));
+            const beforeToday = Math.max(0, period - todaySaved);
+            periodSecBeden[code] = beforeToday + todaySecBedenRow[code];
+          }
+          setSecBedenTotals(periodSecBeden);
+        }
+      } else {
+        setSecProductLabel("");
+        setSecOptikCount(0);
+        setSecOptikTotal(0);
+        setSecUtuCount(0);
+        setSecUtuTotal(0);
+        setSecPaketCount(0);
+        setSecGunPaketlenen(0);
+        setSecBedenTargets(emptyUtuPaketBeden());
+        setSecBedenTotals(emptyUtuPaketBeden());
+        setSecBedenToday(emptyUtuPaketBeden());
+        setSecApiTarget(0);
+        setSecManualTarget(null);
+        if (!secMid) {
+          setSecondaryHasData(false);
+          setEkran5ShowPrimary(true);
+        }
+      }
+
       setLastUpdated(formatClock());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Veri alınamadı");
@@ -765,7 +927,13 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     return () => clearInterval(id);
   }, [hasToken, load]);
 
-  /** Veri girişinde model/hedef değişince uzaktan yenile */
+  /** Aynı tarayıcıda ayar kaydı → anlık yenile (BroadcastChannel + custom event) */
+  useEffect(() => {
+    if (!hasToken) return;
+    return subscribeEkranRefresh(() => void load(true));
+  }, [hasToken, load]);
+
+  /** Farklı cihazdaki TV ekranları için sunucu sinyali yedek yoklama */
   useEffect(() => {
     if (!hasToken) return;
     let lastSignal = "";
@@ -776,11 +944,21 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       if (sig !== lastSignal) { lastSignal = sig; void load(true); }
     };
     void checkSignal();
-    const id = setInterval(() => void checkSignal(), 6_000);
+    const id = setInterval(() => void checkSignal(), REMOTE_SIGNAL_POLL_MS);
     return () => clearInterval(id);
   }, [hasToken, load]);
 
   // Slayt döngüsü
+  const allSlides = useMemo(
+    () => buildSlideList({ hasSecondaryData: secondaryHasData, showPrimary: ekran5ShowPrimary }),
+    [secondaryHasData, ekran5ShowPrimary]
+  );
+  const slideCount = allSlides.length;
+
+  useEffect(() => {
+    if (slide >= slideCount) setSlide(0);
+  }, [slide, slideCount, secondaryHasData, ekran5ShowPrimary]);
+
   useEffect(() => {
     setSlideProgress(0);
     let elapsed = 0;
@@ -792,14 +970,14 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
         elapsed = 0;
         setTransitioning(true);
         setTimeout(() => {
-          setSlide((s) => (s + 1) % SLIDE_COUNT);
+          setSlide((s) => (s + 1) % slideCount);
           setSlideProgress(0);
           setTransitioning(false);
         }, 350);
       }
     }, TICK);
     return () => clearInterval(ticker);
-  }, [slide]);
+  }, [slide, slideCount]);
 
   // ── Doğum günü memos ────────────────────────────────────────────────────────
   const birthdayCelebration = useMemo(() => {
@@ -864,17 +1042,21 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   void _pct;
 
   async function handleHedefSave(v: number) {
-    if (modelId) {
-      await setEkran5Target(modelId, v).catch(() => {});
+    const activeModelId = allSlides[slide]?.secondary ? secondaryModelId : modelId;
+    if (activeModelId) {
+      await setEkran5Target(activeModelId, v).catch(() => {});
     }
-    setManualTarget(v);
+    if (allSlides[slide]?.secondary) setSecManualTarget(v);
+    else setManualTarget(v);
     setHedefOpen(false);
   }
   async function handleHedefClear() {
-    if (modelId) {
-      await setEkran5Target(modelId, null).catch(() => {});
+    const activeModelId = allSlides[slide]?.secondary ? secondaryModelId : modelId;
+    if (activeModelId) {
+      await setEkran5Target(activeModelId, null).catch(() => {});
     }
-    setManualTarget(null);
+    if (allSlides[slide]?.secondary) setSecManualTarget(null);
+    else setManualTarget(null);
     setHedefOpen(false);
   }
 
@@ -889,7 +1071,15 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
     window.open(`${window.location.origin}/ekran5/icerik`, "ye tekstil utu paket", "popup=yes,width=1280,height=800");
   }
 
-  const slideKey = SLIDES[slide];
+  const currentSlide = allSlides[slide] ?? allSlides[0]!;
+  const slideKey = currentSlide.key;
+  const isSecondarySlide = currentSlide.secondary;
+  const headerProductLabel = isSecondarySlide ? secProductLabel : productLabel;
+  const headerManualTarget = isSecondarySlide ? secManualTarget : manualTarget;
+  const headerApiTarget = isSecondarySlide ? secApiTarget : apiTarget;
+  const hedefModalApiTarget = isSecondarySlide ? secApiTarget : apiTarget;
+  const hedefModalManualTarget = isSecondarySlide ? secManualTarget : manualTarget;
+  const hedefModalProductLabel = isSecondarySlide ? secProductLabel : productLabel;
 
   if (!hasToken) {
     return (
@@ -1021,25 +1211,35 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
             <div>
               <div className="flex flex-wrap items-baseline gap-2">
                 <p className="text-base font-extrabold text-neutral-950 md:text-lg">{formatDateTr(displayDate)}</p>
-                {productLabel ? (
-                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 ring-1 ring-slate-300 md:text-sm">
-                    {productLabel}
+                    {headerProductLabel ? (
+                  <span className={`rounded-md px-2 py-0.5 text-xs font-bold ring-1 md:text-sm ${
+                    isSecondarySlide
+                      ? "bg-violet-100 text-violet-800 ring-violet-300"
+                      : "bg-slate-100 text-slate-600 ring-slate-300"
+                  }`}>
+                    {headerProductLabel}
                   </span>
                 ) : null}
                 {/* Hedef kaynağı göstergesi */}
                 <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ring-1 ${
-                  manualTarget != null
+                  headerManualTarget != null
                     ? "bg-amber-50 text-amber-700 ring-amber-300"
-                    : apiTarget > 0
+                    : headerApiTarget > 0
                       ? "bg-emerald-50 text-emerald-700 ring-emerald-300"
                       : "bg-slate-100 text-slate-500 ring-slate-300"
                 }`}>
-                  {manualTarget != null ? "El ile hedef" : apiTarget > 0 ? "Model hedefi" : "Hedef yok"}
+                  {headerManualTarget != null ? "El ile hedef" : headerApiTarget > 0 ? "Model hedefi" : "Hedef yok"}
                 </span>
               </div>
               {lastUpdated ? (
                 <p className="text-[11px] font-semibold text-slate-700">
-                  Son güncelleme {lastUpdated} · sayfa {slide + 1}/{SLIDE_COUNT} · 30 sn döngü
+                  Son güncelleme {lastUpdated} · sayfa {slide + 1}/{slideCount}
+                  {secondaryHasData
+                    ? ekran5ShowPrimary
+                      ? " · 1. + 2. model"
+                      : " · yalnızca ek model"
+                    : ""}{" "}
+                  · 30 sn döngü
                 </p>
               ) : null}
             </div>
@@ -1079,21 +1279,59 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
 
         {/* ── SLAYT ── */}
         <div className={`flex min-h-0 flex-1 transition-opacity duration-300 ${transitioning ? "opacity-0" : "opacity-100"}`}>
-          {slideKey === "paketleme" && (
-            <SlidePanel slideKey="paketleme" total={paketCount}  todayCount={gunPaketlenen} target={target} koliCount={gunKoli} totalKoliCount={toplamKoli} />
-          )}
-          {slideKey === "beden" && (
-            <BedenTableSlide
-              targets={bedenTargets}
-              totals={bedenTotals}
-              today={bedenToday}
-            />
-          )}
-          {slideKey === "optik" && (
-            <SlidePanel slideKey="optik"     total={optikTotal}  todayCount={optikCount}    target={target} />
-          )}
-          {slideKey === "utu" && (
-            <SlidePanel slideKey="utu"       total={utuTotal}    todayCount={utuCount}      target={target} />
+          {!isSecondarySlide ? (
+            <>
+              {slideKey === "paketleme" && (
+                <SlidePanel slideKey="paketleme" total={paketCount} todayCount={gunPaketlenen} target={target} koliCount={gunKoli} totalKoliCount={toplamKoli} productLabel={productLabel} />
+              )}
+              {slideKey === "beden" && (
+                <BedenTableSlide targets={bedenTargets} totals={bedenTotals} today={bedenToday} productLabel={productLabel} />
+              )}
+              {slideKey === "optik" && (
+                <SlidePanel slideKey="optik" total={optikTotal} todayCount={optikCount} target={target} productLabel={productLabel} />
+              )}
+              {slideKey === "utu" && (
+                <SlidePanel slideKey="utu" total={utuTotal} todayCount={utuCount} target={target} productLabel={productLabel} />
+              )}
+            </>
+          ) : (
+            <>
+              {slideKey === "paketleme" && (
+                <SlidePanel
+                  slideKey="paketleme"
+                  total={secPaketCount}
+                  todayCount={secGunPaketlenen}
+                  target={secTarget}
+                  productLabel={secProductLabel}
+                />
+              )}
+              {slideKey === "beden" && (
+                <BedenTableSlide
+                  targets={secBedenTargets}
+                  totals={secBedenTotals}
+                  today={secBedenToday}
+                  productLabel={secProductLabel}
+                />
+              )}
+              {slideKey === "optik" && (
+                <SlidePanel
+                  slideKey="optik"
+                  total={secOptikTotal}
+                  todayCount={secOptikCount}
+                  target={secTarget}
+                  productLabel={secProductLabel}
+                />
+              )}
+              {slideKey === "utu" && (
+                <SlidePanel
+                  slideKey="utu"
+                  total={secUtuTotal}
+                  todayCount={secUtuCount}
+                  target={secTarget}
+                  productLabel={secProductLabel}
+                />
+              )}
+            </>
           )}
         </div>
 
@@ -1103,17 +1341,26 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
             <div className="h-full rounded-full bg-teal-500"
               style={{ width: `${slideProgress}%`, transition: "width 100ms linear" }} />
           </div>
-          <div className="flex items-center justify-center gap-3">
-            {SLIDES.map((key, i) => (
-              <button key={key} type="button"
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+            {allSlides.map((def, i) => {
+              const label = SLIDE_LABELS[def.key];
+              return (
+              <button key={`${def.secondary ? "sec" : "pri"}-${def.key}`} type="button"
                 onClick={() => { setSlide(i); setSlideProgress(0); }}
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all duration-300 sm:text-xs ${
-                  i === slide ? "bg-slate-900 text-white shadow-md" : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all duration-300 sm:px-3 sm:text-xs ${
+                  i === slide
+                    ? def.secondary
+                      ? "bg-violet-700 text-white shadow-md"
+                      : "bg-slate-900 text-white shadow-md"
+                    : def.secondary
+                      ? "bg-violet-100 text-violet-700 hover:bg-violet-200"
+                      : "bg-slate-200 text-slate-500 hover:bg-slate-300"
                 }`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${i === slide ? "bg-teal-400" : "bg-slate-400"}`} />
-                {SLIDE_LABELS[key]}
+                <span className={`h-1.5 w-1.5 rounded-full ${i === slide ? (def.secondary ? "bg-violet-300" : "bg-teal-400") : def.secondary ? "bg-violet-400" : "bg-slate-400"}`} />
+                {label}
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1121,9 +1368,9 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       {/* ── HEDEF MODALIN ── */}
       {hedefOpen && (
         <HedefModal
-          apiTarget={apiTarget}
-          manualTarget={manualTarget}
-          productLabel={productLabel}
+          apiTarget={hedefModalApiTarget}
+          manualTarget={hedefModalManualTarget}
+          productLabel={hedefModalProductLabel}
           onSave={handleHedefSave}
           onClear={handleHedefClear}
           onClose={() => setHedefOpen(false)}

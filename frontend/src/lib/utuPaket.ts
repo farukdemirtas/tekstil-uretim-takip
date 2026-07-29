@@ -187,6 +187,8 @@ export type UtuPaketDayPayload = {
   paketlemeEkBeden?: UtuPaketBedenRow;
   /** TV bar hedefi — sipariş sayısından gelir */
   packagingTarget: number;
+  /** Ek model oturum başlangıç tarihi (backend) */
+  sessionStartDate?: string;
   /** Ayarlardan atanan manuel model — Takipsan paketleme kapalı */
   manualPackaging?: boolean;
   takipsan?: UtuPaketTakipsanSnapshot;
@@ -357,6 +359,7 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
     paketlemeSlotBeden,
     paketlemeEkBeden,
     packagingTarget: Math.max(0, Math.floor(Number(raw.packagingTarget) || 0)),
+    sessionStartDate: raw.sessionStartDate ? String(raw.sessionStartDate).trim() : undefined,
     manualPackaging: raw.manualPackaging === true,
     takipsan,
   };

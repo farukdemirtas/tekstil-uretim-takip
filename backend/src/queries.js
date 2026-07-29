@@ -5835,6 +5835,74 @@ export async function getUtuPaketSecondaryModelId(date) {
   return Number(row.secondaryModelId);
 }
 
+export async function hasUtuPaketSecondaryData(date, modelId) {
+  const d = String(date);
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid <= 0) return false;
+
+  const slotRows = await dbAll(
+    `SELECT stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
+     FROM utu_paket_slots_b WHERE production_date = ? AND model_id = ?`,
+    [d, mid]
+  );
+  for (const r of slotRows || []) {
+    if (sumUtuPaketSlotRow(r) > 0) return true;
+  }
+
+  const bedenRows = await dbAll(
+    `SELECT count FROM utu_paket_beden_b WHERE production_date = ? AND model_id = ? AND count > 0 LIMIT 1`,
+    [d, mid]
+  );
+  return (bedenRows || []).length > 0;
+}
+
+export async function getUtuPaketSecondaryEkranMeta(date) {
+  const d = String(date);
+  const row = await dbGet(
+    `SELECT secondary_model_id AS secondaryModelId, ekran5_show_primary AS ekran5ShowPrimary
+     FROM utu_paket_meta WHERE production_date = ?`,
+    [d]
+  );
+  const secondaryModelId =
+    row?.secondaryModelId != null && Number.isFinite(Number(row.secondaryModelId))
+      ? Number(row.secondaryModelId)
+      : null;
+  const ekran5ShowPrimary = row?.ekran5ShowPrimary == null || Number(row.ekran5ShowPrimary) !== 0;
+  let secondaryHasData = false;
+  let modelInfo = null;
+
+  if (secondaryModelId) {
+    secondaryHasData = await hasUtuPaketSecondaryData(d, secondaryModelId);
+    const m = await dbGet(
+      `SELECT id, model_code AS modelCode, product_name AS productName FROM product_models WHERE id = ?`,
+      [secondaryModelId]
+    );
+    if (m) {
+      modelInfo = {
+        id: Number(m.id),
+        modelCode: String(m.modelCode || ""),
+        productName: String(m.productName || ""),
+      };
+    }
+  }
+
+  return { secondaryModelId, modelInfo, ekran5ShowPrimary, secondaryHasData };
+}
+
+export function setUtuPaketEkran5ShowPrimary(date, showPrimary) {
+  const d = String(date);
+  const v = showPrimary ? 1 : 0;
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO utu_paket_meta (production_date, packaging_target, ekran5_show_primary)
+       VALUES (?, 0, ?)
+       ON CONFLICT(production_date) DO UPDATE SET ekran5_show_primary = excluded.ekran5_show_primary`,
+      [d, v],
+      (err) => (err ? reject(err) : resolve({ ok: true, ekran5ShowPrimary: showPrimary }))
+    );
+  });
+}
+
 function deleteUtuPaketSecondaryData(date, modelId) {
   const d = String(date);
   const mid = Number(modelId);
@@ -5863,19 +5931,99 @@ function deleteUtuPaketSecondaryData(date, modelId) {
 export async function setUtuPaketSecondaryModelId(date, modelId) {
   const d = String(date);
   const mid = modelId != null && Number.isFinite(Number(modelId)) ? Number(modelId) : null;
-  const prev = await getUtuPaketSecondaryModelId(d);
-  if (prev && prev !== mid) {
-    await deleteUtuPaketSecondaryData(d, prev);
-  }
   return new Promise((resolve, reject) => {
     db.run(
       `INSERT INTO utu_paket_meta (production_date, packaging_target, secondary_model_id)
        VALUES (?, 0, ?)
-       ON CONFLICT(production_date) DO UPDATE SET secondary_model_id = excluded.secondary_model_id`,
+       ON CONFLICT(production_date) DO UPDATE SET
+         secondary_model_id = excluded.secondary_model_id`,
       [d, mid],
       (err) => (err ? reject(err) : resolve({ ok: true, secondaryModelId: mid }))
     );
   });
+}
+
+async function getUtuPaketSecondaryFirstDataDate(modelId, endDate) {
+  const mid = Number(modelId);
+  const end = String(endDate);
+  if (!Number.isFinite(mid) || mid <= 0) return null;
+  const row = await dbGet(
+    `SELECT MIN(production_date) AS firstDate FROM (
+       SELECT production_date FROM utu_paket_slots_b
+       WHERE model_id = ? AND production_date <= ?
+       UNION
+       SELECT production_date FROM utu_paket_beden_b
+       WHERE model_id = ? AND production_date <= ?
+     )`,
+    [mid, end, mid, end]
+  );
+  return row?.firstDate ? String(row.firstDate) : null;
+}
+
+/** Ek model oturum başlangıcı: ayarlanmış ütü–paket tarihi veya ilk veri günü */
+export async function resolveUtuPaketSecondarySessionStart(modelId, endDate) {
+  const d = String(endDate);
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid <= 0) return d;
+
+  const modelRow = await dbGet(
+    `SELECT utu_paket_session_start_date AS utuPaketSessionStartDate FROM product_models WHERE id = ?`,
+    [mid]
+  );
+  const configured = modelRow?.utuPaketSessionStartDate
+    ? String(modelRow.utuPaketSessionStartDate).trim()
+    : null;
+  const firstData = await getUtuPaketSecondaryFirstDataDate(mid, d);
+
+  const candidates = [d];
+  if (configured && configured <= d) candidates.push(configured);
+  if (firstData && firstData <= d) candidates.push(firstData);
+  return candidates.sort()[0];
+}
+
+async function resolveUtuPaketSecondaryPackagingTarget(modelId, date) {
+  const d = String(date);
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid <= 0) return 0;
+
+  const todayRow = await dbGet(
+    `SELECT packaging_target AS packagingTarget FROM utu_paket_b_model_meta WHERE production_date = ? AND model_id = ?`,
+    [d, mid]
+  );
+  const todayTarget = todayRow?.packagingTarget;
+  if (todayTarget != null && Number.isFinite(Number(todayTarget)) && Number(todayTarget) > 0) {
+    return Math.max(0, Math.floor(Number(todayTarget)));
+  }
+
+  const sessionStart = await resolveUtuPaketSecondarySessionStart(mid, d);
+  const sessionRow = await dbGet(
+    `SELECT packaging_target AS packagingTarget FROM utu_paket_b_model_meta
+     WHERE model_id = ? AND production_date BETWEEN ? AND ? AND packaging_target > 0
+     ORDER BY production_date DESC LIMIT 1`,
+    [mid, sessionStart, d]
+  );
+  if (sessionRow?.packagingTarget != null && Number(sessionRow.packagingTarget) > 0) {
+    return Math.max(0, Math.floor(Number(sessionRow.packagingTarget)));
+  }
+
+  const metaRow = await dbGet(
+    `SELECT secondary_model_id AS secondaryModelId, secondary_packaging_target AS secondaryPackagingTarget
+     FROM utu_paket_meta WHERE production_date = ?`,
+    [d]
+  );
+  const savedTarget = metaRow?.secondaryPackagingTarget;
+  if (
+    metaRow?.secondaryModelId != null &&
+    Number(metaRow.secondaryModelId) === mid &&
+    savedTarget != null &&
+    Number.isFinite(Number(savedTarget)) &&
+    Number(savedTarget) > 0
+  ) {
+    return Math.max(0, Math.floor(Number(savedTarget)));
+  }
+
+  const { target: modelDefault } = await getProductModelPackagingInfo(mid);
+  return Math.max(0, Math.floor(Number(modelDefault) || 0));
 }
 
 export async function getUtuPaketSecondaryDay(date, modelId) {
@@ -5889,6 +6037,7 @@ export async function getUtuPaketSecondaryDay(date, modelId) {
       stageEkSayim: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
       beden: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
       packagingTarget: 0,
+      sessionStartDate: d,
       utuPaketModel: null,
     };
   }
@@ -5928,7 +6077,8 @@ export async function getUtuPaketSecondaryDay(date, modelId) {
     if (code) beden[code] = Number(r.count) || 0;
   }
 
-  const { target: packagingTarget } = await getProductModelPackagingInfo(mid);
+  const sessionStartDate = await resolveUtuPaketSecondarySessionStart(mid, d);
+  const packagingTarget = await resolveUtuPaketSecondaryPackagingTarget(mid, d);
 
   return {
     date: d,
@@ -5938,6 +6088,7 @@ export async function getUtuPaketSecondaryDay(date, modelId) {
     stageEkSayim,
     beden,
     packagingTarget: Math.max(0, Math.floor(Number(packagingTarget) || 0)),
+    sessionStartDate,
     manualPackaging: true,
   };
 }
@@ -5951,6 +6102,10 @@ export function saveUtuPaketSecondaryDay(date, modelId, payload) {
   const stagesIn = payload?.stages && typeof payload.stages === "object" ? { ...payload.stages } : {};
   const bedenIn = payload?.beden && typeof payload.beden === "object" ? { ...payload.beden } : {};
   const z = (n) => Math.max(0, Math.floor(Number(n) || 0));
+  const packagingTargetIn =
+    payload?.packagingTarget !== undefined && payload?.packagingTarget !== null
+      ? z(payload.packagingTarget)
+      : null;
 
   return new Promise((resolve, reject) => {
     db.serialize(() => {
@@ -6000,19 +6155,45 @@ export function saveUtuPaketSecondaryDay(date, modelId, payload) {
 
             const bedenEntries = Object.entries(bedenIn).filter(([, v]) => z(v) > 0);
             const commitMeta = () => {
-              db.run(
-                `INSERT INTO utu_paket_meta (production_date, packaging_target, secondary_model_id)
-                 VALUES (?, 0, ?)
-                 ON CONFLICT(production_date) DO UPDATE SET secondary_model_id = COALESCE(excluded.secondary_model_id, utu_paket_meta.secondary_model_id)`,
-                [d, mid],
-                (metaErr) => {
+              const writeDayMeta = () => {
+                const metaSql =
+                  packagingTargetIn != null
+                    ? `INSERT INTO utu_paket_meta (production_date, packaging_target, secondary_model_id, secondary_packaging_target)
+                       VALUES (?, 0, ?, ?)
+                       ON CONFLICT(production_date) DO UPDATE SET
+                         secondary_model_id = COALESCE(excluded.secondary_model_id, utu_paket_meta.secondary_model_id),
+                         secondary_packaging_target = excluded.secondary_packaging_target`
+                    : `INSERT INTO utu_paket_meta (production_date, packaging_target, secondary_model_id)
+                       VALUES (?, 0, ?)
+                       ON CONFLICT(production_date) DO UPDATE SET
+                         secondary_model_id = COALESCE(excluded.secondary_model_id, utu_paket_meta.secondary_model_id)`;
+                const metaParams = packagingTargetIn != null ? [d, mid, packagingTargetIn] : [d, mid];
+                db.run(metaSql, metaParams, (metaErr) => {
                   if (metaErr) {
                     db.run("ROLLBACK");
                     return reject(metaErr);
                   }
                   db.run("COMMIT", (commitErr) => (commitErr ? reject(commitErr) : resolve({ ok: true })));
-                }
-              );
+                });
+              };
+
+              if (packagingTargetIn != null) {
+                db.run(
+                  `INSERT INTO utu_paket_b_model_meta (production_date, model_id, packaging_target)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(production_date, model_id) DO UPDATE SET packaging_target = excluded.packaging_target`,
+                  [d, mid, packagingTargetIn],
+                  (modelMetaErr) => {
+                    if (modelMetaErr) {
+                      db.run("ROLLBACK");
+                      return reject(modelMetaErr);
+                    }
+                    writeDayMeta();
+                  }
+                );
+              } else {
+                writeDayMeta();
+              }
             };
 
             if (bedenEntries.length === 0) {
@@ -6044,6 +6225,122 @@ export function saveUtuPaketSecondaryDay(date, modelId, payload) {
 
 export function deleteUtuPaketSecondaryDay(date, modelId) {
   return deleteUtuPaketSecondaryData(String(date), Number(modelId));
+}
+
+export function getUtuPaketSecondaryAnalytics(startDate, endDate, modelId) {
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid <= 0) {
+    return Promise.resolve({
+      startDate,
+      endDate,
+      daysWithData: 0,
+      periodTotals: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
+      bedenTotals: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+      avgDailyByStage: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
+      daily: [],
+      slotTotalsByStage: Object.fromEntries(
+        UTU_PAKET_STAGES.map((st) => [st, Object.fromEntries(UTU_PAKET_SLOT_KEYS.map((k) => [k, 0]))])
+      ),
+    });
+  }
+
+  const slotSql = `SELECT production_date, stage, h0900, h1000, h1115, h1215, h1300, h1445, h1545, h1700, h1830, ek_sayim
+       FROM utu_paket_slots_b
+       WHERE production_date BETWEEN ? AND ? AND model_id = ?
+       ORDER BY production_date ASC, stage ASC`;
+  const bedenSql = `SELECT production_date, size_code, count
+       FROM utu_paket_beden_b
+       WHERE production_date BETWEEN ? AND ? AND model_id = ?
+       ORDER BY production_date ASC, size_code ASC`;
+
+  return new Promise((resolve, reject) => {
+    db.all(slotSql, [startDate, endDate, mid], (slotErr, slotRows) => {
+      if (slotErr) return reject(slotErr);
+      db.all(bedenSql, [startDate, endDate, mid], (bedenErr, bedenRows) => {
+        if (bedenErr) return reject(bedenErr);
+
+        const datesSet = new Set();
+        for (const r of slotRows || []) datesSet.add(r.production_date);
+        for (const r of bedenRows || []) datesSet.add(r.production_date);
+        const dates = [...datesSet].sort();
+
+        const dailyMap = new Map();
+        for (const d of dates) {
+          dailyMap.set(d, {
+            date: d,
+            stages: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
+            beden: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+            pipelineMin: 0,
+          });
+        }
+
+        for (const r of slotRows || []) {
+          const day = dailyMap.get(r.production_date);
+          if (!day) continue;
+          day.stages[r.stage] = sumUtuPaketSlotRow(r);
+        }
+
+        for (const r of bedenRows || []) {
+          const day = dailyMap.get(r.production_date);
+          if (!day) continue;
+          const code = String(r.size_code || "").trim();
+          if (code) day.beden[code] = (day.beden[code] || 0) + (Number(r.count) || 0);
+        }
+
+        const daily = [];
+        const periodTotals = Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0]));
+        const bedenTotals = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+
+        for (const d of dates) {
+          const day = dailyMap.get(d);
+          const stageVals = UTU_PAKET_STAGES.map((st) => day.stages[st] || 0);
+          const nonZero = stageVals.filter((n) => n > 0);
+          day.pipelineMin = nonZero.length ? Math.min(...nonZero) : 0;
+          for (const st of UTU_PAKET_STAGES) {
+            periodTotals[st] += day.stages[st] || 0;
+          }
+          for (const code of UTU_PAKET_SIZE_CODES) {
+            bedenTotals[code] += day.beden[code] || 0;
+          }
+          daily.push(day);
+        }
+
+        const daysWithData = daily.filter((day) =>
+          UTU_PAKET_STAGES.some((st) => (day.stages[st] || 0) > 0)
+        ).length;
+
+        const avgDailyByStage = Object.fromEntries(
+          UTU_PAKET_STAGES.map((st) => [
+            st,
+            daysWithData > 0 ? Math.round(periodTotals[st] / daysWithData) : 0,
+          ])
+        );
+
+        const slotTotalsByStage = {};
+        for (const st of UTU_PAKET_STAGES) {
+          slotTotalsByStage[st] = Object.fromEntries(UTU_PAKET_SLOT_KEYS.map((k) => [k, 0]));
+        }
+        for (const r of slotRows || []) {
+          const bucket = slotTotalsByStage[r.stage];
+          if (!bucket) continue;
+          for (const k of UTU_PAKET_SLOT_KEYS) {
+            bucket[k] += Number(r[k]) || 0;
+          }
+        }
+
+        resolve({
+          startDate,
+          endDate,
+          daysWithData,
+          periodTotals,
+          bedenTotals,
+          avgDailyByStage,
+          daily,
+          slotTotalsByStage,
+        });
+      });
+    });
+  });
 }
 
 const VALID_SCREEN_IDS = new Set([

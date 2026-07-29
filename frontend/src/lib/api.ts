@@ -11,6 +11,7 @@ import {
   WorkerProductionDayDetail,
 } from "./types";
 import { clearStoredPermissions } from "./permissions";
+import { notifyEkranRefresh } from "./ekranRefresh";
 import type { TakipsanStatus, UtuPaketAnalytics, UtuPaketDayPayload } from "./utuPaket";
 import { normalizeUtuPaketPayload } from "./utuPaket";
 
@@ -1071,6 +1072,7 @@ export async function setEkran5Target(modelId: number, value: number | null): Pr
     body: JSON.stringify({ value }),
   });
   if (!res.ok) throw new Error("Hedef kaydedilemedi");
+  notifyEkranRefresh("ekran5-target");
 }
 
 export type BedenCekiTargets = Record<string, number>;
@@ -1777,6 +1779,7 @@ export async function saveUtuPaket(
     const d = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(d.message ?? "Ütü–paket verisi kaydedilemedi");
   }
+  notifyEkranRefresh("utu-paket");
 }
 
 export async function deleteUtuPaket(date: string): Promise<void> {
@@ -1793,6 +1796,10 @@ export async function deleteUtuPaket(date: string): Promise<void> {
 export type UtuPaketSecondaryDayMeta = {
   secondaryModelId: number | null;
   modelInfo: { id: number; modelCode: string; productName: string } | null;
+  /** Ek modelde en az bir adet girildiyse true — Ekran 5 ek slaytları açar */
+  secondaryHasData?: boolean;
+  /** false ise Ekran 5 yalnızca ek model slaytlarını döner */
+  ekran5ShowPrimary?: boolean;
 };
 
 export async function getUtuPaketSecondaryDayMeta(date: string): Promise<UtuPaketSecondaryDayMeta> {
@@ -1800,7 +1807,7 @@ export async function getUtuPaketSecondaryDayMeta(date: string): Promise<UtuPake
     cache: "no-store",
     headers: authHeaders(),
   });
-  if (!res.ok) return { secondaryModelId: null, modelInfo: null };
+  if (!res.ok) return { secondaryModelId: null, modelInfo: null, secondaryHasData: false, ekran5ShowPrimary: true };
   const raw = (await res.json()) as Record<string, unknown>;
   const mid = raw.secondaryModelId;
   const secondaryModelId = mid != null && Number.isFinite(Number(mid)) ? Number(mid) : null;
@@ -1809,7 +1816,9 @@ export async function getUtuPaketSecondaryDayMeta(date: string): Promise<UtuPake
     mi && mi.id != null
       ? { id: Number(mi.id), modelCode: String(mi.modelCode ?? ""), productName: String(mi.productName ?? "") }
       : null;
-  return { secondaryModelId, modelInfo };
+  const secondaryHasData = raw.secondaryHasData === true;
+  const ekran5ShowPrimary = raw.ekran5ShowPrimary !== false;
+  return { secondaryModelId, modelInfo, secondaryHasData, ekran5ShowPrimary };
 }
 
 export async function setUtuPaketSecondaryDayMeta(date: string, secondaryModelId: number | null): Promise<void> {
@@ -1819,6 +1828,38 @@ export async function setUtuPaketSecondaryDayMeta(date: string, secondaryModelId
     body: JSON.stringify({ date, secondaryModelId }),
   });
   if (!res.ok) throw new Error("İkinci model ayarlanamadı");
+  notifyEkranRefresh("utu-paket-secondary-meta");
+}
+
+export async function setUtuPaketEkran5ShowPrimary(date: string, showPrimary: boolean): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/utu-paket-b/day-meta`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ date, ekran5ShowPrimary: showPrimary }),
+  });
+  if (!res.ok) throw new Error("Ekran 5 görünüm ayarı kaydedilemedi");
+  notifyEkranRefresh("ekran5-show-primary");
+}
+
+export async function getUtuPaketSecondaryAnalytics(params: {
+  startDate: string;
+  endDate: string;
+  modelId: number;
+}): Promise<UtuPaketAnalytics> {
+  const q = new URLSearchParams({
+    startDate: params.startDate,
+    endDate: params.endDate,
+    modelId: String(params.modelId),
+  });
+  const res = await apiFetch(`${apiBase()}/utu-paket-b/analytics?${q.toString()}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message ?? "İkinci model ütü–paket analizi alınamadı");
+  }
+  return res.json() as Promise<UtuPaketAnalytics>;
 }
 
 export async function getUtuPaketSecondary(date: string, modelId: number): Promise<UtuPaketDayPayload> {
@@ -1837,6 +1878,7 @@ export async function saveUtuPaketSecondary(payload: {
   stages: UtuPaketDayPayload["stages"];
   beden?: UtuPaketDayPayload["beden"];
   stageEkSayim?: UtuPaketDayPayload["stageEkSayim"];
+  packagingTarget?: number;
 }): Promise<void> {
   const res = await apiFetch(`${apiBase()}/utu-paket-b`, {
     method: "PUT",
@@ -1844,6 +1886,7 @@ export async function saveUtuPaketSecondary(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error("İkinci model ütü–paket kaydedilemedi");
+  notifyEkranRefresh("utu-paket-secondary");
 }
 
 export async function deleteUtuPaketSecondary(date: string, modelId: number): Promise<void> {
@@ -1852,6 +1895,7 @@ export async function deleteUtuPaketSecondary(date: string, modelId: number): Pr
     { method: "DELETE", headers: authHeaders() }
   );
   if (!res.ok) throw new Error("İkinci model ütü–paket silinemedi");
+  notifyEkranRefresh("utu-paket-secondary-delete");
 }
 
 export async function getTakipsanStatus(): Promise<TakipsanStatus> {

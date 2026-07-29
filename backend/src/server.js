@@ -97,10 +97,13 @@ import {
   setUtuPaketModelReferenceDate,
   deleteUtuPaketDay,
   getUtuPaketSecondaryModelId,
+  getUtuPaketSecondaryEkranMeta,
+  setUtuPaketEkran5ShowPrimary,
   setUtuPaketSecondaryModelId,
   getUtuPaketSecondaryDay,
   saveUtuPaketSecondaryDay,
   deleteUtuPaketSecondaryDay,
+  getUtuPaketSecondaryAnalytics,
   getProsesVeriRows,
   saveProsesVeriRows,
   getJobCalcModelWorkerStats,
@@ -1895,31 +1898,51 @@ app.delete("/api/utu-paket", requirePermission("utuPaket"), async (req, res) => 
 
 // ─── İkinci model ütü–paket ─────────────────────────────────────────────────
 
-app.get("/api/utu-paket-b/day-meta", requirePermission("utuPaket"), async (req, res) => {
+app.get("/api/utu-paket-b/analytics", requirePermission("utuPaket"), async (req, res) => {
+  const { startDate, endDate, modelId } = req.query;
+  if (!startDate || !endDate) {
+    return res.status(400).json({ message: "startDate ve endDate zorunlu" });
+  }
+  if (modelId == null || !Number.isFinite(Number(modelId))) {
+    return res.status(400).json({ message: "modelId zorunlu" });
+  }
+  try {
+    const data = await getUtuPaketSecondaryAnalytics(String(startDate), String(endDate), Number(modelId));
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ message: "İkinci model ütü–paket analizi alınamadı", error: String(err) });
+  }
+});
+
+app.get("/api/utu-paket-b/day-meta", requireAnyPermission(["utuPaket", "ekran5"]), async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ message: "date zorunlu" });
   try {
-    const secondaryModelId = await getUtuPaketSecondaryModelId(String(date));
-    let modelInfo = null;
-    if (secondaryModelId) {
-      const m = await getProductModelWithBaselines(secondaryModelId).catch(() => null);
-      if (m) modelInfo = { id: m.id, modelCode: m.modelCode, productName: m.productName };
-    }
-    res.json({ secondaryModelId, modelInfo });
+    const meta = await getUtuPaketSecondaryEkranMeta(String(date));
+    res.json(meta);
   } catch (err) {
     res.status(500).json({ message: "İkinci model bilgisi alınamadı", error: String(err) });
   }
 });
 
 app.put("/api/utu-paket-b/day-meta", requirePermission("utuPaket"), async (req, res) => {
-  const { date, secondaryModelId } = req.body || {};
+  const { date, secondaryModelId, ekran5ShowPrimary } = req.body || {};
   if (!date) return res.status(400).json({ message: "date zorunlu" });
   try {
-    await setUtuPaketSecondaryModelId(String(date), secondaryModelId ?? null);
-    logActivity(req, "utu_paket_ikinci_model_ayarla", "utu_paket_meta", {
-      date: String(date),
-      secondaryModelId: secondaryModelId ?? null,
-    });
+    if (secondaryModelId !== undefined) {
+      await setUtuPaketSecondaryModelId(String(date), secondaryModelId ?? null);
+      logActivity(req, "utu_paket_ikinci_model_ayarla", "utu_paket_meta", {
+        date: String(date),
+        secondaryModelId: secondaryModelId ?? null,
+      });
+    }
+    if (ekran5ShowPrimary !== undefined) {
+      await setUtuPaketEkran5ShowPrimary(String(date), Boolean(ekran5ShowPrimary));
+      logActivity(req, "ekran5_birincil_goster", "utu_paket_meta", {
+        date: String(date),
+        ekran5ShowPrimary: Boolean(ekran5ShowPrimary),
+      });
+    }
     void bumpEkranRefreshSignal().catch(() => {});
     res.json({ ok: true });
   } catch (err) {
@@ -1939,10 +1962,15 @@ app.get("/api/utu-paket-b", requirePermission("utuPaket"), async (req, res) => {
 });
 
 app.put("/api/utu-paket-b", requirePermission("utuPaket"), async (req, res) => {
-  const { date, modelId, stages, beden, stageEkSayim } = req.body || {};
+  const { date, modelId, stages, beden, stageEkSayim, packagingTarget } = req.body || {};
   if (!date || !modelId) return res.status(400).json({ message: "date ve modelId zorunlu" });
   try {
-    await saveUtuPaketSecondaryDay(String(date), Number(modelId), { stages, beden, stageEkSayim });
+    await saveUtuPaketSecondaryDay(String(date), Number(modelId), {
+      stages,
+      beden,
+      stageEkSayim,
+      packagingTarget,
+    });
     logActivity(req, "utu_paket_ikinci_kaydet", "utu_paket_slots_b", {
       date: String(date),
       modelId: Number(modelId),

@@ -828,6 +828,14 @@ export function initDb() {
     db.run("ALTER TABLE utu_paket_meta ADD COLUMN product_name TEXT NOT NULL DEFAULT ''", () => {});
     db.run("ALTER TABLE utu_paket_meta ADD COLUMN product_model TEXT NOT NULL DEFAULT ''", () => {});
     db.run("ALTER TABLE utu_paket_meta ADD COLUMN secondary_model_id INTEGER", () => {});
+    db.run(
+      "ALTER TABLE utu_paket_meta ADD COLUMN ekran5_show_primary INTEGER NOT NULL DEFAULT 1",
+      () => {}
+    );
+    db.run(
+      "ALTER TABLE utu_paket_meta ADD COLUMN secondary_packaging_target INTEGER NOT NULL DEFAULT 0",
+      () => {}
+    );
 
     db.run(`
       CREATE TABLE IF NOT EXISTS utu_paket_slots_b (
@@ -865,6 +873,22 @@ export function initDb() {
     db.run(
       `CREATE INDEX IF NOT EXISTS idx_utu_paket_beden_b_date ON utu_paket_beden_b (production_date, model_id)`
     );
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS utu_paket_b_model_meta (
+        production_date TEXT NOT NULL,
+        model_id INTEGER NOT NULL,
+        packaging_target INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (production_date, model_id)
+      )
+    `);
+    db.run(`
+      INSERT OR IGNORE INTO utu_paket_b_model_meta (production_date, model_id, packaging_target)
+      SELECT production_date, secondary_model_id, secondary_packaging_target
+      FROM utu_paket_meta
+      WHERE secondary_model_id IS NOT NULL
+        AND secondary_packaging_target > 0
+    `);
 
     // ek_sayim: optik ve ütü için elle girilen ek adet (saat toplamına eklenir)
     db.run(
