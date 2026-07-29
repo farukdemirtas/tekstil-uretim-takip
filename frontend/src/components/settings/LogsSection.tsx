@@ -34,6 +34,8 @@ const ACTION_LABELS: Record<string, string> = {
   veritabani_yedek: "Veritabanı yedek alma",
   veritabani_geri_yukle: "Veritabanı geri yükleme",
   utu_paket_kaydet: "Ütü–paket kaydı",
+  utu_paket_ikinci_model_ayarla: "Ütü–paket 2. model ayarı",
+  utu_paket_ikinci_kaydet: "Ütü–paket 2. model kaydı",
   izin_yoklama_senkron: "İzin yoklamasından sahada yok senkronu",
   takipsan_senkron: "Takipsan senkronu",
 };
