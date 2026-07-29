@@ -221,6 +221,10 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
     })();
   }, [enabled, selectedDate, loadMeta, loadData]);
 
+  useEffect(() => {
+    setEkSayimOpen(false);
+  }, [activeStage]);
+
   const modelIdForBeden = dayMeta.secondaryModelId;
 
   useEffect(() => {
@@ -879,55 +883,88 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
                   })()}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
-                    {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => (
-                      <label
-                        key={key}
-                        className="flex flex-col rounded-lg border border-violet-200 bg-white/80 p-2.5 sm:rounded-xl sm:p-3 dark:border-violet-700 dark:bg-slate-900/50"
-                      >
-                        <span className="text-[10px] font-bold uppercase text-slate-500">{label}</span>
-                        <input
-                          type="number"
-                          min={0}
-                          inputMode="numeric"
-                          className="mt-1 w-full rounded-lg border-0 bg-slate-50 px-2 py-2 text-center text-lg font-bold tabular-nums sm:text-xl dark:bg-slate-800"
-                          value={data.stages[activeStage][key] || ""}
-                          onChange={(e) => setSlot(activeStage, key, e.target.value)}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                    <button
-                      type="button"
-                      onClick={() => setEkSayimOpen((o) => !o)}
-                      className={`inline-flex w-full items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold sm:w-auto ${
-                        ekSayimOpen
-                          ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-200"
-                          : "border-slate-200 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
-                      }`}
-                      aria-expanded={ekSayimOpen}
-                    >
-                      + Ek adet
-                    </button>
-                    {ekSayimOpen && (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={0}
-                          inputMode="numeric"
-                          className="w-full flex-1 rounded-lg border border-slate-200 px-2 py-2 text-center font-bold sm:w-24 dark:border-slate-600 dark:bg-slate-800"
-                          value={data.stageEkSayim?.[activeStage] || ""}
-                          onChange={(e) => setEkSayim(activeStage, e.target.value)}
-                        />
-                        <span className="shrink-0 text-xs text-slate-500">
-                          {stageTotals[activeStage].toLocaleString("tr-TR")}
-                        </span>
+                <div className="overflow-hidden rounded-2xl border border-violet-200/80 bg-white/60 dark:border-violet-700/50 dark:bg-slate-900/30">
+                  <div className="px-3 py-3 sm:px-5 sm:py-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                          {UTU_PAKET_STAGE_META[activeStage].label} — saatlik giriş
+                        </h3>
+                        <p className="mt-2 text-lg font-black tabular-nums text-violet-700 dark:text-violet-400 sm:text-xl">
+                          Günlük toplam: {stageTotals[activeStage].toLocaleString("tr-TR")} adet
+                        </p>
                       </div>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setEkSayimOpen((o) => !o)}
+                        className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold sm:w-auto ${
+                          ekSayimOpen
+                            ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-200"
+                            : "border-slate-200 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
+                        }`}
+                        aria-expanded={ekSayimOpen}
+                      >
+                        + Ek adet
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:grid-cols-3 sm:gap-3">
+                      {UTU_PAKET_SLOT_DEFS.map(({ key, label }) => (
+                        <label
+                          key={key}
+                          className="flex flex-col rounded-xl border border-violet-200/90 bg-violet-50/50 p-2.5 sm:rounded-2xl sm:p-3 dark:border-violet-700/50 dark:bg-slate-800/50"
+                        >
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:text-xs">{label}</span>
+                          <input
+                            type="number"
+                            min={0}
+                            inputMode="numeric"
+                            className="mt-1.5 w-full rounded-lg border-0 bg-white px-2 py-2 text-center text-lg font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-violet-200/80 focus:ring-2 focus:ring-violet-500 sm:mt-2 sm:rounded-xl sm:py-3 sm:text-2xl dark:bg-slate-900 dark:text-white dark:ring-violet-700/50"
+                            value={data.stages[activeStage][key] || ""}
+                            onChange={(e) => setSlot(activeStage, key, e.target.value)}
+                            aria-label={`${UTU_PAKET_STAGE_META[activeStage].label} ${label}`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+
+                    {ekSayimOpen && (() => {
+                      const ekVal = data.stageEkSayim?.[activeStage] ?? 0;
+                      const stageLabel = UTU_PAKET_STAGE_META[activeStage].label;
+                      return (
+                        <div className="mt-4 border-t border-violet-200/80 pt-4 dark:border-violet-700/50">
+                          <p className="mb-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                            Ek adet saatlik tabloya eklenerek {stageLabel.toLowerCase()} günlük toplamını günceller. Ana
+                            tablodaki saat dilimleri değişmez.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-4">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                inputMode="numeric"
+                                className="w-28 rounded-xl border border-violet-200/90 bg-white px-3 py-2 text-center text-xl font-bold tabular-nums text-slate-900 shadow-inner ring-1 ring-violet-200/80 focus:ring-2 focus:ring-violet-500 dark:border-violet-600 dark:bg-slate-900 dark:text-white dark:ring-violet-700/50"
+                                value={ekVal || ""}
+                                onChange={(e) => setEkSayim(activeStage, e.target.value)}
+                                aria-label={`${stageLabel} ek adet`}
+                              />
+                              <span className="text-sm text-slate-500 dark:text-slate-400">adet</span>
+                            </label>
+                            <p className="text-sm tabular-nums text-slate-600 dark:text-slate-300">
+                              Saatlik: {sumUtuPaketSlots(data.stages[activeStage]).toLocaleString("tr-TR")} + ek:{" "}
+                              {ekVal.toLocaleString("tr-TR")} ={" "}
+                              <strong>{stageTotals[activeStage].toLocaleString("tr-TR")}</strong>
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="mt-4 border-t border-violet-200/80 pt-4 dark:border-violet-700/50">
+                      <p className="mb-2 text-xs font-semibold text-slate-500">Gün içi dağılım</p>
+                      <MiniSpark values={UTU_PAKET_SLOT_DEFS.map(({ key }) => data.stages[activeStage][key])} />
+                    </div>
                   </div>
-                  <MiniSpark values={UTU_PAKET_SLOT_DEFS.map(({ key }) => data.stages[activeStage][key])} />
                 </div>
               )}
             </>
