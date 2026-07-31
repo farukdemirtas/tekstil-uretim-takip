@@ -1993,6 +1993,62 @@ export async function syncIzinAttendance(date?: string): Promise<IzinAttendanceS
   return d;
 }
 
+// ─── EKRAN1 — İzin / yoklama TV panoları (izin-takip proxy) ─────────────────
+
+export type IzinTvLeaveRow = {
+  id: number;
+  fullName: string;
+  position: string | null;
+  reason: string;
+  startDate: string;
+  endDate: string;
+  status: "beklemede" | "onaylandi" | "reddedildi";
+  createdAt?: string;
+};
+
+export type IzinTvAttendanceEntry = {
+  id: number;
+  cardNo?: string;
+  fullName: string;
+  entryDate: string;
+  description: string;
+  position: string | null;
+};
+
+export type IzinTvAttendanceSession = {
+  id: number;
+  attendanceDate: string;
+  title: string;
+  totalPersonnel: number;
+  entries: IzinTvAttendanceEntry[];
+};
+
+export async function getIzinTvLeaves(): Promise<IzinTvLeaveRow[]> {
+  const res = await apiFetch(`${apiBase()}/izin/tv/leaves`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+    throw new Error(d.error ?? d.message ?? "İzin panosu alınamadı");
+  }
+  const data = await res.json();
+  return Array.isArray(data) ? (data as IzinTvLeaveRow[]) : [];
+}
+
+export async function getIzinTvAttendance(date?: string): Promise<IzinTvAttendanceSession | null> {
+  const q = date ? `?date=${encodeURIComponent(date)}` : "";
+  const res = await apiFetch(`${apiBase()}/izin/tv/attendance${q}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+    throw new Error(d.error ?? d.message ?? "Yoklama panosu alınamadı");
+  }
+  return (await res.json()) as IzinTvAttendanceSession | null;
+}
+
 // ─── Proses Veri Satırları (sunucu kalıcı depolama) ───────────────────────────
 
 export type ProsesVeriRow = {

@@ -134,7 +134,7 @@ import { syncTakipsanToUtuPaket, takipsanSyncState, todayTurkeyIso, fetchTakipsa
 import { isTakipsanConfigured } from "./takipsanClient.js";
 import { scheduleIzinAttendanceSyncJob } from "./izinAttendanceSyncJob.js";
 import { syncIzinAttendanceToRoster, izinAttendanceSyncState } from "./izinAttendanceSync.js";
-import { isIzinApiConfigured } from "./izinClient.js";
+import { isIzinApiConfigured, fetchLeavesBoard, fetchAttendanceBoard } from "./izinClient.js";
 import {
   exportDatabaseSql,
   getDatabaseInfo,
@@ -2091,6 +2091,45 @@ app.post("/api/izin/sync-attendance", requireAuth, async (req, res) => {
   } catch (err) {
     return res.status(500).json({
       message: "Yoklama senkronu başarısız",
+      error: String(err?.message ?? err),
+    });
+  }
+});
+
+/** EKRAN1 TV slaytları — izin panosu verisi (sunucu → izin-takip API) */
+app.get("/api/izin/tv/leaves", requireAuth, async (_req, res) => {
+  if (!isIzinApiConfigured()) {
+    return res.status(503).json({
+      message:
+        "İzin API yapılandırılmamış. backend/.env içinde IZIN_API_USERNAME ve IZIN_API_PASSWORD tanımlayın.",
+    });
+  }
+  try {
+    const data = await fetchLeavesBoard();
+    return res.json(Array.isArray(data) ? data : []);
+  } catch (err) {
+    return res.status(502).json({
+      message: "İzin panosu verisi alınamadı",
+      error: String(err?.message ?? err),
+    });
+  }
+});
+
+/** EKRAN1 TV slaytları — yoklama panosu verisi */
+app.get("/api/izin/tv/attendance", requireAuth, async (req, res) => {
+  if (!isIzinApiConfigured()) {
+    return res.status(503).json({
+      message:
+        "İzin API yapılandırılmamış. backend/.env içinde IZIN_API_USERNAME ve IZIN_API_PASSWORD tanımlayın.",
+    });
+  }
+  const date = String(req.query?.date ?? "").trim();
+  try {
+    const data = await fetchAttendanceBoard(date || undefined);
+    return res.json(data ?? null);
+  } catch (err) {
+    return res.status(502).json({
+      message: "Yoklama panosu verisi alınamadı",
       error: String(err?.message ?? err),
     });
   }

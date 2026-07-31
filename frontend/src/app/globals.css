@@ -276,6 +276,38 @@ html.ekran4-icerik body {
   overflow: hidden;
 }
 
+/* TV izin / yoklama panoları (EKRAN1 slaytları) */
+html.tv-icerik {
+  font-size: 100%;
+}
+@media (min-width: 1920px) {
+  html.tv-icerik {
+    font-size: 106.25%;
+  }
+}
+@media (min-width: 2560px) {
+  html.tv-icerik {
+    font-size: 118.75%;
+  }
+}
+@media (min-width: 3200px) {
+  html.tv-icerik {
+    font-size: 135%;
+  }
+}
+@media (min-width: 3840px) {
+  html.tv-icerik {
+    font-size: 150%;
+  }
+}
+html.tv-icerik,
+html.tv-icerik body {
+  height: 100%;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
 /* EKRAN4 slayt — sıradaki slayta kadar dolan çubuk + içerik girişi */
 @keyframes ekran4-slide-progress-fill {
   from {

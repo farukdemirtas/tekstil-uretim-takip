@@ -6,7 +6,6 @@ import {
   evaluateHedefAlertEval,
   getEkran1Target,
   setEkran1Target,
-  getHedefTakipStageTotals,
   getTopWorkersAnalytics,
   getProduction,
   getProsesVeriRowsFromServer,
@@ -14,11 +13,14 @@ import {
   getDayProductMeta,
   getEkran1GenelIlerleme,
   getEkranRefreshSignal,
+  getIzinTvLeaves,
+  getIzinTvAttendance,
   setAuthToken,
   type HedefAlertEvalPayload,
-  type HedefStageLineDto,
   type PersonnelBirthdayRow,
   type Ekran1GenelIlerleme,
+  type IzinTvLeaveRow,
+  type IzinTvAttendanceSession,
 } from "@/lib/api";
 
 import {
@@ -36,9 +38,16 @@ import { sumProductionRow } from "@/lib/productionSlots";
 import { averageWorkerEfficiency, workerEfficiencyPercent } from "@/lib/workerEfficiency";
 import { hasPermission } from "@/lib/permissions";
 import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker";
+import { Ekran1IzinSlide } from "@/components/ekran1/Ekran1IzinSlide";
+import { Ekran1YoklamaSlide } from "@/components/ekran1/Ekran1YoklamaSlide";
 import { useScreenHeartbeat } from "@/lib/useScreenHeartbeat";
 
 const AUTO_REFRESH_MS = 30_000;
+/** EKRAN1 ana slaytlar: üretim → yoklama → izin */
+const CONTENT_SLIDE_COUNT = 3;
+const CONTENT_SLIDE_ROTATE_MS = 30_000;
+const CONTENT_SLIDE_LABELS = ["Üretim", "Yoklama panosu", "İzin panosu"] as const;
+const IZIN_TV_REFRESH_MS = 30_000;
 /** Doğum günü: yalnızca periyodik overlay — tek kişide ~10 sn görünür, ardından ~50 sn gizli (döngü 60 sn). Çoklu kişide süre uzar; sırayla dönüş. */
 const BDAY_OVERLAY_VISIBLE_MS = 10_000;
 const BDAY_OVERLAY_CYCLE_MS = 60_000;
@@ -103,40 +112,6 @@ function completedAgeAtReference(birthDateIso: string, referenceIso: string): nu
   if (rm < bm || (rm === bm && rd < bd)) age -= 1;
   return Math.max(0, age);
 }
-
-const STAGE_GRADIENTS = [
-  "from-emerald-500 to-teal-400",
-  "from-sky-500 to-blue-400",
-  "from-violet-500 to-purple-400",
-  "from-amber-500 to-orange-400",
-  "from-rose-500 to-pink-400",
-  "from-cyan-500 to-sky-400",
-  "from-fuchsia-500 to-pink-400",
-  "from-lime-500 to-green-400",
-] as const;
-
-const STAGE_GLOWS = [
-  "shadow-emerald-500/30",
-  "shadow-sky-500/30",
-  "shadow-violet-500/30",
-  "shadow-amber-500/30",
-  "shadow-rose-500/30",
-  "shadow-cyan-500/30",
-  "shadow-fuchsia-500/30",
-  "shadow-lime-500/30",
-] as const;
-
-/** TV / uzak mesafe: açık zeminde okunaklı koyu tonlar */
-const STAGE_TEXT = [
-  "text-emerald-950",
-  "text-sky-950",
-  "text-violet-950",
-  "text-amber-950",
-  "text-rose-950",
-  "text-cyan-950",
-  "text-fuchsia-950",
-  "text-lime-950",
-] as const;
 
 const BDAY_CONFETTI_SPECS: {
   left: string;
@@ -425,8 +400,6 @@ export default function Ekran1IcerikPage() {
   const [target, setTarget] = useState(5000);
   const [manualTarget, setManualTarget] = useState<number | null>(null);
   const [hedefOpen, setHedefOpen] = useState(false);
-  const [stages, setStages] = useState<HedefStageLineDto[]>([]);
-  const [todayStages, setTodayStages] = useState<HedefStageLineDto[]>([]);
   const [startDate, setStartDate] = useState(() => todayWorkdayIsoTurkey());
   const [endDate, setEndDate] = useState(() => todayWorkdayIsoTurkey());
   const [error, setError] = useState("");
@@ -447,6 +420,13 @@ export default function Ekran1IcerikPage() {
   const [productModel, setProductModel] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const activeModelIdRef = useRef<number | null>(null);
+  const slideRotateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [contentSlide, setContentSlide] = useState(0);
+  const [izinLeaves, setIzinLeaves] = useState<IzinTvLeaveRow[]>([]);
+  const [yoklamaSession, setYoklamaSession] = useState<IzinTvAttendanceSession | null>(null);
+  const [izinTvLoading, setIzinTvLoading] = useState(true);
+  const [izinTvError, setIzinTvError] = useState("");
+  const [izinTvLastUpdated, setIzinTvLastUpdated] = useState("");
 
   const birthdayCelebration = useMemo(() => {
     if (birthdayToday.length === 0)
@@ -497,11 +477,7 @@ export default function Ekran1IcerikPage() {
   /** El ile hedef varsa onu kullan, yoksa API/model hedefi */
   const genelHedef = manualTarget != null && manualTarget > 0 ? manualTarget : apiHedef;
 
-  const genelTamamlanan = useMemo(() => {
-    if (genelIlerleme) return genelIlerleme.totalCompleted;
-    if (!stages.length) return 0;
-    return Math.min(...stages.map((s) => (Number.isFinite(s.total) ? s.total : 0)));
-  }, [genelIlerleme, stages]);
+  const genelTamamlanan = useMemo(() => genelIlerleme?.totalCompleted ?? 0, [genelIlerleme]);
 
   const bugunUretilen = useMemo(() => genelIlerleme?.todayProduced ?? 0, [genelIlerleme]);
 
@@ -532,9 +508,7 @@ export default function Ekran1IcerikPage() {
       if (meta?.productName) setProductName(meta.productName);
       if (meta?.productModel) setProductModel(meta.productModel);
 
-      const [totals, todayTotals, rawCurrent, rawPrev, dayRowsRaw, genelOzet, ekranTargetRes] = await Promise.all([
-        getHedefTakipStageTotals(startDate, endDate, effectiveModelId ?? undefined),
-        getHedefTakipStageTotals(endDate, endDate, effectiveModelId ?? undefined),
+      const [rawCurrent, rawPrev, dayRowsRaw, genelOzet, ekranTargetRes] = await Promise.all([
         getTopWorkersAnalytics({ startDate, endDate, limit: 200 }).catch(() => []),
         getTopWorkersAnalytics({ startDate: prevStartDate, endDate: prevEndDate, limit: 200 }).catch(() => []),
         isSingleDay ? getProduction(endDate).catch(() => []) : Promise.resolve([]),
@@ -548,20 +522,6 @@ export default function Ekran1IcerikPage() {
           : null
       );
       const dayRows = isSingleDay ? dayRowsRaw : [];
-      const stageLines =
-        genelOzet?.stages?.length
-          ? genelOzet.stages
-          : totals.stages?.length
-            ? totals.stages
-            : [];
-      setStages(stageLines);
-      setTodayStages(
-        genelOzet?.todayStages?.length
-          ? genelOzet.todayStages
-          : todayTotals.stages?.length
-            ? todayTotals.stages
-            : []
-      );
 
       const genelRows = await getProsesVeriRowsFromServer(GENEL_VERIMLILIK_MODEL_CODE).catch(() => []);
       if (genelRows.length > 0) {
@@ -701,6 +661,26 @@ export default function Ekran1IcerikPage() {
     }
   }, [startDate, endDate, modelId]);
 
+  const fetchIzinTvData = useCallback(async (silent = true) => {
+    if (!silent) setIzinTvLoading(true);
+    try {
+      const [leaves, attendance] = await Promise.all([
+        getIzinTvLeaves(),
+        getIzinTvAttendance(),
+      ]);
+      setIzinLeaves(Array.isArray(leaves) ? leaves : []);
+      setYoklamaSession(attendance);
+      setIzinTvError("");
+      setIzinTvLastUpdated(
+        new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      );
+    } catch (e) {
+      setIzinTvError(e instanceof Error ? e.message : "İzin verisi yüklenemedi");
+    } finally {
+      setIzinTvLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
     if (!token || !hasPermission("ekran1")) {
@@ -760,6 +740,41 @@ export default function Ekran1IcerikPage() {
     const id = setInterval(() => void fetchData(true), AUTO_REFRESH_MS);
     return () => clearInterval(id);
   }, [hasToken, fetchData]);
+
+  useEffect(() => {
+    if (!hasToken) return;
+    void fetchIzinTvData(false);
+  }, [hasToken, fetchIzinTvData]);
+
+  useEffect(() => {
+    if (!hasToken) return;
+    const id = setInterval(() => void fetchIzinTvData(true), IZIN_TV_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [hasToken, fetchIzinTvData]);
+
+  const scheduleContentSlideRotate = useCallback(() => {
+    if (slideRotateTimerRef.current) clearInterval(slideRotateTimerRef.current);
+    slideRotateTimerRef.current = window.setInterval(
+      () => setContentSlide((s) => (s + 1) % CONTENT_SLIDE_COUNT),
+      CONTENT_SLIDE_ROTATE_MS,
+    );
+  }, []);
+
+  const goToContentSlide = useCallback(
+    (index: number) => {
+      setContentSlide(index);
+      scheduleContentSlideRotate();
+    },
+    [scheduleContentSlideRotate],
+  );
+
+  useEffect(() => {
+    if (!hasToken) return;
+    scheduleContentSlideRotate();
+    return () => {
+      if (slideRotateTimerRef.current) clearInterval(slideRotateTimerRef.current);
+    };
+  }, [hasToken, scheduleContentSlideRotate]);
 
   /** Uzaktan yenileme sinyali — hedef veya model değişince sessiz yenileme */
   useEffect(() => {
@@ -880,32 +895,6 @@ export default function Ekran1IcerikPage() {
     }
   }
 
-  const stageRows = useMemo(() => {
-    const todayList = todayStages;
-    return stages.map((s, i) => {
-      const shortP = s.processName.length > 18 ? `${s.processName.slice(0, 16)}…` : s.processName;
-      const label = s.processName ? `${s.teamLabel} · ${shortP}` : s.teamLabel;
-      const todayMatch =
-        todayList.find(
-          (t) =>
-            t.sortOrder === s.sortOrder &&
-            t.teamCode === s.teamCode &&
-            t.processName === s.processName
-        ) ?? todayList[i];
-      const biten = Number.isFinite(s.total) ? s.total : 0;
-      const bugun = Number.isFinite(todayMatch?.total) ? todayMatch.total : 0;
-      return {
-        label,
-        biten,
-        bugun,
-        pct: calcPercent(biten, genelHedef),
-        gradient: STAGE_GRADIENTS[i % STAGE_GRADIENTS.length],
-        glow: STAGE_GLOWS[i % STAGE_GLOWS.length],
-        textColor: STAGE_TEXT[i % STAGE_TEXT.length],
-      };
-    });
-  }, [stages, todayStages, genelHedef]);
-
   if (!hasToken) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-6 bg-slate-100 px-8 text-center text-slate-900">
@@ -928,7 +917,7 @@ export default function Ekran1IcerikPage() {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 flex flex-row overflow-hidden bg-slate-100 text-neutral-900 [color-scheme:light]"
+      className="fixed inset-0 flex flex-col overflow-hidden bg-slate-100 text-neutral-900 [color-scheme:light]"
     >
       {/* Hafif dekor (kontrastı düşürmez) */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
@@ -1080,12 +1069,15 @@ export default function Ekran1IcerikPage() {
         </div>
       )}
 
+      <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+      {contentSlide === 0 ? (
+        <>
       {/* Sol ticker */}
       <div className="relative z-10 hidden w-52 shrink-0 border-r-2 border-slate-200 bg-white py-3 lg:flex lg:flex-col xl:w-60">
         <EfficiencyTicker items={leftItems} />
       </div>
 
-      {/* Ana içerik: üst sabit, alt aşamalar kalan yükseklikte kayar (TV’de kesilme olmasın) */}
+      {/* Ana içerik */}
       <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {hedefAlertServer && hedefAlertServer.alerts?.length > 0 ? (
           <div
@@ -1134,7 +1126,7 @@ export default function Ekran1IcerikPage() {
                 </div>
                 {lastUpdated && (
                   <p className="text-[11px] font-semibold text-slate-700">
-                    Son güncelleme {lastUpdated} · 30 sn yenileme
+                    Son güncelleme {lastUpdated} · 30 sn yenileme · slayt {contentSlide + 1}/{CONTENT_SLIDE_COUNT}
                   </p>
                 )}
               </div>
@@ -1169,8 +1161,9 @@ export default function Ekran1IcerikPage() {
             </div>
           )}
 
-          {/* Genel ilerleme — kompakt; TV’de başlık her zaman okunur */}
-          <section className="flex shrink-0 flex-col gap-2 md:gap-3">
+          {/* Genel ilerleme — sayfa ortasında */}
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+          <section className="flex w-full max-w-5xl flex-col gap-2 md:gap-3">
             <div className="flex justify-center px-2">
               <h1
                 className="rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/25 ring-2 ring-slate-700/50"
@@ -1181,7 +1174,7 @@ export default function Ekran1IcerikPage() {
             </div>
 
             {/* Bar + yüzde yan yana — rakam çizgide boğulmaz */}
-            <div className="mx-auto w-full max-w-5xl px-1">
+            <div className="w-full px-1">
               <div
                 className="grid items-center gap-3 sm:grid-cols-[1fr_auto] sm:gap-4 md:gap-6"
                 role="group"
@@ -1346,87 +1339,65 @@ export default function Ekran1IcerikPage() {
               })()}
             </div>
           </section>
-
-          {/* Aşama kartları — kalan yükseklikte kaydır; kesilmez */}
-          {stageRows.length > 0 && (
-            <section className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
-              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain pb-6 [-webkit-overflow-scrolling:touch]">
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3 lg:grid-cols-5 min-[1920px]:gap-4">
-                {stageRows.map((row, idx) => (
-                  <div
-                    key={`${row.label}-${idx}`}
-                    className="relative overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-md dark:border-slate-600 dark:bg-slate-900"
-                    style={{ padding: "clamp(0.5rem, 1.2vw, 1rem)" }}
-                  >
-                    {/* Üst renk şeridi */}
-                    <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${row.gradient}`} />
-
-                    <div className="flex items-start justify-between gap-2 pt-1.5">
-                      <span
-                        className="min-w-0 text-left font-bold leading-snug text-slate-950 dark:text-slate-100"
-                        style={{ fontSize: "clamp(0.65rem, 1.15vw, 0.95rem)" }}
-                      >
-                        {row.label}
-                      </span>
-                      <span
-                        className={`shrink-0 font-black tabular-nums ${row.textColor} dark:opacity-95`}
-                        style={{ fontSize: "clamp(1rem, 2.2vw, 1.75rem)" }}
-                      >
-                        {row.pct.toFixed(0)}%
-                      </span>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div className="mt-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
-                      style={{ height: "clamp(0.5rem, 0.9vw, 0.875rem)" }}>
-                      <div
-                        className={`h-full rounded-full bg-gradient-to-r ${row.gradient} transition-[width] duration-1000 ease-out`}
-                        style={{ width: `${row.pct}%` }}
-                      />
-                    </div>
-
-                    <div className="mt-2 grid grid-cols-2 gap-1.5 border-t border-slate-100 pt-2 dark:border-slate-700">
-                      <div className="min-w-0 text-center">
-                        <p
-                          className="font-black uppercase tracking-wide text-emerald-600"
-                          style={{ fontSize: "clamp(0.55rem, 0.85vw, 0.75rem)" }}
-                        >
-                          Biten
-                        </p>
-                        <p
-                          className="font-black tabular-nums text-emerald-800 dark:text-emerald-300"
-                          style={{ fontSize: "clamp(0.8rem, 1.7vw, 1.25rem)" }}
-                        >
-                          {row.biten.toLocaleString("tr-TR")}
-                        </p>
-                      </div>
-                      <div className="min-w-0 text-center">
-                        <p
-                          className="font-black uppercase tracking-wide text-teal-600"
-                          style={{ fontSize: "clamp(0.55rem, 0.85vw, 0.75rem)" }}
-                        >
-                          Bugün
-                        </p>
-                        <p
-                          className="font-black tabular-nums text-teal-800 dark:text-teal-300"
-                          style={{ fontSize: "clamp(0.8rem, 1.7vw, 1.25rem)" }}
-                        >
-                          +{row.bugun.toLocaleString("tr-TR")}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                </div>
-              </div>
-            </section>
-          )}
+          </div>
         </div>
       </div>
 
       {/* Sağ ticker */}
       <div className="relative z-10 hidden w-52 shrink-0 border-l-2 border-slate-200 bg-white py-3 lg:flex lg:flex-col xl:w-60">
         <EfficiencyTicker items={rightItems} />
+      </div>
+        </>
+      ) : contentSlide === 1 ? (
+        <Ekran1YoklamaSlide
+          session={yoklamaSession}
+          loading={izinTvLoading}
+          error={izinTvError || undefined}
+          lastUpdated={izinTvLastUpdated || undefined}
+        />
+      ) : (
+        <Ekran1IzinSlide
+          leaves={izinLeaves}
+          loading={izinTvLoading}
+          error={izinTvError || undefined}
+          lastUpdated={izinTvLastUpdated || undefined}
+        />
+      )}
+      </div>
+
+      {/* Slayt göstergesi — üretim / yoklama / izin (30 sn); tıklanınca anında geçiş */}
+      <div
+        className="relative z-[15] shrink-0 border-t border-slate-300/80 bg-white/95 px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] shadow-[0_-4px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm"
+        role="tablist"
+        aria-label="EKRAN1 slaytları"
+      >
+        <div className="mx-auto w-full max-w-[min(100%,120rem)]">
+          <div className="relative mb-2 h-1.5 overflow-hidden rounded-full bg-slate-200/90 shadow-inner ring-1 ring-slate-200/50 min-[1920px]:h-2">
+            <div
+              key={contentSlide}
+              className="ekran4-slide-progress-bar h-full rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500"
+              style={{ "--ekran4-slide-duration": `${CONTENT_SLIDE_ROTATE_MS}ms` } as CSSProperties}
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+            {CONTENT_SLIDE_LABELS.map((label, i) => (
+              <button
+                key={label}
+                type="button"
+                role="tab"
+                aria-selected={i === contentSlide}
+                onClick={() => goToContentSlide(i)}
+                className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider transition sm:text-xs ${
+                  i === contentSlide
+                    ? "bg-slate-900 text-white shadow-md"
+                    : "bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ── HEDEF MODAL ── */}

@@ -76,3 +76,14 @@ async function apiRequest(path, options = {}) {
 export async function fetchAttendanceSession(date) {
   return apiRequest(`/attendance?date=${encodeURIComponent(date)}`);
 }
+
+/** TV izin panosu — en yeni talepler */
+export async function fetchLeavesBoard() {
+  return apiRequest("/leaves/board");
+}
+
+/** TV yoklama panosu — son oturum veya belirli gün */
+export async function fetchAttendanceBoard(date) {
+  const q = date ? `?date=${encodeURIComponent(String(date).trim())}` : "";
+  return apiRequest(`/attendance/board${q}`);
+}
