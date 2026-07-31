@@ -664,16 +664,33 @@ export default function Ekran1IcerikPage() {
   const fetchIzinTvData = useCallback(async (silent = true) => {
     if (!silent) setIzinTvLoading(true);
     try {
-      const [leaves, attendance] = await Promise.all([
+      const [leavesResult, attendanceResult] = await Promise.allSettled([
         getIzinTvLeaves(),
         getIzinTvAttendance(),
       ]);
-      setIzinLeaves(Array.isArray(leaves) ? leaves : []);
-      setYoklamaSession(attendance);
-      setIzinTvError("");
-      setIzinTvLastUpdated(
-        new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-      );
+      const errors: string[] = [];
+      if (leavesResult.status === "fulfilled") {
+        setIzinLeaves(Array.isArray(leavesResult.value) ? leavesResult.value : []);
+      } else {
+        errors.push(
+          leavesResult.reason instanceof Error ? leavesResult.reason.message : "İzin panosu alınamadı",
+        );
+      }
+      if (attendanceResult.status === "fulfilled") {
+        setYoklamaSession(attendanceResult.value);
+      } else {
+        errors.push(
+          attendanceResult.reason instanceof Error
+            ? attendanceResult.reason.message
+            : "Yoklama panosu alınamadı",
+        );
+      }
+      setIzinTvError(errors.join(" · "));
+      if (errors.length === 0) {
+        setIzinTvLastUpdated(
+          new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+        );
+      }
     } catch (e) {
       setIzinTvError(e instanceof Error ? e.message : "İzin verisi yüklenemedi");
     } finally {

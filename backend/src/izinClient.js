@@ -1,9 +1,25 @@
 import "./loadEnv.js";
 
 const DEFAULT_BASE = "https://izin.yesilimajtekstil.com/api";
+const FETCH_TIMEOUT_MS = Number(process.env.IZIN_API_TIMEOUT_MS) || 12_000;
 
 let cachedToken = null;
 let tokenExpiresAt = 0;
+
+async function fetchWithTimeout(url, options = {}) {
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const msg = String(err?.message ?? err);
+    if (err?.name === "TimeoutError" || msg.includes("timed out") || msg.includes("abort")) {
+      throw new Error(`İzin API yanıt vermedi (${Math.round(FETCH_TIMEOUT_MS / 1000)} sn)`);
+    }
+    throw new Error(`İzin API bağlantı hatası: ${msg}`);
+  }
+}
 
 function apiBaseUrl() {
   const raw = String(process.env.IZIN_API_BASE_URL || DEFAULT_BASE).trim();
@@ -22,7 +38,7 @@ export function isIzinApiConfigured() {
 async function login() {
   const username = String(process.env.IZIN_API_USERNAME || "").trim();
   const password = String(process.env.IZIN_API_PASSWORD || "");
-  const res = await fetch(`${apiBaseUrl()}/auth/login`, {
+  const res = await fetchWithTimeout(`${apiBaseUrl()}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -48,7 +64,7 @@ async function getToken() {
 async function apiRequest(path, options = {}) {
   const url = `${apiBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
   const run = async (token) =>
-    fetch(url, {
+    fetchWithTimeout(url, {
       ...options,
       headers: {
         "Content-Type": "application/json",

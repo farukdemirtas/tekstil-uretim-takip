@@ -24,10 +24,7 @@ function apiBase(): string {
   const fromEnv = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
 
   if (typeof window !== "undefined") {
-    if (process.env.NODE_ENV === "development") {
-      return "/api";
-    }
-    return fromEnv || "/api";
+    return "/api";
   }
 
   if (fromEnv) return fromEnv;
@@ -67,7 +64,17 @@ function handleUnauthorized() {
 
 /** Ortak fetch yardımcısı — 401'i merkezi olarak yönetir */
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(input, init);
+  let res: Response;
+  try {
+    res = await fetch(input, init);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      msg.toLowerCase().includes("fetch")
+        ? "Sunucuya bağlanılamadı. Ağ veya API adresini kontrol edin."
+        : `Sunucuya bağlanılamadı: ${msg}`,
+    );
+  }
   if (res.status === 401) {
     handleUnauthorized();
     throw new Error("Oturum süresi doldu. Lütfen tekrar giriş yapın.");
