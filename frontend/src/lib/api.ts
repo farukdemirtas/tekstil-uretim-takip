@@ -2006,8 +2006,19 @@ export type IzinTvLeaveRow = {
   createdAt?: string;
 };
 
-export type IzinTvAttendanceEntry = {
+export type IzinTvRaporluLeave = {
   id: number;
+  fullName: string;
+  position: string | null;
+  reason: string;
+  description?: string | null;
+  startDate: string;
+  endDate: string;
+  status: "beklemede" | "onaylandi" | "reddedildi";
+};
+
+export type IzinTvAttendanceEntry = {
+  id?: number;
   cardNo?: string;
   fullName: string;
   entryDate: string;
@@ -2016,11 +2027,13 @@ export type IzinTvAttendanceEntry = {
 };
 
 export type IzinTvAttendanceSession = {
-  id: number;
+  id?: number;
   attendanceDate: string;
-  title: string;
-  totalPersonnel: number;
-  entries: IzinTvAttendanceEntry[];
+  title?: string;
+  totalPersonnel?: number | null;
+  uploadedAt?: string;
+  entries?: IzinTvAttendanceEntry[];
+  raporluLeaves?: IzinTvRaporluLeave[];
 };
 
 export async function getIzinTvLeaves(): Promise<IzinTvLeaveRow[]> {

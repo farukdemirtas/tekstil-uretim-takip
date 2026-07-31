@@ -1,4 +1,4 @@
-import type { IzinTvLeaveRow } from "@/lib/api";
+import type { IzinTvAttendanceEntry, IzinTvAttendanceSession, IzinTvLeaveRow } from "@/lib/api";
 
 const YMD = /^(\d{4})-(\d{2})-(\d{2})/;
 
@@ -47,6 +47,16 @@ export function sortTvLeaves(leaves: IzinTvLeaveRow[]): IzinTvLeaveRow[] {
   });
 }
 
+/** createdAt (YYYY-MM-DD…) bugün Türkiye tarihine denk gelen talepler */
+export function filterLeavesCreatedOnDate(
+  leaves: IzinTvLeaveRow[],
+  dateIso: string,
+): IzinTvLeaveRow[] {
+  const day = String(dateIso || "").trim().slice(0, 10);
+  if (!day) return leaves;
+  return leaves.filter((l) => String(l.createdAt || "").trim().slice(0, 10) === day);
+}
+
 export function normAttendanceDesc(desc: string): string {
   return String(desc ?? "").trim().toLocaleLowerCase("tr");
 }
@@ -61,8 +71,14 @@ export function isAnnualLeaveDescription(desc: string): boolean {
   return d.includes("yıllık izin") || d.includes("yillik izin");
 }
 
+export function isRaporluDescription(desc: string): boolean {
+  const d = normAttendanceDesc(desc);
+  return d.includes("raporlu") || d.includes("rapor");
+}
+
 export function isLeaveDescription(desc: string): boolean {
-  return normAttendanceDesc(desc).includes("izin");
+  const d = normAttendanceDesc(desc);
+  return d.includes("izin") || isRaporluDescription(desc);
 }
 
 export function attendanceSortRank(description: string): number {
@@ -90,6 +106,39 @@ export function chunkRows<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-export const TV_MAX_LEAVE_ROWS = 6;
+/** İzin panosu — ekranda bir slaytta gösterilen satır (6-6-6) */
+export const TV_LEAVE_ROWS_PER_SLIDE = 6;
+/** Aynı gün en fazla bu kadar talep 6'lı slaytlarla döner; fazlası ek slaytta */
+export const TV_MAX_LEAVE_DISPLAY = 24;
 /** TV yüksekliğinde alt slayt çubuğu + başlık sonrası sığması için */
 export const TV_ATTENDANCE_ROWS_PER_SLIDE = 6;
+
+/** Yoklama kayıtları + izin sisteminden gelen raporlular (aynı isim tekrarlanmaz) */
+export function mergeAttendanceWithRaporlu(
+  session: IzinTvAttendanceSession | null,
+): IzinTvAttendanceEntry[] {
+  if (!session) return [];
+  const base = session.entries ?? [];
+  const names = new Set(base.map((e) => e.fullName.trim().toLocaleLowerCase("tr-TR")));
+  const dateLabel = session.attendanceDate ? formatDateDMY(session.attendanceDate) : "";
+  const fromLeaves = (session.raporluLeaves ?? [])
+    .filter((l) => !names.has(l.fullName.trim().toLocaleLowerCase("tr-TR")))
+    .map((l) => ({
+      fullName: l.fullName,
+      entryDate: dateLabel,
+      description: "RAPORLU",
+      position: l.position,
+    }));
+  return [...base, ...fromLeaves];
+}
+
+export function attendanceDataFingerprint(session: IzinTvAttendanceSession | null): string {
+  if (!session) return "";
+  const base =
+    session.entries
+      ?.map((e) => `${e.id ?? ""}:${e.fullName}:${e.description}:${e.position ?? ""}`)
+      .join("|") ?? "";
+  const rap =
+    session.raporluLeaves?.map((l) => `${l.id}:${l.fullName}:${l.status}`).join("|") ?? "";
+  return `${session.attendanceDate ?? ""}#${session.uploadedAt ?? ""}#${base}#${rap}`;
+}

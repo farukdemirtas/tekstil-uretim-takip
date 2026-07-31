@@ -749,7 +749,16 @@ export default function Ekran1IcerikPage() {
   useEffect(() => {
     if (!hasToken) return;
     const id = setInterval(() => void fetchIzinTvData(true), IZIN_TV_REFRESH_MS);
-    return () => clearInterval(id);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void fetchIzinTvData(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [hasToken, fetchIzinTvData]);
 
   const scheduleContentSlideRotate = useCallback(() => {
