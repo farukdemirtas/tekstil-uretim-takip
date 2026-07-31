@@ -420,7 +420,7 @@ export default function Ekran1IcerikPage() {
   const [productModel, setProductModel] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const activeModelIdRef = useRef<number | null>(null);
-  const slideRotateTimerRef = useRef<ReturnType<typeof window.setInterval> | null>(null);
+  const slideRotateTimerRef = useRef<number | null>(null);
   const [contentSlide, setContentSlide] = useState(0);
   const [izinLeaves, setIzinLeaves] = useState<IzinTvLeaveRow[]>([]);
   const [yoklamaSession, setYoklamaSession] = useState<IzinTvAttendanceSession | null>(null);
