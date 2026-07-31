@@ -917,7 +917,7 @@ export default function Ekran1IcerikPage() {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 flex flex-col overflow-hidden bg-slate-100 text-neutral-900 [color-scheme:light]"
+      className="fixed inset-0 flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden bg-slate-100 text-neutral-900 [color-scheme:light]"
     >
       {/* Hafif dekor (kontrastı düşürmez) */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/80 to-slate-100" />
@@ -1069,11 +1069,11 @@ export default function Ekran1IcerikPage() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+      <div className="flex h-full min-h-0 flex-1 flex-row overflow-hidden">
       {contentSlide === 0 ? (
         <>
-      {/* Sol ticker */}
-      <div className="relative z-10 hidden w-52 shrink-0 border-r-2 border-slate-200 bg-white py-3 lg:flex lg:flex-col xl:w-60">
+      {/* Sol ticker — TV’de her zaman görünür (tam ekranda lg kırılımına takılmasın) */}
+      <div className="relative z-10 flex h-full min-h-0 w-44 shrink-0 flex-col border-r-2 border-slate-200 bg-white py-2 xl:w-56 min-[1920px]:w-60 min-[1920px]:py-3">
         <EfficiencyTicker items={leftItems} />
       </div>
 
@@ -1344,24 +1344,28 @@ export default function Ekran1IcerikPage() {
       </div>
 
       {/* Sağ ticker */}
-      <div className="relative z-10 hidden w-52 shrink-0 border-l-2 border-slate-200 bg-white py-3 lg:flex lg:flex-col xl:w-60">
+      <div className="relative z-10 flex h-full min-h-0 w-44 shrink-0 flex-col border-l-2 border-slate-200 bg-white py-2 xl:w-56 min-[1920px]:w-60 min-[1920px]:py-3">
         <EfficiencyTicker items={rightItems} />
       </div>
         </>
       ) : contentSlide === 1 ? (
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <Ekran1YoklamaSlide
           session={yoklamaSession}
           loading={izinTvLoading}
           error={izinTvError || undefined}
           lastUpdated={izinTvLastUpdated || undefined}
         />
+        </div>
       ) : (
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <Ekran1IzinSlide
           leaves={izinLeaves}
           loading={izinTvLoading}
           error={izinTvError || undefined}
           lastUpdated={izinTvLastUpdated || undefined}
         />
+        </div>
       )}
       </div>
 

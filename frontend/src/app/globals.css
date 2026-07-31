@@ -308,6 +308,15 @@ html.tv-icerik body {
   overflow: hidden;
 }
 
+/* Tam ekran (TV) — içerik taşmasını önle */
+:fullscreen,
+:-webkit-full-screen {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100dvh;
+  overflow: hidden !important;
+}
+
 /* EKRAN4 slayt — sıradaki slayta kadar dolan çubuk + içerik girişi */
 @keyframes ekran4-slide-progress-fill {
   from {

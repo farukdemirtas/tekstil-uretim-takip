@@ -72,6 +72,6 @@ export function chunkRows<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-export const TV_MAX_LEAVE_ROWS = 8;
+export const TV_MAX_LEAVE_ROWS = 6;
 /** TV yüksekliğinde alt slayt çubuğu + başlık sonrası sığması için */
-export const TV_ATTENDANCE_ROWS_PER_SLIDE = 7;
+export const TV_ATTENDANCE_ROWS_PER_SLIDE = 6;

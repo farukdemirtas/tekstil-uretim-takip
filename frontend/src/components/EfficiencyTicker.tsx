@@ -90,7 +90,7 @@ export function EfficiencyTicker({ items }: { items: TickerItem[] }) {
           return (
             <div
               key={item.workerId}
-              className={`flex min-h-0 flex-1 items-center justify-between gap-3 rounded-2xl border px-3 py-2 ${
+              className={`flex min-h-0 flex-1 items-center justify-between gap-2 overflow-hidden rounded-2xl border px-2.5 py-1.5 sm:gap-3 sm:px-3 sm:py-2 ${
                 isGreen
                   ? "border-emerald-200 bg-emerald-50"
                   : "border-red-200 bg-red-50"
