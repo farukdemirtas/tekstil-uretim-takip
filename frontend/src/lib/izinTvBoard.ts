@@ -10,6 +10,24 @@ export function formatDateDMY(iso: string | null | undefined): string {
   return `${d}.${mo}.${y}`;
 }
 
+/** TV tablosu — dd.mm.yy (daha dar sütun) */
+export function formatDateDMYShort(iso: string | null | undefined): string {
+  const full = formatDateDMY(iso);
+  if (full === "—") return full;
+  const parts = full.split(".");
+  if (parts.length !== 3) return full;
+  return `${parts[0]}.${parts[1]}.${parts[2].slice(-2)}`;
+}
+
+/** İzin panosu tarih aralığı — örn. 31.07.26–15.08.26 */
+export function formatLeaveDateRange(start: string, end: string): string {
+  const s = formatDateDMYShort(start);
+  const e = formatDateDMYShort(end);
+  if (s === "—" && e === "—") return "—";
+  if (start === end || s === e) return s;
+  return `${s}–${e}`;
+}
+
 /** EKRAN1 yoklama slaytı başlığı — örn. 31.07.2026 TARİHLİ YEŞİL İMAJ PERSONEL YOKLAMASI */
 export function formatYoklamaBoardTitle(attendanceDate: string | null | undefined): string {
   const dateLabel = formatDateDMY(attendanceDate);
