@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { IzinTvLeaveRow } from "@/lib/api";
-import { todayIsoTurkey } from "@/lib/businessCalendar";
 import {
   chunkRows,
-  filterLeavesCreatedOnDate,
   formatLeaveDateRange,
   normalizeLeaveReason,
   sortTvLeaves,
   TV_LEAVE_ROWS_PER_SLIDE,
-  TV_MAX_LEAVE_DISPLAY,
 } from "@/lib/izinTvBoard";
 
 const TV_HEADER = "grid shrink-0 grid-cols-4 items-center border-b-2 border-slate-300 bg-indigo-100 py-2 sm:py-2.5";
@@ -63,28 +60,23 @@ export function Ekran1IzinSlide({ leaves, loading, error, lastUpdated }: Props) 
   const [slideIndex, setSlideIndex] = useState(0);
   const [slideVisible, setSlideVisible] = useState(true);
 
-  const todayIso = useMemo(() => todayIsoTurkey(), [lastUpdated, leaves.length]);
-  const todayLeaves = useMemo(
-    () => sortTvLeaves(filterLeavesCreatedOnDate(leaves, todayIso)),
-    [leaves, todayIso],
-  );
-  const slideMode = todayLeaves.length > TV_LEAVE_ROWS_PER_SLIDE;
-  const slides = useMemo(() => chunkRows(todayLeaves, TV_LEAVE_ROWS_PER_SLIDE), [todayLeaves]);
+  const sortedLeaves = useMemo(() => sortTvLeaves(leaves), [leaves]);
+  const slideMode = sortedLeaves.length > TV_LEAVE_ROWS_PER_SLIDE;
+  const slides = useMemo(() => chunkRows(sortedLeaves, TV_LEAVE_ROWS_PER_SLIDE), [sortedLeaves]);
   const visible = slides[slideIndex] ?? [];
-  const overflowCount = Math.max(0, todayLeaves.length - TV_MAX_LEAVE_DISPLAY);
   const now = useMemo(() => new Date(), [lastUpdated, leaves.length]);
 
   const stats = useMemo(() => {
-    const pending = todayLeaves.filter((l) => l.status === "beklemede").length;
-    const approved = todayLeaves.filter((l) => l.status === "onaylandi").length;
-    const rejected = todayLeaves.filter((l) => l.status === "reddedildi").length;
-    return { total: todayLeaves.length, pending, approved, rejected };
-  }, [todayLeaves]);
+    const pending = sortedLeaves.filter((l) => l.status === "beklemede").length;
+    const approved = sortedLeaves.filter((l) => l.status === "onaylandi").length;
+    const rejected = sortedLeaves.filter((l) => l.status === "reddedildi").length;
+    return { total: sortedLeaves.length, pending, approved, rejected };
+  }, [sortedLeaves]);
 
   useEffect(() => {
     setSlideIndex(0);
     setSlideVisible(true);
-  }, [todayIso, todayLeaves.length]);
+  }, [sortedLeaves.length]);
 
   useEffect(() => {
     if (!slideMode || slides.length <= 1) return;
@@ -113,7 +105,7 @@ export function Ekran1IzinSlide({ leaves, loading, error, lastUpdated }: Props) 
           </h1>
           <div className="mt-2 flex flex-wrap items-end gap-3 sm:mt-3 sm:gap-4">
             <div>
-              <p className="font-medium text-slate-600" style={{ fontSize: "clamp(0.75rem, 1.1vw, 0.95rem)" }}>Bugün</p>
+              <p className="font-medium text-slate-600" style={{ fontSize: "clamp(0.75rem, 1.1vw, 0.95rem)" }}>Toplam</p>
               <p className="font-extrabold tabular-nums text-indigo-950" style={{ fontSize: "clamp(1.15rem, 2vw, 1.75rem)" }}>{stats.total}</p>
             </div>
             <div>
@@ -128,12 +120,6 @@ export function Ekran1IzinSlide({ leaves, loading, error, lastUpdated }: Props) 
               <p className="font-medium text-red-600" style={{ fontSize: "clamp(0.75rem, 1.1vw, 0.95rem)" }}>Red</p>
               <p className="font-extrabold tabular-nums text-red-700" style={{ fontSize: "clamp(1.15rem, 2vw, 1.75rem)" }}>{stats.rejected}</p>
             </div>
-            {overflowCount > 0 ? (
-              <div>
-                <p className="font-medium text-violet-700" style={{ fontSize: "clamp(0.75rem, 1.1vw, 0.95rem)" }}>Ek talep</p>
-                <p className="font-extrabold tabular-nums text-violet-800" style={{ fontSize: "clamp(1.15rem, 2vw, 1.75rem)" }}>+{overflowCount}</p>
-              </div>
-            ) : null}
           </div>
         </div>
         <div className="ml-auto shrink-0 text-right">
@@ -183,8 +169,8 @@ export function Ekran1IzinSlide({ leaves, loading, error, lastUpdated }: Props) 
           >
             {loading && leaves.length === 0 ? (
               <div className="flex min-h-0 flex-1 items-center justify-center text-xl font-medium text-slate-600">Yükleniyor…</div>
-            ) : todayLeaves.length === 0 ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center text-xl font-medium text-slate-600">Bugün izin talebi yok.</div>
+            ) : sortedLeaves.length === 0 ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center text-xl font-medium text-slate-600">İzin talebi yok.</div>
             ) : (
               visible.map((l, i) => {
                 const bg = i % 2 === 0 ? "bg-slate-100" : "bg-white";

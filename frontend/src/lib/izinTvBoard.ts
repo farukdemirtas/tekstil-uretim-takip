@@ -19,10 +19,10 @@ export function formatDateDMYShort(iso: string | null | undefined): string {
   return `${parts[0]}.${parts[1]}.${parts[2].slice(-2)}`;
 }
 
-/** İzin panosu tarih aralığı — örn. 31.07.26–15.08.26 */
+/** İzin panosu tarih aralığı — örn. 31.07.2026–15.08.2026 */
 export function formatLeaveDateRange(start: string, end: string): string {
-  const s = formatDateDMYShort(start);
-  const e = formatDateDMYShort(end);
+  const s = formatDateDMY(start);
+  const e = formatDateDMY(end);
   if (s === "—" && e === "—") return "—";
   if (start === end || s === e) return s;
   return `${s}–${e}`;

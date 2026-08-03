@@ -14,13 +14,11 @@ import {
   getEkran1GenelIlerleme,
   getEkranRefreshSignal,
   getIzinTvLeaves,
-  getIzinTvAttendance,
   setAuthToken,
   type HedefAlertEvalPayload,
   type PersonnelBirthdayRow,
   type Ekran1GenelIlerleme,
   type IzinTvLeaveRow,
-  type IzinTvAttendanceSession,
 } from "@/lib/api";
 
 import {
@@ -39,14 +37,13 @@ import { averageWorkerEfficiency, workerEfficiencyPercent } from "@/lib/workerEf
 import { hasPermission } from "@/lib/permissions";
 import { EfficiencyTicker, type TickerItem } from "@/components/EfficiencyTicker";
 import { Ekran1IzinSlide } from "@/components/ekran1/Ekran1IzinSlide";
-import { Ekran1YoklamaSlide } from "@/components/ekran1/Ekran1YoklamaSlide";
 import { useScreenHeartbeat } from "@/lib/useScreenHeartbeat";
 
 const AUTO_REFRESH_MS = 30_000;
-/** EKRAN1 ana slaytlar: üretim → yoklama → izin */
-const CONTENT_SLIDE_COUNT = 3;
+/** EKRAN1 ana slaytlar: üretim → izin (yoklama geçici kapalı) */
+const CONTENT_SLIDE_COUNT = 2;
 const CONTENT_SLIDE_ROTATE_MS = 30_000;
-const CONTENT_SLIDE_LABELS = ["Üretim", "Yoklama panosu", "İzin panosu"] as const;
+const CONTENT_SLIDE_LABELS = ["Üretim", "İzin panosu"] as const;
 const IZIN_TV_REFRESH_MS = 30_000;
 /** Doğum günü: yalnızca periyodik overlay — tek kişide ~10 sn görünür, ardından ~50 sn gizli (döngü 60 sn). Çoklu kişide süre uzar; sırayla dönüş. */
 const BDAY_OVERLAY_VISIBLE_MS = 10_000;
@@ -423,7 +420,6 @@ export default function Ekran1IcerikPage() {
   const slideRotateTimerRef = useRef<number | null>(null);
   const [contentSlide, setContentSlide] = useState(0);
   const [izinLeaves, setIzinLeaves] = useState<IzinTvLeaveRow[]>([]);
-  const [yoklamaSession, setYoklamaSession] = useState<IzinTvAttendanceSession | null>(null);
   const [izinTvLoading, setIzinTvLoading] = useState(true);
   const [izinTvError, setIzinTvError] = useState("");
   const [izinTvLastUpdated, setIzinTvLastUpdated] = useState("");
@@ -664,33 +660,12 @@ export default function Ekran1IcerikPage() {
   const fetchIzinTvData = useCallback(async (silent = true) => {
     if (!silent) setIzinTvLoading(true);
     try {
-      const [leavesResult, attendanceResult] = await Promise.allSettled([
-        getIzinTvLeaves(),
-        getIzinTvAttendance(),
-      ]);
-      const errors: string[] = [];
-      if (leavesResult.status === "fulfilled") {
-        setIzinLeaves(Array.isArray(leavesResult.value) ? leavesResult.value : []);
-      } else {
-        errors.push(
-          leavesResult.reason instanceof Error ? leavesResult.reason.message : "İzin panosu alınamadı",
-        );
-      }
-      if (attendanceResult.status === "fulfilled") {
-        setYoklamaSession(attendanceResult.value);
-      } else {
-        errors.push(
-          attendanceResult.reason instanceof Error
-            ? attendanceResult.reason.message
-            : "Yoklama panosu alınamadı",
-        );
-      }
-      setIzinTvError(errors.join(" · "));
-      if (errors.length === 0) {
-        setIzinTvLastUpdated(
-          new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-        );
-      }
+      const leaves = await getIzinTvLeaves();
+      setIzinLeaves(Array.isArray(leaves) ? leaves : []);
+      setIzinTvError("");
+      setIzinTvLastUpdated(
+        new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      );
     } catch (e) {
       setIzinTvError(e instanceof Error ? e.message : "İzin verisi yüklenemedi");
     } finally {
@@ -1374,15 +1349,6 @@ export default function Ekran1IcerikPage() {
         <EfficiencyTicker items={rightItems} />
       </div>
         </>
-      ) : contentSlide === 1 ? (
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <Ekran1YoklamaSlide
-          session={yoklamaSession}
-          loading={izinTvLoading}
-          error={izinTvError || undefined}
-          lastUpdated={izinTvLastUpdated || undefined}
-        />
-        </div>
       ) : (
         <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <Ekran1IzinSlide
@@ -1395,7 +1361,7 @@ export default function Ekran1IcerikPage() {
       )}
       </div>
 
-      {/* Slayt göstergesi — üretim / yoklama / izin (30 sn); tıklanınca anında geçiş */}
+      {/* Slayt göstergesi — üretim / izin (30 sn); tıklanınca anında geçiş */}
       <div
         className="relative z-[15] shrink-0 border-t border-slate-300/80 bg-white/95 px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] shadow-[0_-4px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm"
         role="tablist"
