@@ -2712,12 +2712,12 @@ export function setEkran5Target(id, value) {
 }
 
 function parseBedenCekiTargets(raw) {
-  const out = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  const out = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
   if (raw == null || raw === "") return out;
   try {
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (parsed && typeof parsed === "object") {
-      for (const code of UTU_PAKET_SIZE_CODES) {
+      for (const code of UTU_PAKET_ALL_SIZE_CODES) {
         out[code] = Math.max(0, Math.floor(Number(parsed[code]) || 0));
       }
     }
@@ -2754,6 +2754,24 @@ export function setBedenCekiTargets(id, targets) {
       }
     );
   });
+}
+
+/** Model oturumundaki tüm 2XL beden kayıtlarını sil (TV Ekran5 dahil) */
+export async function clearUtuPaket2xlBedenForModel(modelId) {
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid <= 0) {
+    throw new Error("Geçersiz model");
+  }
+  const sizeCode = UTU_PAKET_SIZE_CODE_2XL;
+  const metaRows = await dbAll(`SELECT production_date FROM utu_paket_meta WHERE model_id = ?`, [mid]);
+  for (const row of metaRows || []) {
+    const d = String(row.production_date || "").trim();
+    if (!d) continue;
+    await dbRun(`DELETE FROM utu_paket_beden WHERE production_date = ? AND size_code = ?`, [d, sizeCode]);
+    await dbRun(`DELETE FROM utu_paket_slot_beden WHERE production_date = ? AND size_code = ?`, [d, sizeCode]);
+  }
+  await dbRun(`DELETE FROM utu_paket_beden_b WHERE model_id = ? AND size_code = ?`, [mid, sizeCode]);
+  return { ok: true, modelId: mid };
 }
 
 /** Ekran1 paylaşımlı manuel hedef — tüm kullanıcılar/TV aynı değeri görür */
@@ -3637,7 +3655,7 @@ export function buildUtuPaketLogSummaryFromPayload(body) {
       const row = slotBedenIn[k];
       if (!row || typeof row !== "object") continue;
       const sizes = {};
-      for (const c of UTU_PAKET_SIZE_CODES) {
+      for (const c of UTU_PAKET_ALL_SIZE_CODES) {
         const n = Math.max(0, Math.floor(Number(row[c]) || 0));
         if (n > 0) sizes[c] = n;
       }
@@ -3647,7 +3665,7 @@ export function buildUtuPaketLogSummaryFromPayload(body) {
   }
   if (ekBedenIn) {
     const paketlemeEkBeden = {};
-    for (const c of UTU_PAKET_SIZE_CODES) {
+    for (const c of UTU_PAKET_ALL_SIZE_CODES) {
       const n = Math.max(0, Math.floor(Number(ekBedenIn[c]) || 0));
       if (n > 0) paketlemeEkBeden[c] = n;
     }
@@ -5047,22 +5065,24 @@ export const UTU_PAKET_SLOT_KEYS = [
 /** Manuel paketleme ek adet beden satırı (utu_paket_slot_beden.slot_key = ek) */
 export const PAKETLEME_EK_SLOT_KEY = "ek";
 export const UTU_PAKET_SIZE_CODES = ["XS", "S", "M", "L", "XL"];
+export const UTU_PAKET_SIZE_CODE_2XL = "2XL";
+export const UTU_PAKET_ALL_SIZE_CODES = [...UTU_PAKET_SIZE_CODES, UTU_PAKET_SIZE_CODE_2XL];
 
 function emptyPaketlemeSlotBedenGrid() {
   return Object.fromEntries(
     UTU_PAKET_SLOT_KEYS.map((k) => [
       k,
-      Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+      Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0])),
     ])
   );
 }
 
 function parsePaketlemeEkBedenRows(rows) {
-  const out = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  const out = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
   for (const r of rows || []) {
     if (String(r.slot_key || "").trim() !== PAKETLEME_EK_SLOT_KEY) continue;
     const sizeCode = String(r.size_code || "").trim();
-    if (!UTU_PAKET_SIZE_CODES.includes(sizeCode)) continue;
+    if (!UTU_PAKET_ALL_SIZE_CODES.includes(sizeCode)) continue;
     out[sizeCode] = Math.max(0, Math.floor(Number(r.count) || 0));
   }
   return out;
@@ -5083,7 +5103,7 @@ function syncPaketlemeStagesFromSlotBeden(stages, slotBeden) {
   const paketleme = { ...(stages?.paketleme || emptyUtuPaketSlots()) };
   for (const k of UTU_PAKET_SLOT_KEYS) {
     const row = slotBeden?.[k] || {};
-    paketleme[k] = UTU_PAKET_SIZE_CODES.reduce(
+    paketleme[k] = UTU_PAKET_ALL_SIZE_CODES.reduce(
       (s, c) => s + Math.max(0, Math.floor(Number(row[c]) || 0)),
       0
     );
@@ -5092,14 +5112,14 @@ function syncPaketlemeStagesFromSlotBeden(stages, slotBeden) {
 }
 
 function aggregateDailyBedenFromSlotBeden(slotBeden, ekBeden) {
-  const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  const beden = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
   for (const k of UTU_PAKET_SLOT_KEYS) {
     const row = slotBeden?.[k] || {};
-    for (const c of UTU_PAKET_SIZE_CODES) {
+    for (const c of UTU_PAKET_ALL_SIZE_CODES) {
       beden[c] += Math.max(0, Math.floor(Number(row[c]) || 0));
     }
   }
-  for (const c of UTU_PAKET_SIZE_CODES) {
+  for (const c of UTU_PAKET_ALL_SIZE_CODES) {
     beden[c] += Math.max(0, Math.floor(Number(ekBeden?.[c]) || 0));
   }
   return beden;
@@ -5107,20 +5127,20 @@ function aggregateDailyBedenFromSlotBeden(slotBeden, ekBeden) {
 
 function paketlemeEkBedenHasData(ekBeden) {
   if (!ekBeden || typeof ekBeden !== "object") return false;
-  for (const c of UTU_PAKET_SIZE_CODES) {
+  for (const c of UTU_PAKET_ALL_SIZE_CODES) {
     if (Math.max(0, Math.floor(Number(ekBeden[c]) || 0)) > 0) return true;
   }
   return false;
 }
 
 function sumPaketlemeEkBeden(ekBeden) {
-  return UTU_PAKET_SIZE_CODES.reduce((s, c) => s + Math.max(0, Math.floor(Number(ekBeden?.[c]) || 0)), 0);
+  return UTU_PAKET_ALL_SIZE_CODES.reduce((s, c) => s + Math.max(0, Math.floor(Number(ekBeden?.[c]) || 0)), 0);
 }
 
 function parsePaketlemeEkBedenPayload(raw) {
-  const out = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  const out = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
   if (!raw || typeof raw !== "object") return out;
-  for (const c of UTU_PAKET_SIZE_CODES) {
+  for (const c of UTU_PAKET_ALL_SIZE_CODES) {
     out[c] = Math.max(0, Math.floor(Number(raw[c]) || 0));
   }
   return out;
@@ -5130,7 +5150,7 @@ function paketlemeSlotBedenHasData(slotBeden) {
   if (!slotBeden || typeof slotBeden !== "object") return false;
   for (const k of UTU_PAKET_SLOT_KEYS) {
     const row = slotBeden[k] || {};
-    for (const c of UTU_PAKET_SIZE_CODES) {
+    for (const c of UTU_PAKET_ALL_SIZE_CODES) {
       if (Math.max(0, Math.floor(Number(row[c]) || 0)) > 0) return true;
     }
   }
@@ -5143,7 +5163,7 @@ function parsePaketlemeSlotBedenPayload(raw) {
   for (const k of UTU_PAKET_SLOT_KEYS) {
     const row = raw[k];
     if (!row || typeof row !== "object") continue;
-    for (const c of UTU_PAKET_SIZE_CODES) {
+    for (const c of UTU_PAKET_ALL_SIZE_CODES) {
       grid[k][c] = Math.max(0, Math.floor(Number(row[c]) || 0));
     }
   }
@@ -5157,7 +5177,7 @@ async function savePaketlemeSlotBeden(date, slotBeden) {
   if (!paketlemeSlotBedenHasData(slotBeden)) return;
   for (const k of UTU_PAKET_SLOT_KEYS) {
     const row = slotBeden[k] || {};
-    for (const c of UTU_PAKET_SIZE_CODES) {
+    for (const c of UTU_PAKET_ALL_SIZE_CODES) {
       const n = Math.max(0, Math.floor(Number(row[c]) || 0));
       if (n > 0) {
         await dbRun(
@@ -5334,7 +5354,7 @@ export function getUtuPaketDay(date) {
                 if (paketlemeEkBedenHasData(paketlemeEkBeden)) {
                   stageEkSayim.paketleme = sumPaketlemeEkBeden(paketlemeEkBeden);
                 }
-                const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+                const beden = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
                 for (const r of bedenRows || []) {
                   const code = String(r.size_code || "").trim();
                   if (code) beden[code] = Number(r.count) || 0;
@@ -5584,12 +5604,12 @@ export function saveUtuPaketDay(date, payload) {
                 );
                 for (const k of UTU_PAKET_SLOT_KEYS) {
                   const row = paketlemeSlotBeden[k] || {};
-                  for (const c of UTU_PAKET_SIZE_CODES) {
+                  for (const c of UTU_PAKET_ALL_SIZE_CODES) {
                     const n = z(row[c]);
                     if (n > 0) sbStmt.run([date, k, c, n]);
                   }
                 }
-                for (const c of UTU_PAKET_SIZE_CODES) {
+                for (const c of UTU_PAKET_ALL_SIZE_CODES) {
                   const n = z(paketlemeEkBeden[c]);
                   if (n > 0) sbStmt.run([date, PAKETLEME_EK_SLOT_KEY, c, n]);
                 }
@@ -5709,7 +5729,7 @@ export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
           dailyMap.set(d, {
             date: d,
             stages: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
-            beden: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+            beden: Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0])),
             pipelineMin: 0,
           });
         }
@@ -5729,7 +5749,7 @@ export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
 
         const daily = [];
         const periodTotals = Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0]));
-        const bedenTotals = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+        const bedenTotals = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
 
         for (const d of dates) {
           const day = dailyMap.get(d);
@@ -5739,7 +5759,7 @@ export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
           for (const st of UTU_PAKET_STAGES) {
             periodTotals[st] += day.stages[st] || 0;
           }
-          for (const code of UTU_PAKET_SIZE_CODES) {
+          for (const code of UTU_PAKET_ALL_SIZE_CODES) {
             bedenTotals[code] += day.beden[code] || 0;
           }
           daily.push(day);
@@ -6035,7 +6055,7 @@ export async function getUtuPaketSecondaryDay(date, modelId) {
       modelId: mid,
       stages: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, Object.fromEntries(UTU_PAKET_SLOT_KEYS.map((k) => [k, 0]))])),
       stageEkSayim: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
-      beden: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+      beden: Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0])),
       packagingTarget: 0,
       sessionStartDate: d,
       utuPaketModel: null,
@@ -6071,7 +6091,7 @@ export async function getUtuPaketSecondaryDay(date, modelId) {
     stages[st] = rowToUtuPaketSlots(row);
     stageEkSayim[st] = Number(row?.ek_sayim) || 0;
   }
-  const beden = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+  const beden = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
   for (const r of bedenRows || []) {
     const code = String(r.size_code || "").trim();
     if (code) beden[code] = Number(r.count) || 0;
@@ -6235,7 +6255,7 @@ export function getUtuPaketSecondaryAnalytics(startDate, endDate, modelId) {
       endDate,
       daysWithData: 0,
       periodTotals: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
-      bedenTotals: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+      bedenTotals: Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0])),
       avgDailyByStage: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
       daily: [],
       slotTotalsByStage: Object.fromEntries(
@@ -6269,7 +6289,7 @@ export function getUtuPaketSecondaryAnalytics(startDate, endDate, modelId) {
           dailyMap.set(d, {
             date: d,
             stages: Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0])),
-            beden: Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])),
+            beden: Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0])),
             pipelineMin: 0,
           });
         }
@@ -6289,7 +6309,7 @@ export function getUtuPaketSecondaryAnalytics(startDate, endDate, modelId) {
 
         const daily = [];
         const periodTotals = Object.fromEntries(UTU_PAKET_STAGES.map((st) => [st, 0]));
-        const bedenTotals = Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0]));
+        const bedenTotals = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
 
         for (const d of dates) {
           const day = dailyMap.get(d);
@@ -6299,7 +6319,7 @@ export function getUtuPaketSecondaryAnalytics(startDate, endDate, modelId) {
           for (const st of UTU_PAKET_STAGES) {
             periodTotals[st] += day.stages[st] || 0;
           }
-          for (const code of UTU_PAKET_SIZE_CODES) {
+          for (const code of UTU_PAKET_ALL_SIZE_CODES) {
             bedenTotals[code] += day.beden[code] || 0;
           }
           daily.push(day);

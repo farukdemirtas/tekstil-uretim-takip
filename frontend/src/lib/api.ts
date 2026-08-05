@@ -1100,6 +1100,17 @@ export async function setBedenCekiTargets(modelId: number, targets: BedenCekiTar
     body: JSON.stringify({ targets }),
   });
   if (!res.ok) throw new Error("Beden çeki hedefleri kaydedilemedi");
+  notifyEkranRefresh("beden-ceki-targets");
+}
+
+/** Model oturumundaki tüm 2XL beden kayıtlarını sil — Ekran5 yenilenir */
+export async function clearUtuPaket2xlBeden(modelId: number): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/product-models/${modelId}/clear-2xl-beden`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("2XL beden verileri silinemedi");
+  notifyEkranRefresh("2xl-beden-cleared");
 }
 
 /** Ekran1 paylaşımlı manuel hedef — okuma */

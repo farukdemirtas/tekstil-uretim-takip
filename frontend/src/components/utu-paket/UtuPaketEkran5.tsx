@@ -23,11 +23,12 @@ import {
   BEDEN_BAR_GLOW,
   BEDEN_BAR_GRADIENT,
   BEDEN_PROGRESS_FRAME,
-  UTU_PAKET_SIZE_CODES,
+  UTU_PAKET_ALL_SIZE_CODES,
   bedenProgressTier,
   calcUtuPaketPercent,
   countAdetByBeden,
   countKoliByBeden,
+  utuPaketEkran5SizeCodes,
   emptyUtuPaketBeden,
   normalizeUtuPaketPayload,
   normalizeTakipsanPackages,
@@ -479,6 +480,7 @@ function BedenTableSlide({
 }) {
   const heading = ekran5SlideHeading(productLabel ?? "", SLIDE_LABELS.beden);
   const isNameHeading = Boolean(productLabel?.trim());
+  const sizeCodes = utuPaketEkran5SizeCodes(targets, totals, today);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 md:gap-3">
@@ -492,8 +494,14 @@ function BedenTableSlide({
           {heading}
         </h2>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 md:grid-cols-5 md:gap-3">
-        {UTU_PAKET_SIZE_CODES.map((code) => (
+      <div
+        className={`grid min-h-0 flex-1 gap-2 sm:gap-2.5 md:gap-3 ${
+          sizeCodes.length > 5
+            ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-6"
+            : "grid-cols-2 sm:grid-cols-3 md:grid-cols-5"
+        }`}
+      >
+        {sizeCodes.map((code) => (
           <BedenSizeFrame
             key={code}
             code={code}
@@ -779,19 +787,19 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
 
       const bedenTargetsRes = mid ? await getBedenCekiTargets(mid).catch(() => ({ targets: emptyUtuPaketBeden() })) : { targets: emptyUtuPaketBeden() };
       const normalizedTargets = emptyUtuPaketBeden();
-      for (const code of UTU_PAKET_SIZE_CODES) {
+      for (const code of UTU_PAKET_ALL_SIZE_CODES) {
         normalizedTargets[code] = Math.max(0, Math.floor(Number(bedenTargetsRes.targets?.[code]) || 0));
       }
       setBedenTargets(normalizedTargets);
       // Takipsan yoksa DB analytics toplamını kullan (Takipsan varsa zaten üstte set edildi)
       if (!takipsanOk) {
         const todayBedenRow = emptyUtuPaketBeden();
-        for (const code of UTU_PAKET_SIZE_CODES) {
+        for (const code of UTU_PAKET_ALL_SIZE_CODES) {
           todayBedenRow[code] = Math.max(0, Math.floor(Number(data.beden[code]) || 0));
         }
         const todayFromAnalytics = analytics?.daily?.find((d) => d.date === date)?.beden ?? {};
         const periodBeden = emptyUtuPaketBeden();
-        for (const code of UTU_PAKET_SIZE_CODES) {
+        for (const code of UTU_PAKET_ALL_SIZE_CODES) {
           const period = Math.max(0, Math.floor(Number(analytics?.bedenTotals?.[code]) || 0));
           const todaySaved = Math.max(0, Math.floor(Number(todayFromAnalytics[code]) || 0));
           const beforeToday = Math.max(0, period - todaySaved);
@@ -872,20 +880,20 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
 
           const secBedenTargetsRes = await getBedenCekiTargets(secMid).catch(() => ({ targets: emptyUtuPaketBeden() }));
           const secNormalizedTargets = emptyUtuPaketBeden();
-          for (const code of UTU_PAKET_SIZE_CODES) {
+          for (const code of UTU_PAKET_ALL_SIZE_CODES) {
             secNormalizedTargets[code] = Math.max(0, Math.floor(Number(secBedenTargetsRes.targets?.[code]) || 0));
           }
           setSecBedenTargets(secNormalizedTargets);
 
           const todaySecBedenRow = emptyUtuPaketBeden();
-          for (const code of UTU_PAKET_SIZE_CODES) {
+          for (const code of UTU_PAKET_ALL_SIZE_CODES) {
             todaySecBedenRow[code] = Math.max(0, Math.floor(Number(secData.beden[code]) || 0));
           }
           setSecBedenToday(todaySecBedenRow);
 
           const todayFromSecAnalytics = secAnalytics?.daily?.find((d) => d.date === date)?.beden ?? {};
           const periodSecBeden = emptyUtuPaketBeden();
-          for (const code of UTU_PAKET_SIZE_CODES) {
+          for (const code of UTU_PAKET_ALL_SIZE_CODES) {
             const period = Math.max(0, Math.floor(Number(secAnalytics?.bedenTotals?.[code]) || 0));
             const todaySaved = Math.max(0, Math.floor(Number(todayFromSecAnalytics[code]) || 0));
             const beforeToday = Math.max(0, period - todaySaved);

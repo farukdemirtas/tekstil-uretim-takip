@@ -72,6 +72,7 @@ import {
   setEkran5Target,
   getBedenCekiTargets,
   setBedenCekiTargets,
+  clearUtuPaket2xlBedenForModel,
   getEkran1Target,
   setEkran1Target,
   bumpEkranRefreshSignal,
@@ -794,6 +795,20 @@ app.put("/api/product-models/:id/beden-ceki-targets", requireAuth, async (req, r
   try {
     const result = await setBedenCekiTargets(id, targets);
     logActivity(req, "beden_ceki_hedef_guncelle", "product_models", { id, targets: result.targets });
+    void bumpEkranRefreshSignal().catch(() => {});
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
+/** Model oturumundaki 2XL beden verilerini sil — Ekran5 güncellenir */
+app.post("/api/product-models/:id/clear-2xl-beden", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "Geçersiz id" });
+  try {
+    const result = await clearUtuPaket2xlBedenForModel(id);
+    logActivity(req, "2xl_beden_temizle", "product_models", { id });
     void bumpEkranRefreshSignal().catch(() => {});
     res.json(result);
   } catch (e) {

@@ -31,7 +31,56 @@ export type UtuPaketSlotKey = (typeof UTU_PAKET_SLOT_DEFS)[number]["key"];
 export type UtuPaketSlots = Record<UtuPaketSlotKey, number>;
 
 export const UTU_PAKET_SIZE_CODES = ["XS", "S", "M", "L", "XL"] as const;
-export type UtuPaketSizeCode = (typeof UTU_PAKET_SIZE_CODES)[number];
+export const UTU_PAKET_SIZE_CODE_2XL = "2XL" as const;
+export type UtuPaketBaseSizeCode = (typeof UTU_PAKET_SIZE_CODES)[number];
+export type UtuPaketSizeCode = UtuPaketBaseSizeCode | typeof UTU_PAKET_SIZE_CODE_2XL;
+export const UTU_PAKET_ALL_SIZE_CODES: UtuPaketSizeCode[] = [
+  ...UTU_PAKET_SIZE_CODES,
+  UTU_PAKET_SIZE_CODE_2XL,
+];
+export const UTU_PAKET_INCLUDE_2XL_STORAGE_KEY = "utu-paket-include-2xl";
+
+export function readInclude2xlPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(UTU_PAKET_INCLUDE_2XL_STORAGE_KEY) === "1";
+}
+
+export function writeInclude2xlPreference(include: boolean): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(UTU_PAKET_INCLUDE_2XL_STORAGE_KEY, include ? "1" : "0");
+}
+
+/** Kullanıcı tik ile açık/kapalı tercih belirttiyse otomatik açma devre dışı */
+export function hasExplicitInclude2xlPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  const v = window.localStorage.getItem(UTU_PAKET_INCLUDE_2XL_STORAGE_KEY);
+  return v === "1" || v === "0";
+}
+
+export function bedenHas2xlData(beden: Record<string, number | undefined>): boolean {
+  return Math.max(0, Math.floor(Number(beden[UTU_PAKET_SIZE_CODE_2XL]) || 0)) > 0;
+}
+
+export const UTU_PAKET_DISABLE_2XL_CONFIRM =
+  "2XL çeki hedefi kapatılırsa oturumdaki tüm 2XL beden girişleri ve 2XL çeki hedefi silinecek; TV ekranı (Ekran5) de güncellenecek. Devam edilsin mi?";
+
+/** Formda gösterilecek beden sütunları — 2XL çoğu modelde yok, tercihe bağlı */
+export function utuPaketFormSizeCodes(include2xl: boolean): UtuPaketSizeCode[] {
+  return include2xl ? [...UTU_PAKET_ALL_SIZE_CODES] : [...UTU_PAKET_SIZE_CODES];
+}
+
+/** Ekran5 beden slaytında 2XL yalnızca veri/hedef varsa */
+export function utuPaketEkran5SizeCodes(
+  targets: Record<string, number>,
+  totals: Record<string, number>,
+  today: Record<string, number>,
+): UtuPaketSizeCode[] {
+  const show2xl =
+    (targets[UTU_PAKET_SIZE_CODE_2XL] ?? 0) > 0 ||
+    (totals[UTU_PAKET_SIZE_CODE_2XL] ?? 0) > 0 ||
+    (today[UTU_PAKET_SIZE_CODE_2XL] ?? 0) > 0;
+  return show2xl ? [...UTU_PAKET_ALL_SIZE_CODES] : [...UTU_PAKET_SIZE_CODES];
+}
 
 export type UtuPaketTakipsanSnapshot = {
   packageCount: number;
@@ -124,10 +173,10 @@ export function sumGunPaketlenen(
  * Bu sayede "XL" → "L" yanlış eşleşmesinin önüne geçilir.
  */
 function matchSizeCode(raw: string): UtuPaketSizeCode | undefined {
-  const exact = UTU_PAKET_SIZE_CODES.find((c) => c === raw);
+  const exact = UTU_PAKET_ALL_SIZE_CODES.find((c) => c === raw);
   if (exact) return exact;
   // En uzun eşleşeni bul (XL, L gibi prefix çakışmalarında XL kazanır)
-  return [...UTU_PAKET_SIZE_CODES]
+  return [...UTU_PAKET_ALL_SIZE_CODES]
     .sort((a, b) => b.length - a.length)
     .find((c) => raw.includes(c));
 }
@@ -206,7 +255,10 @@ export function emptyUtuPaketStages(): Record<UtuPaketStage, UtuPaketSlots> {
 }
 
 export function emptyUtuPaketBeden(): Record<UtuPaketSizeCode, number> {
-  return Object.fromEntries(UTU_PAKET_SIZE_CODES.map((c) => [c, 0])) as Record<UtuPaketSizeCode, number>;
+  return Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0])) as Record<
+    UtuPaketSizeCode,
+    number
+  >;
 }
 
 export function emptyPaketlemeSlotBeden(): UtuPaketSlotBedenGrid {
@@ -216,7 +268,10 @@ export function emptyPaketlemeSlotBeden(): UtuPaketSlotBedenGrid {
 }
 
 export function sumSlotBedenRow(row: UtuPaketBedenRow | undefined): number {
-  return UTU_PAKET_SIZE_CODES.reduce((s, c) => s + Math.max(0, Math.floor(Number(row?.[c]) || 0)), 0);
+  return UTU_PAKET_ALL_SIZE_CODES.reduce(
+    (s, c) => s + Math.max(0, Math.floor(Number(row?.[c]) || 0)),
+    0,
+  );
 }
 
 export function syncPaketlemeFromSlotBeden(
@@ -237,11 +292,11 @@ export function aggregateBedenFromPaketlemeSlots(
   const beden = emptyUtuPaketBeden();
   for (const { key } of UTU_PAKET_SLOT_DEFS) {
     const row = slotBeden[key];
-    for (const code of UTU_PAKET_SIZE_CODES) {
+    for (const code of UTU_PAKET_ALL_SIZE_CODES) {
       beden[code] += Math.max(0, Math.floor(Number(row?.[code]) || 0));
     }
   }
-  for (const code of UTU_PAKET_SIZE_CODES) {
+  for (const code of UTU_PAKET_ALL_SIZE_CODES) {
     beden[code] += Math.max(0, Math.floor(Number(ekBeden?.[code]) || 0));
   }
   return beden;
@@ -250,14 +305,14 @@ export function aggregateBedenFromPaketlemeSlots(
 export function normalizePaketlemeEkBeden(raw: UtuPaketBedenRow | undefined): UtuPaketBedenRow {
   const out = emptyUtuPaketBeden();
   if (!raw || typeof raw !== "object") return out;
-  for (const code of UTU_PAKET_SIZE_CODES) {
+  for (const code of UTU_PAKET_ALL_SIZE_CODES) {
     out[code] = Math.max(0, Math.floor(Number(raw[code]) || 0));
   }
   return out;
 }
 
 export function sumPaketlemeEkBeden(ekBeden: UtuPaketBedenRow | undefined): number {
-  return UTU_PAKET_SIZE_CODES.reduce(
+  return UTU_PAKET_ALL_SIZE_CODES.reduce(
     (s, c) => s + Math.max(0, Math.floor(Number(ekBeden?.[c]) || 0)),
     0
   );
@@ -275,7 +330,7 @@ export function normalizePaketlemeSlotBeden(
   for (const { key } of UTU_PAKET_SLOT_DEFS) {
     const row = raw[key];
     if (!row || typeof row !== "object") continue;
-    for (const code of UTU_PAKET_SIZE_CODES) {
+    for (const code of UTU_PAKET_ALL_SIZE_CODES) {
       grid[key][code] = Math.max(0, Math.floor(Number(row[code]) || 0));
     }
   }
@@ -322,11 +377,11 @@ export function normalizeUtuPaketPayload(raw: UtuPaketDayPayload): UtuPaketDayPa
     stageEkSayim[st] = Math.max(0, Math.floor(Number(raw.stageEkSayim?.[st]) || 0));
   }
   const beden = emptyUtuPaketBeden();
-  for (const code of UTU_PAKET_SIZE_CODES) {
+  for (const code of UTU_PAKET_ALL_SIZE_CODES) {
     beden[code] = Math.max(0, Math.floor(Number(raw.beden?.[code]) || 0));
   }
   for (const [k, v] of Object.entries(raw.beden || {})) {
-    if (!UTU_PAKET_SIZE_CODES.includes(k as UtuPaketSizeCode) && v > 0) {
+    if (!UTU_PAKET_ALL_SIZE_CODES.includes(k as UtuPaketSizeCode) && v > 0) {
       (beden as Record<string, number>)[k] = Math.max(0, Math.floor(Number(v) || 0));
     }
   }

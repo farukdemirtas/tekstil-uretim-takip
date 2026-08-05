@@ -9,21 +9,29 @@ import {
   listProductModels,
   saveUtuPaketSecondary,
   setBedenCekiTargets,
+  clearUtuPaket2xlBeden,
   setUtuPaketEkran5ShowPrimary,
   setUtuPaketSecondaryDayMeta,
   type ProductModelListItem,
   type UtuPaketSecondaryDayMeta,
 } from "@/lib/api";
 import {
-  UTU_PAKET_SIZE_CODES,
+  UTU_PAKET_ALL_SIZE_CODES,
+  UTU_PAKET_DISABLE_2XL_CONFIRM,
+  UTU_PAKET_SIZE_CODE_2XL,
   UTU_PAKET_SLOT_DEFS,
   UTU_PAKET_STAGE_META,
   UTU_PAKET_STAGES,
+  bedenHas2xlData,
   emptyBedenCekiTargets,
   emptyUtuPaketBeden,
   emptyUtuPaketStages,
+  hasExplicitInclude2xlPreference,
   normalizeUtuPaketPayload,
+  readInclude2xlPreference,
   sumUtuPaketSlots,
+  utuPaketFormSizeCodes,
+  writeInclude2xlPreference,
   type UtuPaketDayPayload,
   type UtuPaketSizeCode,
   type UtuPaketSlotKey,
@@ -65,7 +73,7 @@ function payloadHasSecondaryData(payload: UtuPaketDayPayload): boolean {
     if (sumUtuPaketSlots(payload.stages[st]) > 0) return true;
     if (Math.max(0, Math.floor(Number(payload.stageEkSayim?.[st]) || 0)) > 0) return true;
   }
-  for (const code of UTU_PAKET_SIZE_CODES) {
+  for (const code of UTU_PAKET_ALL_SIZE_CODES) {
     if (Math.max(0, Math.floor(Number(payload.beden[code]) || 0)) > 0) return true;
   }
   return false;
@@ -103,11 +111,17 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
   const [bedenCekiDirty, setBedenCekiDirty] = useState(false);
   const [bedenCekiSaving, setBedenCekiSaving] = useState(false);
   const [bedenCekiMsg, setBedenCekiMsg] = useState<string | null>(null);
+  const [include2xlBeden, setInclude2xlBeden] = useState(() => readInclude2xlPreference());
   const [ekran5PrefSaving, setEkran5PrefSaving] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelIdRef = useRef<number | null>(null);
   const dataRef = useRef(data);
   const dirtyRef = useRef(false);
+
+  const formSizeCodes = useMemo(
+    () => utuPaketFormSizeCodes(include2xlBeden),
+    [include2xlBeden]
+  );
 
   useEffect(() => {
     modelIdRef.current = dayMeta.secondaryModelId;
@@ -143,12 +157,19 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
         setPeriodPaketBeforeToday(Math.max(0, period - todayTotal));
 
         const beforeTodayBeden = emptyUtuPaketBeden();
-        for (const code of UTU_PAKET_SIZE_CODES) {
+        for (const code of UTU_PAKET_ALL_SIZE_CODES) {
           const periodBeden = Math.max(0, Math.floor(Number(analytics.bedenTotals?.[code]) || 0));
           const today = Math.max(0, Math.floor(Number(todayBeden[code]) || 0));
           beforeTodayBeden[code] = Math.max(0, periodBeden - today);
         }
         setPeriodBedenBeforeToday(beforeTodayBeden);
+        if (
+          !hasExplicitInclude2xlPreference() &&
+          (bedenHas2xlData(beforeTodayBeden) || bedenHas2xlData(todayBeden))
+        ) {
+          setInclude2xlBeden(true);
+          writeInclude2xlPreference(true);
+        }
       } catch {
         setPeriodPaketBeforeToday(0);
         setPeriodBedenBeforeToday(emptyUtuPaketBeden());
@@ -238,10 +259,14 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
       .then((res) => {
         if (cancelled) return;
         const next = emptyBedenCekiTargets();
-        for (const code of UTU_PAKET_SIZE_CODES) {
+        for (const code of UTU_PAKET_ALL_SIZE_CODES) {
           next[code] = Math.max(0, Math.floor(Number(res.targets?.[code]) || 0));
         }
         setBedenCekiTargetsState(next);
+        if (!hasExplicitInclude2xlPreference() && (next[UTU_PAKET_SIZE_CODE_2XL] || 0) > 0) {
+          setInclude2xlBeden(true);
+          writeInclude2xlPreference(true);
+        }
         setBedenCekiDirty(false);
       })
       .catch(() => {
@@ -375,6 +400,57 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
     setBedenCekiMsg(null);
   }
 
+  async function handleInclude2xlToggle(checked: boolean) {
+    if (checked) {
+      writeInclude2xlPreference(true);
+      setInclude2xlBeden(true);
+      return;
+    }
+
+    const hasToday = bedenHas2xlData(data.beden);
+    const hasTarget = (bedenCekiTargets[UTU_PAKET_SIZE_CODE_2XL] || 0) > 0;
+    const hasPeriod = bedenHas2xlData(periodBedenBeforeToday);
+    const hasAny2xl = hasToday || hasTarget || hasPeriod;
+    if (hasAny2xl) {
+      if (!window.confirm(UTU_PAKET_DISABLE_2XL_CONFIRM)) return;
+    }
+
+    const nextTargets = { ...bedenCekiTargets, [UTU_PAKET_SIZE_CODE_2XL]: 0 };
+    const nextData: UtuPaketDayPayload = {
+      ...data,
+      beden: { ...data.beden, [UTU_PAKET_SIZE_CODE_2XL]: 0 },
+    };
+
+    setBedenCekiTargetsState(nextTargets);
+    setData(nextData);
+    writeInclude2xlPreference(false);
+    setInclude2xlBeden(false);
+
+    const mid = dayMeta.secondaryModelId;
+    try {
+      if (mid && hasAny2xl) {
+        await clearUtuPaket2xlBeden(mid);
+        await setBedenCekiTargets(mid, nextTargets);
+        setBedenCekiDirty(false);
+      } else if (mid && hasTarget) {
+        await setBedenCekiTargets(mid, nextTargets);
+        setBedenCekiDirty(false);
+      } else if (hasTarget) {
+        setBedenCekiDirty(true);
+      }
+      if (hasToday && mid) {
+        await persist(nextData, mid);
+      } else if (mid && hasAny2xl) {
+        await loadData(mid);
+      }
+      if (hasAny2xl) {
+        setBedenCekiMsg("2XL verileri silindi — Ekran5 güncellenecek.");
+      }
+    } catch (e) {
+      setBedenCekiMsg(e instanceof Error ? e.message : "2XL verileri silinemedi");
+    }
+  }
+
   async function handleEkran5ShowPrimaryToggle(checked: boolean) {
     setEkran5PrefSaving(true);
     setError("");
@@ -450,7 +526,7 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
 
   const bedenSessionTotals = useMemo(() => {
     const out = emptyUtuPaketBeden();
-    for (const code of UTU_PAKET_SIZE_CODES) {
+    for (const code of UTU_PAKET_ALL_SIZE_CODES) {
       const today = Math.max(0, Math.floor(Number(data.beden[code]) || 0));
       out[code] = periodBedenBeforeToday[code] + today;
     }
@@ -458,7 +534,7 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
   }, [periodBedenBeforeToday, data.beden]);
 
   const bedenTotal = useMemo(
-    () => UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (bedenSessionTotals[c] || 0), 0),
+    () => UTU_PAKET_ALL_SIZE_CODES.reduce((s, c) => s + (bedenSessionTotals[c] || 0), 0),
     [bedenSessionTotals]
   );
 
@@ -772,8 +848,8 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
                         </span>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-5">
-                      {UTU_PAKET_SIZE_CODES.map((code) => {
+                    <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 ${formSizeCodes.length > 5 ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
+                      {formSizeCodes.map((code) => {
                         const sessionTotal = bedenSessionTotals[code] || 0;
                         return (
                           <label
@@ -802,12 +878,23 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
                   {/* Beden çeki hedefleri */}
                   {(() => {
                     const bedenToplam = bedenSessionTotals;
-                    const hedefToplam = UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (bedenCekiTargets[c] || 0), 0);
-                    const bedenCekiToplamAdet = UTU_PAKET_SIZE_CODES.reduce((s, c) => s + (bedenToplam[c] || 0), 0);
+                    const hedefToplam = UTU_PAKET_ALL_SIZE_CODES.reduce((s, c) => s + (bedenCekiTargets[c] || 0), 0);
+                    const bedenCekiToplamAdet = UTU_PAKET_ALL_SIZE_CODES.reduce((s, c) => s + (bedenToplam[c] || 0), 0);
                     return (
                       <div className="px-3 py-3 sm:px-5 sm:py-4">
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 sm:mb-3">
-                          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Beden çeki hedefleri</h3>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Beden çeki hedefleri</h3>
+                            <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={include2xlBeden}
+                                onChange={(e) => void handleInclude2xlToggle(e.target.checked)}
+                                className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-600"
+                              />
+                              2XL çeki hedefi (beden girişine de eklenir)
+                            </label>
+                          </div>
                           <button
                             type="button"
                             disabled={!modelIdForBeden || bedenCekiSaving || !bedenCekiDirty}
@@ -817,8 +904,8 @@ export default function SecondaryUtuPaketPanel({ selectedDate, primaryModelId, e
                             {bedenCekiSaving ? "…" : "Kaydet"}
                           </button>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2 md:grid-cols-5">
-                          {UTU_PAKET_SIZE_CODES.map((code) => {
+                        <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2 ${formSizeCodes.length > 5 ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
+                          {formSizeCodes.map((code) => {
                             const toplam = bedenToplam[code] || 0;
                             const hedef = bedenCekiTargets[code] || 0;
                             const pct = hedef > 0 ? Math.min(100, Math.round((toplam / hedef) * 100)) : 0;
