@@ -32,10 +32,17 @@ export function scheduleTakipsanSyncJob() {
     if (!isTakipsanConfigured()) return;
     try {
       const result = await syncTakipsanToUtuPaket();
-      // eslint-disable-next-line no-console
-      console.log(
-        `[takipsan] Senkron OK — okunan: ${result.readCount} (${result.source}), slot: ${result.slotKey}`
-      );
+      if (result.skipped) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[takipsan] Senkron atlandı — ${result.reason || "unknown"} (model: ${result.modelId ?? "—"}, tarih: ${result.date})`
+        );
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[takipsan] Senkron OK — okunan: ${result.readCount} (${result.source}), slot: ${result.slotKey}`
+        );
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn("[takipsan] Senkron hatası:", String(err?.message ?? err));

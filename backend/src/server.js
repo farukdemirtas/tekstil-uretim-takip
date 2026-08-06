@@ -82,6 +82,7 @@ import {
   getScreenPresenceStatus,
   applyHedefSessionToDailyMeta,
   applyUtuPaketSessionToMeta,
+  isProductModelTakipsanLinked,
   findModelSessionConflicts,
   getUtuPaketModelForDate,
   getRepairEntries,
@@ -935,6 +936,16 @@ app.post("/api/utu-paket/apply-session", requirePermission("utuPaket"), async (r
       endDate,
       dates: result.datesUpdated,
     });
+    if (isProductModelTakipsanLinked(m) && isTakipsanConfigured() && Array.isArray(result.dates)) {
+      for (const d of result.dates) {
+        try {
+          await syncTakipsanToUtuPaket({ date: d });
+        } catch (syncErr) {
+          // eslint-disable-next-line no-console
+          console.warn(`[TakipsanSync] apply-session ${d}:`, String(syncErr?.message ?? syncErr));
+        }
+      }
+    }
     void bumpEkranRefreshSignal().catch(() => {});
     return res.json(result);
   } catch (e) {

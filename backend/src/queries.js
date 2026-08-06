@@ -1937,13 +1937,14 @@ export async function applyHedefSessionToDailyMeta({ modelId, startDate, endDate
   }
 }
 
-/** Gerçek Takipsan bağlantısı: sipariş kodu veya sevkiyat ID (ürün etiketi tek başına sayılmaz) */
+/** Takipsan bağlantısı: sipariş kodu, sevkiyat ID veya Takipsan ürün etiketi */
 export function isProductModelTakipsanLinked(row) {
   if (!row || typeof row !== "object") return false;
   return Boolean(
     String(row.takipsanOrderCode || row.takipsan_order_code || "").trim() ||
       String(row.primaryConsignmentId || row.primary_consignment_id || "").trim() ||
-      String(row.secondaryConsignmentId || row.secondary_consignment_id || "").trim()
+      String(row.secondaryConsignmentId || row.secondary_consignment_id || "").trim() ||
+      String(row.takipsanProductLabel || row.takipsan_product_label || "").trim()
   );
 }
 
@@ -2258,7 +2259,7 @@ export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, 
       }
     }
     await dbRun("COMMIT");
-    return { ok: true, datesUpdated: dates.length, datesCleared, sessionStartDate: start };
+    return { ok: true, datesUpdated: dates.length, datesCleared, sessionStartDate: start, dates };
   } catch (e) {
     await dbRun("ROLLBACK").catch(() => {});
     throw e;
@@ -2550,6 +2551,12 @@ export async function createProductModel(payload, teamCodes) {
   const productLabel = fromTakipsan
     ? tsl || (pname && code ? buildTakipsanProductLabel(pname, code) : "")
     : "";
+  const primaryConsignmentId = payload?.primaryConsignmentId
+    ? String(payload.primaryConsignmentId).trim()
+    : null;
+  const secondaryConsignmentId = payload?.secondaryConsignmentId
+    ? String(payload.secondaryConsignmentId).trim()
+    : null;
 
   validateBaselineRows(teamCodes, payload?.baselines);
   validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
@@ -2559,9 +2566,10 @@ export async function createProductModel(payload, teamCodes) {
   return new Promise((resolve, reject) => {
     db.run(
       `INSERT INTO product_models (
-        model_code, product_name, takipsan_product_label, takipsan_order_code, target_quantity, session_start_date
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
-      [code, pname, productLabel, toc, tqty, sessionStart],
+        model_code, product_name, takipsan_product_label, takipsan_order_code, target_quantity, session_start_date,
+        primary_consignment_id, secondary_consignment_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [code, pname, productLabel, toc, tqty, sessionStart, primaryConsignmentId, secondaryConsignmentId],
       function onIns(err) {
         if (err) return reject(err);
         const modelId = this.lastID;
@@ -2597,13 +2605,6 @@ export async function updateProductModel(id, payload, teamCodes) {
   const existing = await getProductModelWithBaselines(id);
   if (!existing) throw new Error("Model bulunamadı");
 
-  const isLinked = Boolean(existing.isTakipsanLinked);
-  const code = isLinked ? String(existing.modelCode || "").trim() : String(payload?.modelCode ?? "").trim();
-  const pname = isLinked
-    ? String(existing.productName || "").trim()
-    : String(payload?.productName ?? "").trim();
-  if (!code) throw new Error("Model kodu gerekli");
-
   const sessionStart =
     payload?.sessionStartDate !== undefined
       ? payload.sessionStartDate
@@ -2624,6 +2625,18 @@ export async function updateProductModel(id, payload, teamCodes) {
         ? String(payload.primaryConsignmentId).trim()
         : null
       : existing.primaryConsignmentId ?? null;
+
+  const isLinked = isProductModelTakipsanLinked({
+    takipsanOrderCode: existing.takipsanOrderCode,
+    takipsanProductLabel: existing.takipsanProductLabel,
+    primaryConsignmentId,
+    secondaryConsignmentId,
+  });
+  const code = isLinked ? String(existing.modelCode || "").trim() : String(payload?.modelCode ?? "").trim();
+  const pname = isLinked
+    ? String(existing.productName || "").trim()
+    : String(payload?.productName ?? "").trim();
+  if (!code) throw new Error("Model kodu gerekli");
 
   const targetQuantity =
     payload?.targetQuantity !== undefined

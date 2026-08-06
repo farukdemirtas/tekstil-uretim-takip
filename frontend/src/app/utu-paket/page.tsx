@@ -922,7 +922,11 @@ export default function UtuPaketPage() {
               <div>
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">Paketleme</h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {dayTakipsanSynced ? "Takipsan · otomatik (~1 dk)" : "Manuel giriş · model hedefi"}
+                  {dayTakipsanSynced
+                    ? "Takipsan · otomatik (~1 dk)"
+                    : isManualPackagingDay
+                      ? "Manuel giriş · model hedefi"
+                      : "Takipsan · senkron bekleniyor (~1 dk)"}
                 </p>
               </div>
             </div>
