@@ -1937,14 +1937,13 @@ export async function applyHedefSessionToDailyMeta({ modelId, startDate, endDate
   }
 }
 
-/** Takipsan bağlantısı: sipariş kodu, sevkiyat ID veya Takipsan ürün etiketi */
+/** Takipsan bağlantısı: sipariş kodu veya sevkiyat ID (etiket tek başına bağlantı sayılmaz) */
 export function isProductModelTakipsanLinked(row) {
   if (!row || typeof row !== "object") return false;
   return Boolean(
     String(row.takipsanOrderCode || row.takipsan_order_code || "").trim() ||
       String(row.primaryConsignmentId || row.primary_consignment_id || "").trim() ||
-      String(row.secondaryConsignmentId || row.secondary_consignment_id || "").trim() ||
-      String(row.takipsanProductLabel || row.takipsan_product_label || "").trim()
+      String(row.secondaryConsignmentId || row.secondary_consignment_id || "").trim()
   );
 }
 
@@ -2094,27 +2093,6 @@ export async function enrichUtuPaketDayWithModelTarget(day) {
     return day;
   }
 
-  const { target: modelTarget, isTakipsanLinked } = await getProductModelPackagingInfo(mid);
-  day.manualPackaging = !isTakipsanLinked;
-
-  let packagingTarget = Math.max(
-    0,
-    Math.floor(Number(day.packagingTarget) || Number(day.takipsan?.orderQuantity) || 0)
-  );
-  const hasDayTakipsanSync = Boolean(day.takipsan?.syncedAt);
-  const hasTakipsanPackages =
-    Array.isArray(day.takipsan?.packages) && day.takipsan.packages.length > 0;
-
-  if (modelTarget > 0) {
-    if (!isTakipsanLinked || !hasDayTakipsanSync) {
-      packagingTarget = modelTarget;
-    } else {
-      packagingTarget = Math.max(packagingTarget, modelTarget);
-    }
-  }
-
-  day.packagingTarget = packagingTarget;
-
   const slotKeys = [
     "h0900",
     "h1000",
@@ -2127,35 +2105,51 @@ export async function enrichUtuPaketDayWithModelTarget(day) {
     "h1830",
   ];
   const sizeCodes = ["XS", "S", "M", "L", "XL"];
-  const packageItemSum = (day.takipsan?.packages || []).reduce(
-    (s, p) => s + Math.max(0, Math.floor(Number(p?.items) || 0)),
-    0
-  );
+
+  const { target: modelTarget, isTakipsanLinked } = await getProductModelPackagingInfo(mid);
+  day.manualPackaging = !isTakipsanLinked;
 
   if (!isTakipsanLinked) {
-    const hasTakipsanContamination =
-      hasDayTakipsanSync ||
-      hasTakipsanPackages ||
-      Number(day.takipsan?.packageCount) > 0 ||
-      packageItemSum > 0 ||
-      String(day.takipsan?.orderCode || "").trim().length > 0;
-
-    if (hasTakipsanContamination) {
-      if (dayHasManualPackagingData(day)) {
-        await purgeUtuPaketTakipsanMetaOnly(day.date);
-      } else {
-        await resetUtuPaketPackagingDay(day.date);
-        day.stages = {
-          ...(day.stages || {}),
-          paketleme: Object.fromEntries(slotKeys.map((k) => [k, 0])),
-        };
-        day.stageEkSayim = { ...(day.stageEkSayim || {}), paketleme: 0 };
-        day.beden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
-        day.paketlemeSlotBeden = emptyPaketlemeSlotBedenGrid();
-        day.paketlemeEkBeden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
-      }
+    const { dates: cleanedDates } = await cleanupManualModelTakipsanArtifacts(mid);
+    if (cleanedDates.includes(day.date)) {
+      day.stages = {
+        ...(day.stages || {}),
+        paketleme: Object.fromEntries(slotKeys.map((k) => [k, 0])),
+      };
+      day.stageEkSayim = { ...(day.stageEkSayim || {}), paketleme: 0 };
+      day.beden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
+      day.paketlemeSlotBeden = emptyPaketlemeSlotBedenGrid();
+      day.paketlemeEkBeden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
+      day.packagingTarget = modelTarget;
+      day.takipsan = {
+        packageCount: 0,
+        readCount: 0,
+        orderQuantity: modelTarget,
+        orderCode: "",
+        syncedAt: null,
+        packages: [],
+      };
+      return day;
     }
+  }
 
+  let packagingTarget = Math.max(
+    0,
+    Math.floor(Number(day.packagingTarget) || Number(day.takipsan?.orderQuantity) || 0)
+  );
+  const hasDayTakipsanSync = Boolean(day.takipsan?.syncedAt);
+
+  if (modelTarget > 0) {
+    if (!isTakipsanLinked || !hasDayTakipsanSync) {
+      packagingTarget = modelTarget;
+    } else {
+      packagingTarget = Math.max(packagingTarget, modelTarget);
+    }
+  }
+
+  day.packagingTarget = packagingTarget;
+
+  if (!isTakipsanLinked) {
     const slotSum = slotKeys.reduce(
       (s, k) => s + Math.max(0, Math.floor(Number(day.stages?.paketleme?.[k]) || 0)),
       0
@@ -2257,6 +2251,9 @@ export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, 
       } else if (!isTakipsanLinked) {
         await purgeUtuPaketTakipsanMetaOnly(d);
       }
+    }
+    if (!isTakipsanLinked) {
+      await cleanupManualModelTakipsanArtifacts(mid);
     }
     await dbRun("COMMIT");
     return { ok: true, datesUpdated: dates.length, datesCleared, sessionStartDate: start, dates };
@@ -5698,6 +5695,83 @@ function sumUtuPaketSlotRow(row) {
   return slotSum + (Number(row.ek_sayim) || 0);
 }
 
+/** Takipsan sync'in tek slota yazdığı kümülatif adet kalıbı (manuel beden yok) */
+function isLikelyTakipsanGhostPaketlemeRow(row) {
+  if (!row) return false;
+  const slotSum = UTU_PAKET_SLOT_KEYS.reduce((s, k) => s + (Number(row[k]) || 0), 0);
+  const ek = Math.max(0, Math.floor(Number(row.ek_sayim) || 0));
+  if (slotSum + ek <= 0) return false;
+  const nonZeroSlots = UTU_PAKET_SLOT_KEYS.filter((k) => Number(row[k]) > 0).length;
+  return nonZeroSlots === 1 && ek === 0;
+}
+
+/**
+ * Oturum paketleme toplamı: Takipsan günlerinde kümülatif okuma tekrar toplanmaz;
+ * manuel günlerde günlük slot toplamları toplanır.
+ */
+function computePaketlemePeriodTotal(dailyMap, dates, metaByDate) {
+  let total = 0;
+  let takipsanRunningMax = 0;
+  for (const d of dates) {
+    const dayTotal = Math.max(0, Math.floor(Number(dailyMap.get(d)?.stages?.paketleme) || 0));
+    if (dayTotal <= 0) continue;
+    const synced = Boolean(String(metaByDate.get(d) || "").trim());
+    if (synced) {
+      total += Math.max(0, dayTotal - takipsanRunningMax);
+      takipsanRunningMax = Math.max(takipsanRunningMax, dayTotal);
+    } else {
+      total += dayTotal;
+    }
+  }
+  return total;
+}
+
+/** Manuel modele yanlışlıkla yazılmış Takipsan slot/meta verisini temizler */
+export async function cleanupManualModelTakipsanArtifacts(modelId) {
+  const mid = Number(modelId);
+  if (!Number.isFinite(mid) || mid < 1) return { cleaned: 0, dates: [] };
+  const { target, isTakipsanLinked } = await getProductModelPackagingInfo(mid);
+  if (isTakipsanLinked) return { cleaned: 0, dates: [] };
+
+  const datesToClean = new Set();
+  const syncedRows = await dbAll(
+    `SELECT production_date AS productionDate FROM utu_paket_meta
+     WHERE model_id = ? AND takipsan_synced_at IS NOT NULL AND TRIM(takipsan_synced_at) != ''`,
+    [mid]
+  );
+  for (const row of syncedRows || []) {
+    const d = String(row.productionDate || "").trim();
+    if (d) datesToClean.add(d);
+  }
+
+  const ghostRows = await dbAll(
+    `SELECT m.production_date AS productionDate,
+            s.h0900, s.h1000, s.h1115, s.h1215, s.h1300, s.h1445, s.h1545, s.h1700, s.h1830, s.ek_sayim
+     FROM utu_paket_meta m
+     INNER JOIN utu_paket_slots s ON s.production_date = m.production_date AND s.stage = 'paketleme'
+     WHERE m.model_id = ?
+       AND (m.takipsan_synced_at IS NULL OR TRIM(m.takipsan_synced_at) = '')
+       AND NOT EXISTS (SELECT 1 FROM utu_paket_beden b WHERE b.production_date = m.production_date)
+       AND NOT EXISTS (SELECT 1 FROM utu_paket_slot_beden sb WHERE sb.production_date = m.production_date)`,
+    [mid]
+  );
+  for (const row of ghostRows || []) {
+    if (isLikelyTakipsanGhostPaketlemeRow(row)) {
+      const d = String(row.productionDate || "").trim();
+      if (d) datesToClean.add(d);
+    }
+  }
+
+  const dates = [...datesToClean].filter(Boolean).sort();
+  for (const d of dates) {
+    await resetUtuPaketPackagingDay(d);
+    if (target > 0) {
+      await dbRun(`UPDATE utu_paket_meta SET packaging_target = ? WHERE production_date = ?`, [target, d]);
+    }
+  }
+  return { cleaned: dates.length, dates };
+}
+
 export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
   const mid =
     modelId != null && Number.isFinite(Number(modelId)) && Number(modelId) > 0
@@ -5725,16 +5799,30 @@ export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
        WHERE production_date BETWEEN ? AND ?
        ORDER BY production_date ASC, size_code ASC`;
   const bedenParams = mid ? [mid, startDate, endDate] : [startDate, endDate];
+  const metaSql = mid
+    ? `SELECT production_date, takipsan_synced_at FROM utu_paket_meta
+       WHERE model_id = ? AND production_date BETWEEN ? AND ?`
+    : `SELECT production_date, takipsan_synced_at FROM utu_paket_meta
+       WHERE production_date BETWEEN ? AND ?`;
+  const metaParams = mid ? [mid, startDate, endDate] : [startDate, endDate];
 
   return new Promise((resolve, reject) => {
     db.all(slotSql, slotParams, (slotErr, slotRows) => {
       if (slotErr) return reject(slotErr);
       db.all(bedenSql, bedenParams, (bedenErr, bedenRows) => {
         if (bedenErr) return reject(bedenErr);
+        db.all(metaSql, metaParams, (metaErr, metaRows) => {
+          if (metaErr) return reject(metaErr);
+
+        const metaByDate = new Map();
+        for (const r of metaRows || []) {
+          metaByDate.set(r.production_date, r.takipsan_synced_at || "");
+        }
 
         const datesSet = new Set();
         for (const r of slotRows || []) datesSet.add(r.production_date);
         for (const r of bedenRows || []) datesSet.add(r.production_date);
+        for (const r of metaRows || []) datesSet.add(r.production_date);
         const dates = [...datesSet].sort();
 
         const dailyMap = new Map();
@@ -5770,13 +5858,16 @@ export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
           const nonZero = stageVals.filter((n) => n > 0);
           day.pipelineMin = nonZero.length ? Math.min(...nonZero) : 0;
           for (const st of UTU_PAKET_STAGES) {
-            periodTotals[st] += day.stages[st] || 0;
+            if (st !== "paketleme") {
+              periodTotals[st] += day.stages[st] || 0;
+            }
           }
           for (const code of UTU_PAKET_ALL_SIZE_CODES) {
             bedenTotals[code] += day.beden[code] || 0;
           }
           daily.push(day);
         }
+        periodTotals.paketleme = computePaketlemePeriodTotal(dailyMap, dates, metaByDate);
 
         const daysWithData = daily.filter((day) =>
           UTU_PAKET_STAGES.some((st) => (day.stages[st] || 0) > 0)
@@ -5810,6 +5901,7 @@ export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
           avgDailyByStage,
           daily,
           slotTotalsByStage,
+        });
         });
       });
     });
