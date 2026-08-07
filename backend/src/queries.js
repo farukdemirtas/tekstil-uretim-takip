@@ -5755,6 +5755,53 @@ function computePaketlemePeriodTotal(dailyMap, dates, metaByDate) {
   return total;
 }
 
+/** Oturum beden toplamı: aynı gün tekrarı kümülatif snapshot ise toplanmaz */
+function computeBedenPeriodTotals(dailyMap, dates) {
+  const totals = Object.fromEntries(UTU_PAKET_ALL_SIZE_CODES.map((c) => [c, 0]));
+  const daySnapshots = [];
+
+  for (const d of dates) {
+    const day = dailyMap.get(d);
+    if (!day) continue;
+    const sum = UTU_PAKET_ALL_SIZE_CODES.reduce(
+      (s, code) => s + Math.max(0, Math.floor(Number(day.beden?.[code]) || 0)),
+      0
+    );
+    if (sum > 0) daySnapshots.push({ beden: day.beden, sum });
+  }
+
+  if (daySnapshots.length === 0) return totals;
+
+  const sumAll = daySnapshots.reduce((s, row) => s + row.sum, 0);
+  const maxSum = Math.max(...daySnapshots.map((row) => row.sum));
+  const freq = new Map();
+  for (const row of daySnapshots) {
+    freq.set(row.sum, (freq.get(row.sum) || 0) + 1);
+  }
+  const dominantCount = Math.max(...freq.values());
+  const looksCumulativeDuplicate =
+    daySnapshots.length >= 3 &&
+    dominantCount >= Math.ceil(daySnapshots.length * 0.5) &&
+    sumAll > maxSum * 2;
+
+  if (looksCumulativeDuplicate) {
+    const best = daySnapshots.reduce((a, b) => (b.sum >= a.sum ? b : a));
+    for (const code of UTU_PAKET_ALL_SIZE_CODES) {
+      totals[code] = Math.max(0, Math.floor(Number(best.beden?.[code]) || 0));
+    }
+    return totals;
+  }
+
+  for (const d of dates) {
+    const day = dailyMap.get(d);
+    if (!day) continue;
+    for (const code of UTU_PAKET_ALL_SIZE_CODES) {
+      totals[code] += Math.max(0, Math.floor(Number(day.beden?.[code]) || 0));
+    }
+  }
+  return totals;
+}
+
 /** Manuel modele yanlışlıkla yazılmış Takipsan meta/slot verisini temizler (yalnızca senkronlu günler) */
 export async function cleanupManualModelTakipsanArtifacts(modelId) {
   const mid = Number(modelId);
@@ -5871,12 +5918,10 @@ export function getUtuPaketAnalytics(startDate, endDate, modelId = null) {
               periodTotals[st] += day.stages[st] || 0;
             }
           }
-          for (const code of UTU_PAKET_ALL_SIZE_CODES) {
-            bedenTotals[code] += day.beden[code] || 0;
-          }
           daily.push(day);
         }
         periodTotals.paketleme = computePaketlemePeriodTotal(dailyMap, dates, metaByDate);
+        Object.assign(bedenTotals, computeBedenPeriodTotals(dailyMap, dates));
 
         const daysWithData = daily.filter((day) =>
           UTU_PAKET_STAGES.some((st) => (day.stages[st] || 0) > 0)
