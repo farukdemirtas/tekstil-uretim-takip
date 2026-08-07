@@ -2038,6 +2038,20 @@ async function resetUtuPaketPackagingDay(date) {
   await dbRun(`DELETE FROM utu_paket_slot_beden WHERE production_date = ?`, [d]);
 }
 
+/** Yalnızca paketleme saat slotlarını sıfırlar; ek_sayim ve beden korunur */
+async function clearTakipsanGhostPaketlemeHourlySlots(date) {
+  const d = String(date || "").trim();
+  if (!d) return;
+  await purgeUtuPaketTakipsanMetaOnly(d);
+  await dbRun(
+    `UPDATE utu_paket_slots SET
+       h0900 = 0, h1000 = 0, h1115 = 0, h1215 = 0, h1300 = 0,
+       h1445 = 0, h1545 = 0, h1700 = 0, h1830 = 0
+     WHERE production_date = ? AND stage = 'paketleme'`,
+    [d]
+  );
+}
+
 /** Yalnızca Takipsan meta alanlarını temizler — manuel slot/beden korunur */
 async function purgeUtuPaketTakipsanMetaOnly(date) {
   const d = String(date || "").trim();
@@ -2116,14 +2130,11 @@ export async function enrichUtuPaketDayWithModelTarget(day) {
         ...(day.stages || {}),
         paketleme: Object.fromEntries(slotKeys.map((k) => [k, 0])),
       };
-      day.stageEkSayim = { ...(day.stageEkSayim || {}), paketleme: 0 };
-      day.beden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
-      day.paketlemeSlotBeden = emptyPaketlemeSlotBedenGrid();
-      day.paketlemeEkBeden = Object.fromEntries(sizeCodes.map((c) => [c, 0]));
+      const ekSayim = Math.max(0, Math.floor(Number(day.stageEkSayim?.paketleme) || 0));
       day.packagingTarget = modelTarget;
       day.takipsan = {
         packageCount: 0,
-        readCount: 0,
+        readCount: ekSayim,
         orderQuantity: modelTarget,
         orderCode: "",
         syncedAt: null,
@@ -5707,11 +5718,13 @@ function isLikelyTakipsanGhostPaketlemeRow(row) {
 
 /**
  * Oturum paketleme toplamı: Takipsan günlerinde kümülatif okuma tekrar toplanmaz;
- * manuel günlerde günlük slot toplamları toplanır.
+ * manuel günlerde günlük artışlar toplanır (aynı kümülatif değer tekrar sayılmaz).
  */
 function computePaketlemePeriodTotal(dailyMap, dates, metaByDate) {
   let total = 0;
   let takipsanRunningMax = 0;
+  const manualDayTotals = [];
+
   for (const d of dates) {
     const dayTotal = Math.max(0, Math.floor(Number(dailyMap.get(d)?.stages?.paketleme) || 0));
     if (dayTotal <= 0) continue;
@@ -5720,51 +5733,47 @@ function computePaketlemePeriodTotal(dailyMap, dates, metaByDate) {
       total += Math.max(0, dayTotal - takipsanRunningMax);
       takipsanRunningMax = Math.max(takipsanRunningMax, dayTotal);
     } else {
-      total += dayTotal;
+      manualDayTotals.push(dayTotal);
     }
   }
+
+  if (manualDayTotals.length === 0) return total;
+
+  const manualSum = manualDayTotals.reduce((s, n) => s + n, 0);
+  const manualMax = Math.max(...manualDayTotals);
+  const freq = new Map();
+  for (const n of manualDayTotals) {
+    freq.set(n, (freq.get(n) || 0) + 1);
+  }
+  const dominantCount = Math.max(...freq.values());
+  const looksCumulativeDuplicate =
+    manualDayTotals.length >= 3 &&
+    dominantCount >= Math.ceil(manualDayTotals.length * 0.5) &&
+    manualSum > manualMax * 2;
+
+  total += looksCumulativeDuplicate ? manualMax : manualSum;
   return total;
 }
 
-/** Manuel modele yanlışlıkla yazılmış Takipsan slot/meta verisini temizler */
+/** Manuel modele yanlışlıkla yazılmış Takipsan meta/slot verisini temizler (yalnızca senkronlu günler) */
 export async function cleanupManualModelTakipsanArtifacts(modelId) {
   const mid = Number(modelId);
   if (!Number.isFinite(mid) || mid < 1) return { cleaned: 0, dates: [] };
   const { target, isTakipsanLinked } = await getProductModelPackagingInfo(mid);
   if (isTakipsanLinked) return { cleaned: 0, dates: [] };
 
-  const datesToClean = new Set();
   const syncedRows = await dbAll(
     `SELECT production_date AS productionDate FROM utu_paket_meta
      WHERE model_id = ? AND takipsan_synced_at IS NOT NULL AND TRIM(takipsan_synced_at) != ''`,
     [mid]
   );
-  for (const row of syncedRows || []) {
-    const d = String(row.productionDate || "").trim();
-    if (d) datesToClean.add(d);
-  }
+  const dates = (syncedRows || [])
+    .map((row) => String(row.productionDate || "").trim())
+    .filter(Boolean)
+    .sort();
 
-  const ghostRows = await dbAll(
-    `SELECT m.production_date AS productionDate,
-            s.h0900, s.h1000, s.h1115, s.h1215, s.h1300, s.h1445, s.h1545, s.h1700, s.h1830, s.ek_sayim
-     FROM utu_paket_meta m
-     INNER JOIN utu_paket_slots s ON s.production_date = m.production_date AND s.stage = 'paketleme'
-     WHERE m.model_id = ?
-       AND (m.takipsan_synced_at IS NULL OR TRIM(m.takipsan_synced_at) = '')
-       AND NOT EXISTS (SELECT 1 FROM utu_paket_beden b WHERE b.production_date = m.production_date)
-       AND NOT EXISTS (SELECT 1 FROM utu_paket_slot_beden sb WHERE sb.production_date = m.production_date)`,
-    [mid]
-  );
-  for (const row of ghostRows || []) {
-    if (isLikelyTakipsanGhostPaketlemeRow(row)) {
-      const d = String(row.productionDate || "").trim();
-      if (d) datesToClean.add(d);
-    }
-  }
-
-  const dates = [...datesToClean].filter(Boolean).sort();
   for (const d of dates) {
-    await resetUtuPaketPackagingDay(d);
+    await clearTakipsanGhostPaketlemeHourlySlots(d);
     if (target > 0) {
       await dbRun(`UPDATE utu_paket_meta SET packaging_target = ? WHERE production_date = ?`, [target, d]);
     }
