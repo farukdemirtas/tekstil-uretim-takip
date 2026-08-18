@@ -995,6 +995,33 @@ export async function getEkranRefreshSignal(): Promise<string> {
   }
 }
 
+/** EKRAN1 izin panosu slaytı açık mı (varsayılan: evet) */
+export async function getEkran1IzinPanosuEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch(`${apiBase()}/ekran1/izin-panosu`, { cache: "no-store" });
+    if (!res.ok) return true;
+    const data = (await res.json()) as { enabled?: boolean };
+    return data.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
+export async function setEkran1IzinPanosuEnabled(enabled: boolean): Promise<boolean> {
+  const res = await apiFetch(`${apiBase()}/ekran1/izin-panosu`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { message?: string }).message || "İzin panosu ayarı kaydedilemedi");
+  }
+  const data = (await res.json()) as { enabled?: boolean };
+  notifyEkranRefresh("ekran1-izin-panosu");
+  return data.enabled !== false;
+}
+
 export type ScreenPresenceId =
   | "ekran1"
   | "ekran1b"

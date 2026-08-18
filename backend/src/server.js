@@ -77,6 +77,8 @@ import {
   setEkran1Target,
   bumpEkranRefreshSignal,
   getEkranRefreshSignal,
+  getEkran1IzinPanosuEnabled,
+  setEkran1IzinPanosuEnabled,
   upsertScreenHeartbeat,
   removeScreenPresence,
   getScreenPresenceStatus,
@@ -249,7 +251,29 @@ app.get("/api/ekran-refresh-signal", async (_req, res) => {
   }
 });
 
+/** EKRAN1 izin panosu slaytı — auth gerekmez (TV okur) */
+app.get("/api/ekran1/izin-panosu", async (_req, res) => {
+  try {
+    const enabled = await getEkran1IzinPanosuEnabled();
+    res.json({ enabled });
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
 app.use(requireAuth);
+
+/** EKRAN1 izin panosu slaytını aç/kapat */
+app.put("/api/ekran1/izin-panosu", requirePermission("ekran1"), async (req, res) => {
+  try {
+    const enabled = req.body?.enabled !== false && req.body?.enabled !== 0 && req.body?.enabled !== "0";
+    const result = await setEkran1IzinPanosuEnabled(enabled);
+    logActivity(req, "ekran1_izin_panosu", "app_kv", { enabled: result.enabled });
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
 
 /** TV ekranı canlılık sinyali — açık/kapalı takibi */
 app.post("/api/screens/heartbeat", async (req, res) => {

@@ -13,6 +13,8 @@ import {
   getDayProductMeta,
   getEkran1GenelIlerleme,
   getEkranRefreshSignal,
+  getEkran1IzinPanosuEnabled,
+  setEkran1IzinPanosuEnabled,
   getIzinTvLeaves,
   setAuthToken,
   type HedefAlertEvalPayload,
@@ -40,10 +42,8 @@ import { Ekran1IzinSlide } from "@/components/ekran1/Ekran1IzinSlide";
 import { useScreenHeartbeat } from "@/lib/useScreenHeartbeat";
 
 const AUTO_REFRESH_MS = 30_000;
-/** EKRAN1 ana slaytlar: üretim → izin (yoklama geçici kapalı) */
-const CONTENT_SLIDE_COUNT = 2;
+/** EKRAN1 ana slaytlar: üretim → izin (izin panosu ayarla açılabilir) */
 const CONTENT_SLIDE_ROTATE_MS = 30_000;
-const CONTENT_SLIDE_LABELS = ["Üretim", "İzin panosu"] as const;
 const IZIN_TV_REFRESH_MS = 30_000;
 /** Doğum günü: yalnızca periyodik overlay — tek kişide ~10 sn görünür, ardından ~50 sn gizli (döngü 60 sn). Çoklu kişide süre uzar; sırayla dönüş. */
 const BDAY_OVERLAY_VISIBLE_MS = 10_000;
@@ -423,6 +423,13 @@ export default function Ekran1IcerikPage() {
   const [izinTvLoading, setIzinTvLoading] = useState(true);
   const [izinTvError, setIzinTvError] = useState("");
   const [izinTvLastUpdated, setIzinTvLastUpdated] = useState("");
+  const [izinPanoEnabled, setIzinPanoEnabled] = useState(true);
+  const [izinPanoSaving, setIzinPanoSaving] = useState(false);
+
+  const contentSlideCount = izinPanoEnabled ? 2 : 1;
+  const contentSlideLabels = izinPanoEnabled
+    ? (["Üretim", "İzin panosu"] as const)
+    : (["Üretim"] as const);
 
   const birthdayCelebration = useMemo(() => {
     if (birthdayToday.length === 0)
@@ -735,11 +742,18 @@ export default function Ekran1IcerikPage() {
 
   useEffect(() => {
     if (!hasToken) return;
-    void fetchIzinTvData(false);
-  }, [hasToken, fetchIzinTvData]);
+    void getEkran1IzinPanosuEnabled()
+      .then(setIzinPanoEnabled)
+      .catch(() => setIzinPanoEnabled(true));
+  }, [hasToken]);
 
   useEffect(() => {
-    if (!hasToken) return;
+    if (!hasToken || !izinPanoEnabled) return;
+    void fetchIzinTvData(false);
+  }, [hasToken, izinPanoEnabled, fetchIzinTvData]);
+
+  useEffect(() => {
+    if (!hasToken || !izinPanoEnabled) return;
     const id = setInterval(() => void fetchIzinTvData(true), IZIN_TV_REFRESH_MS);
     const onVisible = () => {
       if (document.visibilityState === "visible") void fetchIzinTvData(true);
@@ -751,15 +765,16 @@ export default function Ekran1IcerikPage() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [hasToken, fetchIzinTvData]);
+  }, [hasToken, izinPanoEnabled, fetchIzinTvData]);
 
   const scheduleContentSlideRotate = useCallback(() => {
     if (slideRotateTimerRef.current) clearInterval(slideRotateTimerRef.current);
+    if (contentSlideCount <= 1) return;
     slideRotateTimerRef.current = window.setInterval(
-      () => setContentSlide((s) => (s + 1) % CONTENT_SLIDE_COUNT),
+      () => setContentSlide((s) => (s + 1) % contentSlideCount),
       CONTENT_SLIDE_ROTATE_MS,
     );
-  }, []);
+  }, [contentSlideCount]);
 
   const goToContentSlide = useCallback(
     (index: number) => {
@@ -769,6 +784,25 @@ export default function Ekran1IcerikPage() {
     [scheduleContentSlideRotate],
   );
 
+  const toggleIzinPano = useCallback(async () => {
+    if (izinPanoSaving) return;
+    setIzinPanoSaving(true);
+    try {
+      const next = !izinPanoEnabled;
+      const enabled = await setEkran1IzinPanosuEnabled(next);
+      setIzinPanoEnabled(enabled);
+      if (!enabled) setContentSlide(0);
+    } catch {
+      /* sessiz — TV akışı bozulmasın */
+    } finally {
+      setIzinPanoSaving(false);
+    }
+  }, [izinPanoEnabled, izinPanoSaving]);
+
+  useEffect(() => {
+    if (!izinPanoEnabled && contentSlide > 0) setContentSlide(0);
+  }, [izinPanoEnabled, contentSlide]);
+
   useEffect(() => {
     if (!hasToken) return;
     scheduleContentSlideRotate();
@@ -777,15 +811,24 @@ export default function Ekran1IcerikPage() {
     };
   }, [hasToken, scheduleContentSlideRotate]);
 
-  /** Uzaktan yenileme sinyali — hedef veya model değişince sessiz yenileme */
+  /** Uzaktan yenileme sinyali — hedef, model veya izin panosu ayarı değişince */
   useEffect(() => {
     if (!hasToken) return;
     let lastSignal = "";
     const checkSignal = async () => {
       const sig = await getEkranRefreshSignal().catch(() => "");
       if (!sig || sig === "0") return;
-      if (lastSignal === "") { lastSignal = sig; return; }
-      if (sig !== lastSignal) { lastSignal = sig; void fetchData(true); }
+      if (lastSignal === "") {
+        lastSignal = sig;
+        return;
+      }
+      if (sig !== lastSignal) {
+        lastSignal = sig;
+        void getEkran1IzinPanosuEnabled()
+          .then(setIzinPanoEnabled)
+          .catch(() => {});
+        void fetchData(true);
+      }
     };
     void checkSignal();
     const id = setInterval(() => void checkSignal(), 6_000);
@@ -1127,7 +1170,8 @@ export default function Ekran1IcerikPage() {
                 </div>
                 {lastUpdated && (
                   <p className="text-[11px] font-semibold text-slate-700">
-                    Son güncelleme {lastUpdated} · 30 sn yenileme · slayt {contentSlide + 1}/{CONTENT_SLIDE_COUNT}
+                    Son güncelleme {lastUpdated} · 30 sn yenileme
+                    {contentSlideCount > 1 ? ` · slayt ${contentSlide + 1}/${contentSlideCount}` : ""}
                   </p>
                 )}
               </div>
@@ -1368,15 +1412,17 @@ export default function Ekran1IcerikPage() {
         aria-label="EKRAN1 slaytları"
       >
         <div className="mx-auto w-full max-w-[min(100%,120rem)]">
-          <div className="relative mb-2 h-1.5 overflow-hidden rounded-full bg-slate-200/90 shadow-inner ring-1 ring-slate-200/50 min-[1920px]:h-2">
-            <div
-              key={contentSlide}
-              className="ekran4-slide-progress-bar h-full rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500"
-              style={{ "--ekran4-slide-duration": `${CONTENT_SLIDE_ROTATE_MS}ms` } as CSSProperties}
-            />
-          </div>
+          {contentSlideCount > 1 ? (
+            <div className="relative mb-2 h-1.5 overflow-hidden rounded-full bg-slate-200/90 shadow-inner ring-1 ring-slate-200/50 min-[1920px]:h-2">
+              <div
+                key={contentSlide}
+                className="ekran4-slide-progress-bar h-full rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500"
+                style={{ "--ekran4-slide-duration": `${CONTENT_SLIDE_ROTATE_MS}ms` } as CSSProperties}
+              />
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-            {CONTENT_SLIDE_LABELS.map((label, i) => (
+            {contentSlideLabels.map((label, i) => (
               <button
                 key={label}
                 type="button"
@@ -1392,6 +1438,21 @@ export default function Ekran1IcerikPage() {
                 {label}
               </button>
             ))}
+            <span className="hidden h-5 w-px bg-slate-300 sm:inline" aria-hidden />
+            <button
+              type="button"
+              onClick={() => void toggleIzinPano()}
+              disabled={izinPanoSaving}
+              title={izinPanoEnabled ? "İzin panosunu kapat" : "İzin panosunu aç"}
+              aria-pressed={izinPanoEnabled}
+              className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider transition sm:text-xs ${
+                izinPanoEnabled
+                  ? "bg-violet-600 text-white shadow-md hover:bg-violet-700"
+                  : "bg-slate-200 text-slate-600 ring-1 ring-slate-300 hover:bg-slate-300"
+              } disabled:opacity-60`}
+            >
+              {izinPanoSaving ? "…" : izinPanoEnabled ? "İzin panosu: Açık" : "İzin panosu: Kapalı"}
+            </button>
           </div>
         </div>
       </div>

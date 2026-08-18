@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { getScreenPresenceStatus, type ScreenPresenceStatusPayload } from "@/lib/api";
+import {
+  getEkran1IzinPanosuEnabled,
+  getScreenPresenceStatus,
+  setEkran1IzinPanosuEnabled,
+  type ScreenPresenceStatusPayload,
+} from "@/lib/api";
 
 const REFRESH_MS = 15_000;
 
@@ -38,6 +43,9 @@ export default function TvScreensStatusSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [izinPanoEnabled, setIzinPanoEnabled] = useState(true);
+  const [izinPanoLoading, setIzinPanoLoading] = useState(true);
+  const [izinPanoSaving, setIzinPanoSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -52,11 +60,35 @@ export default function TvScreensStatusSection() {
     }
   }, []);
 
+  const loadIzinPano = useCallback(async () => {
+    try {
+      setIzinPanoEnabled(await getEkran1IzinPanosuEnabled());
+    } catch {
+      setIzinPanoEnabled(true);
+    } finally {
+      setIzinPanoLoading(false);
+    }
+  }, []);
+
+  const toggleIzinPano = useCallback(async () => {
+    if (izinPanoSaving) return;
+    setIzinPanoSaving(true);
+    try {
+      const next = !izinPanoEnabled;
+      setIzinPanoEnabled(await setEkran1IzinPanosuEnabled(next));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "İzin panosu ayarı kaydedilemedi");
+    } finally {
+      setIzinPanoSaving(false);
+    }
+  }, [izinPanoEnabled, izinPanoSaving]);
+
   useEffect(() => {
     void load();
+    void loadIzinPano();
     const id = window.setInterval(() => void load(), REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [load]);
+  }, [load, loadIzinPano]);
 
   const onlineCount = data?.screens.filter((s) => s.online).length ?? 0;
   const totalCount = data?.screens.length ?? 0;
@@ -90,6 +122,36 @@ export default function TvScreensStatusSection() {
           {error}
         </p>
       ) : null}
+
+      <article className="mt-5 rounded-lg border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900 dark:bg-violet-950/20">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">EKRAN1 · İzin panosu</h3>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              Açıkken EKRAN1 üretim slaytı ile izin panosu arasında 30 saniyede bir geçiş yapar.
+              Kapalıyken yalnızca üretim özeti gösterilir. Tüm açık EKRAN1 oturumları birkaç saniye
+              içinde güncellenir.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void toggleIzinPano()}
+            disabled={izinPanoLoading || izinPanoSaving}
+            aria-pressed={izinPanoEnabled}
+            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:opacity-60 ${
+              izinPanoEnabled
+                ? "bg-violet-600 text-white hover:bg-violet-700"
+                : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+            }`}
+          >
+            {izinPanoLoading || izinPanoSaving
+              ? "Kaydediliyor…"
+              : izinPanoEnabled
+                ? "Açık — Kapat"
+                : "Kapalı — Aç"}
+          </button>
+        </div>
+      </article>
 
       {loading && !data ? (
         <p className="mt-6 text-sm text-slate-500">Yükleniyor…</p>

@@ -4596,6 +4596,21 @@ export function getEkranRefreshSignal() {
   });
 }
 
+const EKRAN1_IZIN_PANOSU_KV = "ekran1_izin_panosu_enabled";
+
+export async function getEkran1IzinPanosuEnabled() {
+  const v = await getAppKv(EKRAN1_IZIN_PANOSU_KV);
+  if (v === null || v === "") return true;
+  return v === "1" || v === "true";
+}
+
+export async function setEkran1IzinPanosuEnabled(enabled) {
+  const on = Boolean(enabled);
+  await setAppKv(EKRAN1_IZIN_PANOSU_KV, on ? "1" : "0");
+  await bumpEkranRefreshSignal();
+  return { enabled: on };
+}
+
 export function getAppKv(key) {
   const k = String(key || "").trim() || "?";
   return new Promise((resolve, reject) => {
