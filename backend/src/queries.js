@@ -2322,7 +2322,19 @@ export function listProductModels() {
          WHERE model_id IS NOT NULL
          GROUP BY model_id
        ) up ON up.model_id = pm.id
-       ORDER BY pm.model_code COLLATE NOCASE`,
+       ORDER BY
+         COALESCE(
+           CASE
+             WHEN prod.lastDate IS NOT NULL AND up.lastDate IS NOT NULL THEN MAX(prod.lastDate, up.lastDate)
+             WHEN prod.lastDate IS NOT NULL THEN prod.lastDate
+             WHEN up.lastDate IS NOT NULL THEN up.lastDate
+             ELSE NULL
+           END,
+           pm.session_start_date,
+           pm.created_at,
+           '1970-01-01'
+         ) DESC,
+         pm.id DESC`,
       [],
       (err, rows) => {
         if (err) return reject(err);
