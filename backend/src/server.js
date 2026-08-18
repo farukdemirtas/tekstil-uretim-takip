@@ -68,6 +68,7 @@ import {
   createProductModel,
   updateProductModel,
   deleteProductModel,
+  purgeOrphanProductModelMeta,
   getEkran5Target,
   setEkran5Target,
   getBedenCekiTargets,
@@ -767,6 +768,7 @@ app.delete("/api/product-models/:id", requirePermission("ayarlar"), async (req, 
     const r = await deleteProductModel(id);
     if (!r.deleted) return res.status(404).json({ message: "Bulunamadı" });
     logActivity(req, "urun_model_sil", "product_models", { id });
+    void bumpEkranRefreshSignal().catch(() => {});
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ message: String(e.message || e) });
@@ -2356,6 +2358,9 @@ app.post("/api/admin/database/restore", requireAdmin, restoreSqlBody, async (req
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Backend running on http://localhost:${PORT}`);
+  void purgeOrphanProductModelMeta().catch((e) => {
+    console.error("[tekstil] orphan model meta cleanup:", e?.message || e);
+  });
   scheduleTakipsanSyncJob();
   scheduleIzinAttendanceSyncJob();
 });

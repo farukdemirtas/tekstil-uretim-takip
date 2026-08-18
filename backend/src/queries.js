@@ -651,8 +651,17 @@ export async function getDayProductMeta(date) {
   let modelId =
     mid != null && mid !== "" && Number.isFinite(Number(mid)) ? Number(mid) : null;
   const ms = row?.metaSource != null ? String(row.metaSource) : "manual";
-  const productModel = row?.productModel != null ? String(row.productModel) : "";
-  const productName = row?.productName != null ? String(row.productName) : "";
+  let productModel = row?.productModel != null ? String(row.productModel) : "";
+  let productName = row?.productName != null ? String(row.productName) : "";
+
+  if (modelId != null) {
+    const live = await dbGet(`SELECT id FROM product_models WHERE id = ?`, [modelId]);
+    if (!live) {
+      modelId = null;
+      productModel = "";
+      productName = "";
+    }
+  }
 
   // Veri giriş ekranındaki günün model kodu esas alınır (yeni modele geçişte)
   if (productModel.trim()) {
@@ -1876,7 +1885,7 @@ export async function findModelSessionConflicts({ modelId, startDate, endDate, s
     `SELECT m.production_date AS productionDate, m.model_id AS modelId,
             pm.model_code AS modelCode, pm.product_name AS productName
      FROM ${table} m
-     LEFT JOIN product_models pm ON pm.id = m.model_id
+     INNER JOIN product_models pm ON pm.id = m.model_id
      WHERE m.production_date IN (${placeholders})
        AND m.model_id IS NOT NULL
        AND m.model_id != ?`,
@@ -1897,15 +1906,6 @@ export async function applyHedefSessionToDailyMeta({ modelId, startDate, endDate
   const sd = String(startDate).trim();
   if (!Number.isFinite(mid) || mid < 1) {
     throw new Error("Geçersiz model");
-  }
-  const conflicts = await findModelSessionConflicts({
-    modelId: mid,
-    startDate,
-    endDate,
-    scope: "production",
-  });
-  if (conflicts.length) {
-    throw new Error(formatSessionConflictMessage(conflicts, "Üretim"));
   }
   const dates = eachWeekdayIsoInRange(startDate, endDate);
   const upsertSql = `
@@ -2195,15 +2195,6 @@ export async function applyUtuPaketSessionToMeta({ modelId, startDate, endDate, 
     throw new Error("Geçersiz model");
   }
   const { target: packagingTarget, isTakipsanLinked } = await getProductModelPackagingInfo(mid);
-  const conflicts = await findModelSessionConflicts({
-    modelId: mid,
-    startDate,
-    endDate,
-    scope: "utuPaket",
-  });
-  if (conflicts.length) {
-    throw new Error(formatSessionConflictMessage(conflicts, "Ütü–paket"));
-  }
   const dates = eachWeekdayIsoInRange(startDate, endDate);
   const upsertManualSql = `
     INSERT INTO utu_paket_meta (production_date, packaging_target, model_id, product_name, product_model, model_reference_date)
@@ -2838,13 +2829,55 @@ export function setEkran1Target(id, value) {
   });
 }
 
-export function deleteProductModel(id) {
-  return new Promise((resolve, reject) => {
-    db.run("DELETE FROM product_models WHERE id = ?", [id], function onDel(err) {
-      if (err) return reject(err);
-      resolve({ deleted: this.changes > 0 });
-    });
-  });
+/** Silinmiş modele ait meta satırlarını temizler (ana ekranda hayalet ürün kalmasın). */
+export async function purgeOrphanProductModelMeta() {
+  await dbRun(`
+    DELETE FROM daily_product_meta
+    WHERE model_id IS NOT NULL
+      AND model_id NOT IN (SELECT id FROM product_models)
+  `);
+  await dbRun(`
+    DELETE FROM utu_paket_meta
+    WHERE model_id IS NOT NULL
+      AND model_id NOT IN (SELECT id FROM product_models)
+  `);
+  await dbRun(`
+    UPDATE daily_product_meta SET secondary_model_id = NULL
+    WHERE secondary_model_id IS NOT NULL
+      AND secondary_model_id NOT IN (SELECT id FROM product_models)
+  `);
+  await dbRun(`
+    UPDATE utu_paket_meta SET secondary_model_id = NULL
+    WHERE secondary_model_id IS NOT NULL
+      AND secondary_model_id NOT IN (SELECT id FROM product_models)
+  `);
+}
+
+export async function deleteProductModel(id) {
+  const mid = Number(id);
+  if (!Number.isFinite(mid) || mid < 1) return { deleted: false };
+
+  const exists = await dbGet(`SELECT id FROM product_models WHERE id = ?`, [mid]);
+  if (!exists) return { deleted: false };
+
+  await dbRun("BEGIN TRANSACTION");
+  try {
+    await dbRun(`UPDATE daily_product_meta SET secondary_model_id = NULL WHERE secondary_model_id = ?`, [mid]);
+    await dbRun(`UPDATE utu_paket_meta SET secondary_model_id = NULL WHERE secondary_model_id = ?`, [mid]);
+    await dbRun(`DELETE FROM daily_product_meta WHERE model_id = ?`, [mid]);
+    await dbRun(`DELETE FROM utu_paket_meta WHERE model_id = ?`, [mid]);
+    await dbRun(`DELETE FROM utu_paket_slots_b WHERE model_id = ?`, [mid]);
+    await dbRun(`DELETE FROM utu_paket_beden_b WHERE model_id = ?`, [mid]);
+    await dbRun(`DELETE FROM utu_paket_b_model_meta WHERE model_id = ?`, [mid]);
+    await dbRun(`DELETE FROM production_entries_b WHERE model_id = ?`, [mid]);
+    await dbRun(`DELETE FROM model_gunluk_ozet_processes WHERE model_id = ?`, [mid]);
+    await dbRun(`DELETE FROM product_models WHERE id = ?`, [mid]);
+    await dbRun("COMMIT");
+    return { deleted: true };
+  } catch (e) {
+    await dbRun("ROLLBACK").catch(() => {});
+    throw e;
+  }
 }
 
 async function resolveWorkerIdsByName(workerId) {

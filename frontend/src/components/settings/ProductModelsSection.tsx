@@ -20,7 +20,7 @@ import {
   type ProductModelListItem,
   type TeamRow,
 } from "@/lib/api";
-import { clampToWeekdayIso, coerceWeekdayPickerValue, previousWeekdayIso, todayWeekdayIso } from "@/lib/businessCalendar";
+import { clampToWeekdayIso, coerceWeekdayPickerValue, todayWeekdayIso } from "@/lib/businessCalendar";
 import { formatModelPickerLabel, formatProductDisplayLine } from "@/lib/takipsanProduct";
 import { hasPermission } from "@/lib/permissions";
 
@@ -113,11 +113,6 @@ function formatConflictList(conflicts: ModelSessionConflict[]): string {
     .join(" · ");
 }
 
-function earliestConflictDate(conflicts: ModelSessionConflict[]): string | null {
-  if (!conflicts.length) return null;
-  return [...conflicts].map((c) => c.productionDate).sort()[0] ?? null;
-}
-
 function formatSessionApplyMsg(datesUpdated: number, datesCleared?: number): string {
   if (datesUpdated <= 0) return "Aralıkta güncellenecek iş günü bulunamadı.";
   const cleared = datesCleared ?? 0;
@@ -129,30 +124,19 @@ function formatSessionApplyMsg(datesUpdated: number, datesCleared?: number): str
 function SessionConflictWarning({
   conflicts,
   label,
-  onShrinkEnd,
 }: {
   conflicts: ModelSessionConflict[];
   label: string;
-  onShrinkEnd?: () => void;
 }) {
   if (!conflicts.length) return null;
   return (
-    <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+    <div className="mt-2.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-200">
       <p>
-        ⚠ {label} aralığında başka modele atanmış günler var: {formatConflictList(conflicts)}
+        ℹ {label} aralığında başka modele atanmış günler var: {formatConflictList(conflicts)}
       </p>
-      <p className="mt-1 text-amber-800 dark:text-amber-300/90">
-        Eski modeli düzenliyorsanız bitiş tarihini çakışmadan önceki güne çekip «Günlere uygula» deyin; yeni aralık dışındaki günler otomatik kaldırılır.
+      <p className="mt-1 text-sky-800 dark:text-sky-300/90">
+        «Günlere uygula» dediğinizde bu günler seçili modele aktarılır; eski atama kaldırılır.
       </p>
-      {onShrinkEnd ? (
-        <button
-          type="button"
-          onClick={onShrinkEnd}
-          className="mt-2 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/40"
-        >
-          Bitişi çakışmadan önceye al
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -457,10 +441,6 @@ export default function ProductModelsSection() {
     const start = clampToWeekdayIso(hedefApplyStart);
     const end = clampToWeekdayIso(hedefApplyEnd);
     if (!start || !end || start > end) { setHedefApplyErr("Geçerli bir hafta içi tarih aralığı seçin."); return; }
-    if (hedefConflicts.length > 0) {
-      setHedefApplyErr("Seçili aralıkta başka modele atanmış günler var. Bitiş tarihini daraltın veya «Bitişi çakışmadan önceye al» kullanın.");
-      return;
-    }
     setHedefApplyBusy(true);
     try {
       const m = await getProductModel(Number(targetId));
@@ -483,34 +463,6 @@ export default function ProductModelsSection() {
     }
   }
 
-  function shrinkHedefEndBeforeConflicts() {
-    const first = earliestConflictDate(hedefConflicts);
-    if (!first) return;
-    const start = clampToWeekdayIso(hedefApplyStart);
-    const newEnd = previousWeekdayIso(first);
-    if (!start || newEnd < start) {
-      setHedefApplyErr("Çakışmayı gidermek için başlangıç tarihini de ileri almanız gerekir.");
-      return;
-    }
-    setHedefApplyEnd(newEnd);
-    setHedefApplyMsg(null);
-    setHedefApplyErr(null);
-  }
-
-  function shrinkUtuPaketEndBeforeConflicts() {
-    const first = earliestConflictDate(utuPaketConflicts);
-    if (!first) return;
-    const start = clampToWeekdayIso(utuPaketApplyStart);
-    const newEnd = previousWeekdayIso(first);
-    if (!start || newEnd < start) {
-      setUtuPaketApplyErr("Çakışmayı gidermek için başlangıç tarihini de ileri almanız gerekir.");
-      return;
-    }
-    setUtuPaketApplyEnd(newEnd);
-    setUtuPaketApplyMsg(null);
-    setUtuPaketApplyErr(null);
-  }
-
   async function handleUtuPaketApplyToDays() {
     setUtuPaketApplyMsg(null);
     setUtuPaketApplyErr(null);
@@ -522,10 +474,6 @@ export default function ProductModelsSection() {
     const end = clampToWeekdayIso(utuPaketApplyEnd);
     if (!start || !end || start > end) {
       setUtuPaketApplyErr("Geçerli bir hafta içi tarih aralığı seçin.");
-      return;
-    }
-    if (utuPaketConflicts.length > 0) {
-      setUtuPaketApplyErr("Seçili aralıkta başka modele atanmış günler var. Bitiş tarihini daraltın veya «Bitişi çakışmadan önceye al» kullanın.");
       return;
     }
     setUtuPaketApplyBusy(true);
@@ -761,7 +709,7 @@ export default function ProductModelsSection() {
                   {typeof editingId === "number" ? (
                     <button
                       type="button"
-                      disabled={hedefApplyBusy || hedefConflicts.length > 0}
+                      disabled={hedefApplyBusy}
                       onClick={() => {
                         void handleHedefApplyToProduction();
                       }}
@@ -777,7 +725,7 @@ export default function ProductModelsSection() {
                 {hedefApplyMsg ? (
                   <p className="mt-2.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">✓ {hedefApplyMsg}</p>
                 ) : null}
-                <SessionConflictWarning conflicts={hedefConflicts} label="Üretim" onShrinkEnd={shrinkHedefEndBeforeConflicts} />
+                <SessionConflictWarning conflicts={hedefConflicts} label="Üretim" />
                 {hedefApplyErr ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {hedefApplyErr}</p> : null}
               </div>
             ) : (
@@ -814,7 +762,7 @@ export default function ProductModelsSection() {
                   />
                   <button
                     type="button"
-                    disabled={utuPaketApplyBusy || utuPaketConflicts.length > 0}
+                    disabled={utuPaketApplyBusy}
                     onClick={() => void handleUtuPaketApplyToDays()}
                     className="flex items-center gap-1.5 rounded-lg border border-indigo-400 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
                   >
@@ -826,7 +774,7 @@ export default function ProductModelsSection() {
                     ✓ {utuPaketApplyMsg}
                   </p>
                 ) : null}
-                <SessionConflictWarning conflicts={utuPaketConflicts} label="Ütü–paket" onShrinkEnd={shrinkUtuPaketEndBeforeConflicts} />
+                <SessionConflictWarning conflicts={utuPaketConflicts} label="Ütü–paket" />
                 {utuPaketApplyErr ? (
                   <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {utuPaketApplyErr}</p>
                 ) : null}
