@@ -3,10 +3,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   addWorkerName,
-  bulkInsertWorkerNames,
   deleteWorkerName,
   getWorkerNames,
   setAuthToken,
+  syncCurrentPersonnelList,
   updateWorkerName,
 } from "@/lib/api";
 import { loadXlsx } from "@/lib/xlsxLazy";
@@ -110,17 +110,38 @@ export default function PersonnelNamesSection() {
         );
         return;
       }
-      const res = await bulkInsertWorkerNames(names);
-      const parts: string[] = [];
-      parts.push(`Yeni eklenen: ${res.inserted}`);
-      if (res.duplicateSame > 0) parts.push(`zaten kayıtlı (atlandı): ${res.duplicateSame}`);
-      if (res.skippedInvalid > 0) parts.push(`geçersiz satır: ${res.skippedInvalid}`);
-      if (res.duplicateSame > 0) {
-        window.alert(
-          `${res.duplicateSame} isim sistemde zaten kayıtlı olduğu için tekrar eklenmedi.`
-        );
+
+      // Önce önizleme (dryRun) al: ekleme/çıkarma/pasife-alma etkisini kullanıcıya göster.
+      const preview = await syncCurrentPersonnelList(names, { dryRun: true });
+      const lines: string[] = [
+        `Yüklenen listede ${preview.currentListCount} kişi var.`,
+        `Eklenecek yeni isim: ${preview.added.length}`,
+        `İsim havuzundan çıkarılacak (artık listede yok): ${preview.removedFromPool.length}`,
+        `Aktif çalışan listelerinden pasife alınacak: ${preview.deactivatedWorkers.length}`,
+      ];
+      if (preview.deactivatedWorkers.length > 0) {
+        const sample = preview.deactivatedWorkers.slice(0, 15).map((w) => `• ${w.name} (${w.team} / ${w.process})`);
+        lines.push("", "Pasife alınacaklardan örnek:", ...sample);
+        if (preview.deactivatedWorkers.length > sample.length) {
+          lines.push(`… ve ${preview.deactivatedWorkers.length - sample.length} kişi daha.`);
+        }
       }
-      setExcelMsg(parts.join(" · "));
+      lines.push(
+        "",
+        "Not: Pasife alınan kişiler silinmez; geçmiş üretim kayıtları ve model/kişi bazlı analizlerde görünmeye devam eder. Sadece yeni veri girişi ve aktif seçim listelerinden kaldırılırlar."
+      );
+      const confirmed = window.confirm(
+        `Bu dosyayı GÜNCEL personel listesi olarak kaydetmek istediğinize emin misiniz?\n\n${lines.join("\n")}`
+      );
+      if (!confirmed) {
+        setExcelMsg("İşlem iptal edildi.");
+        return;
+      }
+
+      const res = await syncCurrentPersonnelList(names, { dryRun: false });
+      setExcelMsg(
+        `Güncellendi — eklenen: ${res.added.length} · havuzdan çıkarılan: ${res.removedFromPool.length} · pasife alınan: ${res.deactivatedWorkers.length}`
+      );
       await load();
     } catch (e) {
       setExcelMsg(e instanceof Error ? e.message : "Excel okunamadı.");
@@ -139,11 +160,19 @@ export default function PersonnelNamesSection() {
         Ana ekrandaki <strong>Çalışan Ekle</strong> formu bu listeden beslenir. İsimleri büyük harfle saklarız. Burada bir
         ismi güncellediğinizde aynı isme sahip tüm çalışan kayıtları (veri girişi listeleri, üretim ve TV ekranlarındaki
         isimler) birlikte güncellenir. Toplu Excel: doğum günleri ile aynı Yeşil İmaj formatı — <strong>A</strong> sıra,{" "}
-        <strong>B</strong> ad, <strong>C</strong> soyad; ad ve soyad birleştirilerek isim havuzuna eklenir.
+        <strong>B</strong> ad, <strong>C</strong> soyad.
       </p>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Toplu Excel</h2>
+        <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Toplu Excel — Güncel Personel Listesi
+        </h2>
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+          Yüklediğiniz dosya <strong>en güncel/aktif personel listesi</strong> kabul edilir: listede olmayan yeni isimler
+          eklenir, listede artık bulunmayanlar isim havuzundan çıkarılır ve aktif çalışan listelerinden (üretim/kontrol
+          ekranlarındaki seçim listeleri) pasife alınır. Pasife alınan kişiler <strong>silinmez</strong> — geçmiş üretim
+          kayıtları ile model ve kişi bazlı analizlerde görünmeye devam eder. Onaylamadan önce ne değişeceği özetlenir.
+        </p>
         <label className="flex cursor-pointer flex-col gap-2 sm:flex-row sm:items-center">
           <span className="rounded-md border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100">
             {excelBusy ? "İşleniyor…" : ".xlsx / .xls seç"}

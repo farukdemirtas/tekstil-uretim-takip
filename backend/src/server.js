@@ -9,6 +9,7 @@ import {
   updateWorkerName,
   deleteWorkerName,
   bulkInsertWorkerNames,
+  syncCurrentPersonnelList,
   createWorker,
   updateWorker,
   deleteWorker,
@@ -523,6 +524,29 @@ app.post("/api/worker-names/bulk", requirePermission("ayarlar"), async (req, res
   try {
     const r = await bulkInsertWorkerNames(names);
     logActivity(req, "isim_havuzu_toplu", "worker_names", r);
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ message: String(e) });
+  }
+});
+
+/**
+ * Yüklenen listeyi "güncel personel listesi" kabul edip senkronize eder (bkz. syncCurrentPersonnelList).
+ * dryRun=true: önizleme, hiçbir şey değişmez. dryRun=false (varsayılan): değişiklikleri uygular.
+ */
+app.post("/api/worker-names/sync-current-list", requirePermission("ayarlar"), async (req, res) => {
+  const names = req.body?.names;
+  const dryRun = !!req.body?.dryRun;
+  if (!Array.isArray(names)) return res.status(400).json({ message: "names[] gerekli" });
+  try {
+    const r = await syncCurrentPersonnelList(names, { dryRun });
+    if (!dryRun) {
+      logActivity(req, "personel_listesi_senkronize", "workers", {
+        eklenen: r.added.length,
+        havuzdanCikan: r.removedFromPool.length,
+        pasifeAlinan: r.deactivatedWorkers.length,
+      });
+    }
     res.json(r);
   } catch (e) {
     res.status(500).json({ message: String(e) });

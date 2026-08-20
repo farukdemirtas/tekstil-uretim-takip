@@ -148,6 +148,93 @@ export function bulkInsertWorkerNames(names) {
   });
 }
 
+/**
+ * Excel'den yüklenen listeyi "güncel personel listesi" olarak kabul edip senkronize eder:
+ *  - Yeni listede olup isim havuzunda (worker_names) olmayan isimler eklenir.
+ *  - İsim havuzunda olup yeni listede olmayan isimler (ayrılmış personel) havuzdan çıkarılır
+ *    (yalnızca "Çalışan Ekle" otomatik tamamlama havuzu; geçmiş üretim kayıtlarını etkilemez).
+ *  - Aktif (deleted_at IS NULL) `workers` kaydı olup yeni listede adı geçmeyenler SOFT DELETE edilir
+ *    (deleted_at = bugün) — böylece aktif seçim listelerinden düşerler, ama geçmiş üretim/analiz
+ *    verileri asla silinmez (analiz sorguları deleted_at > production_date olan kayıtları hâlâ sayar).
+ * dryRun=true iken hiçbir değişiklik yapılmaz, yalnızca ne olacağı önizlenir.
+ */
+export function syncCurrentPersonnelList(names, { dryRun = false } = {}) {
+  const normalized = Array.from(
+    new Set(
+      (Array.isArray(names) ? names : [])
+        .map((n) => String(n ?? "").trim().toUpperCase().replace(/\s+/g, " "))
+        .filter(Boolean)
+    )
+  );
+  const currentSet = new Set(normalized);
+  const normName = (n) => String(n ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+
+  return new Promise((resolve, reject) => {
+    db.all("SELECT id, name FROM worker_names", [], (err, poolRows) => {
+      if (err) return reject(err);
+      const poolNameSet = new Set((poolRows || []).map((r) => normName(r.name)));
+      const toInsert = normalized.filter((n) => !poolNameSet.has(n));
+      const toRemoveFromPool = (poolRows || []).filter((r) => !currentSet.has(normName(r.name)));
+
+      db.all(
+        "SELECT id, name, team, process FROM workers WHERE deleted_at IS NULL",
+        [],
+        (err2, activeWorkers) => {
+          if (err2) return reject(err2);
+          const toDeactivate = (activeWorkers || []).filter((w) => !currentSet.has(normName(w.name)));
+
+          const summary = {
+            currentListCount: normalized.length,
+            added: toInsert,
+            removedFromPool: toRemoveFromPool.map((r) => r.name),
+            deactivatedWorkers: toDeactivate.map((w) => ({ id: w.id, name: w.name, team: w.team, process: w.process })),
+          };
+
+          if (dryRun) return resolve(summary);
+
+          db.run("BEGIN", (bErr) => {
+            if (bErr) return reject(bErr);
+            const fail = (e) => db.run("ROLLBACK", () => reject(e));
+
+            const insertNext = (i) => {
+              if (i >= toInsert.length) return removeNext(0);
+              db.run("INSERT INTO worker_names (name) VALUES (?)", [toInsert[i]], (e) => {
+                if (e) return fail(e);
+                insertNext(i + 1);
+              });
+            };
+            const removeNext = (i) => {
+              if (i >= toRemoveFromPool.length) return deactivateNext(0);
+              db.run("DELETE FROM worker_names WHERE id = ?", [toRemoveFromPool[i].id], (e) => {
+                if (e) return fail(e);
+                removeNext(i + 1);
+              });
+            };
+            const deactivateNext = (i) => {
+              if (i >= toDeactivate.length) {
+                return db.run("COMMIT", (cErr) => {
+                  if (cErr) return reject(cErr);
+                  resolve(summary);
+                });
+              }
+              db.run(
+                "UPDATE workers SET deleted_at = COALESCE(deleted_at, date('now')) WHERE id = ?",
+                [toDeactivate[i].id],
+                (e) => {
+                  if (e) return fail(e);
+                  deactivateNext(i + 1);
+                }
+              );
+            };
+
+            insertNext(0);
+          });
+        }
+      );
+    });
+  });
+}
+
 export function getWorkers() {
   return new Promise((resolve, reject) => {
     db.all(

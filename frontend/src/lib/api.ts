@@ -158,6 +158,34 @@ export async function bulkInsertWorkerNames(names: string[]): Promise<BulkWorker
   return res.json() as Promise<BulkWorkerNamesResult>;
 }
 
+export type PersonnelSyncResult = {
+  currentListCount: number;
+  added: string[];
+  removedFromPool: string[];
+  deactivatedWorkers: { id: number; name: string; team: string; process: string }[];
+};
+
+/**
+ * Excel'den yüklenen listeyi güncel/aktif personel listesi olarak kabul edip senkronize eder.
+ * dryRun=true: hiçbir değişiklik yapılmaz, yalnızca önizleme döner.
+ * dryRun=false: isim havuzu ve aktif çalışan listeleri buna göre güncellenir (soft-delete; geçmiş veriler silinmez).
+ */
+export async function syncCurrentPersonnelList(
+  names: string[],
+  opts: { dryRun?: boolean } = {}
+): Promise<PersonnelSyncResult> {
+  const res = await apiFetch(`${apiBase()}/worker-names/sync-current-list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ names, dryRun: !!opts.dryRun }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.message === "string" ? j.message : "Senkronizasyon başarısız");
+  }
+  return res.json() as Promise<PersonnelSyncResult>;
+}
+
 export type PersonnelBirthdayRow = {
   id: number;
   firstName: string;
