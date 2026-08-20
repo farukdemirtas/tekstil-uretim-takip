@@ -42,6 +42,19 @@ function normHdr(s: unknown): string {
     .replace(/\p{M}/gu, "");
 }
 
+/**
+ * Yazdırma ayarında "başlık satırını her sayfada tekrarla" seçili Excel dosyalarında,
+ * veri satırları arasında AD/SOYAD başlık satırı tekrar tekrar geçebilir. Bu satırlar
+ * gerçek bir kişi değildir, atlanmalıdır.
+ */
+function isHeaderLikeNameRow(fn: string, ln: string): boolean {
+  const a = normHdr(fn);
+  const b = normHdr(ln);
+  const looksAd = a === "ad" || a === "adi" || a === "isim";
+  const looksSoyad = b === "soyad" || b.includes("soyisim") || b === "soy ad";
+  return looksAd && looksSoyad;
+}
+
 function rowLooksLikeSiraNo(v: unknown): boolean {
   if (typeof v === "number" && Number.isFinite(v) && v > 0 && v < 1_000_000) return true;
   if (typeof v === "string") {
@@ -182,6 +195,7 @@ export function parsePersonnelNamesFromRows(rows: unknown[][]): string[] {
     const fn = String(line[ad] ?? "").trim();
     const ln = String(line[soyad] ?? "").trim();
     if (!fn && !ln) continue;
+    if (isHeaderLikeNameRow(fn, ln)) continue;
     const full = `${fn} ${ln}`.trim().replace(/\s+/g, " ").toUpperCase();
     if (!full || seen.has(full)) continue;
     seen.add(full);
@@ -201,8 +215,9 @@ export function parseBirthdaysFromRows(
     if (!line || line.length === 0) continue;
     const fn = String(line[ad] ?? "").trim();
     const ln = String(line[soyad] ?? "").trim();
-    const iso = parseCellToIsoDate(line[tarih], xlsxMod);
     if (!fn && !ln) continue;
+    if (isHeaderLikeNameRow(fn, ln)) continue;
+    const iso = parseCellToIsoDate(line[tarih], xlsxMod);
     if (!iso) continue;
     out.push({ firstName: fn, lastName: ln, birthDate: iso });
   }

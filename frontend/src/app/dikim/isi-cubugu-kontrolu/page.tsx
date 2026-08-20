@@ -10,6 +10,7 @@ import type { Border } from "exceljs";
 import { resizeImageFile } from "@/lib/imageResize";
 import { listProductModels, setAuthToken, type ProductModelListItem } from "@/lib/api";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
+import { MONTH_NAMES } from "@/lib/telaBakim";
 import {
   POZISYONLAR,
   type Pozisyon,
@@ -33,6 +34,23 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** "YYYY-MM-DD" formatındaki tarihin ay indeksini (0-11) döndürür; geçersizse -1. */
+function monthIndexOfIso(iso: string): number {
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? -1 : d.getMonth();
+}
+
+/** Yeni satır eklerken: seçili ay/yıl güncel ay/yıl ise bugünün tarihi, değilse seçili ayın 1'i kullanılır. */
+function defaultDateForSelection(year: number, month: number): string {
+  const now = new Date();
+  if (now.getFullYear() === year && now.getMonth() === month) return todayIso();
+  return `${year}-${pad2(month + 1)}-01`;
+}
+
 const NUMERIC_FIELDS = [
   "istenenIsi",
   "istenenBasinc",
@@ -54,8 +72,29 @@ export default function IsiCubuguKontroluPage() {
 
   const [authorized, setAuthorized] = useState(false);
   const [year, setYear] = useState(() => new Date().getFullYear());
+  const [month, setMonth] = useState(() => new Date().getMonth());
   const [entries, setEntries] = useState<IsiCubuguEntry[]>([]);
   const [productModels, setProductModels] = useState<ProductModelListItem[]>([]);
+
+  function goPrevMonth() {
+    if (month === 0) {
+      setYear((y) => y - 1);
+      setMonth(11);
+    } else {
+      setMonth((m) => m - 1);
+    }
+  }
+
+  function goNextMonth() {
+    if (month === 11) {
+      setYear((y) => y + 1);
+      setMonth(0);
+    } else {
+      setMonth((m) => m + 1);
+    }
+  }
+
+  const visibleEntries = entries.filter((e) => monthIndexOfIso(e.tarih) === month);
 
   /* ── Auth ──────────────────────────────────────────────── */
   useEffect(() => {
@@ -89,7 +128,7 @@ export default function IsiCubuguKontroluPage() {
 
   function addEntry() {
     setEntries((prev) => {
-      const next = [...prev, emptyEntry(entryIdCounter++, todayIso())];
+      const next = [...prev, emptyEntry(entryIdCounter++, defaultDateForSelection(year, month))];
       persist(next);
       return next;
     });
@@ -162,7 +201,7 @@ export default function IsiCubuguKontroluPage() {
 
     ws.mergeCells(1, 1, 1, totalCols);
     const titleCell = ws.getCell(1, 1);
-    titleCell.value = "LC WAIKIKI — TELA MAKİNASI ISI ÇUBUĞU KONTROL RAPORU";
+    titleCell.value = `LC WAIKIKI — TELA MAKİNASI ISI ÇUBUĞU KONTROL RAPORU (${MONTH_NAMES[month]} ${year})`;
     titleCell.font = { bold: true, size: 13, color: { argb: "FF0F172A" } };
     titleCell.alignment = { vertical: "middle", horizontal: "center" };
     ws.getRow(1).height = 24;
@@ -205,7 +244,7 @@ export default function IsiCubuguKontroluPage() {
 
     let rIdx = 5;
     let no = 1;
-    for (const entry of entries) {
+    for (const entry of visibleEntries) {
       const startRow = rIdx;
       for (const poz of POZISYONLAR) {
         const olcum: PozisyonOlcum = entry[poz.key];
@@ -252,7 +291,7 @@ export default function IsiCubuguKontroluPage() {
     }
 
     ws.views = [{ state: "frozen", ySplit: 4 }];
-    await downloadWorkbook(wb, `isi-cubugu-kontrolu-${year}.xlsx`);
+    await downloadWorkbook(wb, `isi-cubugu-kontrolu-${year}-${pad2(month + 1)}.xlsx`);
   }
 
   if (!authorized) return null;
@@ -261,8 +300,8 @@ export default function IsiCubuguKontroluPage() {
     <div className="min-h-screen bg-slate-50 p-3 sm:p-5">
       {/* ─── Üst Bar ─────────────────────────────────────── */}
       <div className="mb-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
@@ -271,15 +310,17 @@ export default function IsiCubuguKontroluPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
             </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Tela Makinesi Isı Çubuğu Kontrolü</h1>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold text-slate-900 sm:text-2xl dark:text-white">
+                Tela Makinesi Isı Çubuğu Kontrolü
+              </h1>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {hasPermission("telaBakim") ? (
               <Link
                 href="/dikim/tela-bakim"
-                className="flex items-center gap-1.5 rounded-xl border border-teal-300 bg-white px-3 py-2 text-sm font-semibold text-teal-700 shadow-sm transition hover:bg-teal-50"
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-teal-300 bg-white px-3 py-2 text-xs font-semibold text-teal-700 shadow-sm transition hover:bg-teal-50 sm:text-sm"
               >
                 Tela Makinesi Bakımı
               </Link>
@@ -287,8 +328,8 @@ export default function IsiCubuguKontroluPage() {
             <button
               type="button"
               onClick={() => void exportExcel()}
-              disabled={entries.length === 0}
-              className="flex items-center gap-1.5 rounded-xl border border-emerald-500 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={visibleEntries.length === 0}
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-500 bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-sm"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
@@ -298,7 +339,7 @@ export default function IsiCubuguKontroluPage() {
           </div>
         </div>
 
-        {/* Yıl */}
+        {/* Yıl · Ay */}
         <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-700/60 dark:bg-slate-900/80">
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Yıl</label>
@@ -322,19 +363,43 @@ export default function IsiCubuguKontroluPage() {
               </button>
             </div>
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Ay</label>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={goPrevMonth}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                aria-label="Önceki ay"
+              >
+                ‹
+              </button>
+              <span className="w-28 text-center text-sm font-bold text-slate-800 dark:text-slate-100">
+                {MONTH_NAMES[month]}
+              </span>
+              <button
+                type="button"
+                onClick={goNextMonth}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                aria-label="Sonraki ay"
+              >
+                ›
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* ─── Kontrol Tablosu ─────────────────────────────── */}
       <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-900/80">
-        <div className="flex items-center justify-between border-b border-slate-200/80 bg-slate-50 px-4 py-2.5 dark:border-slate-700/60 dark:bg-slate-800/60">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50 px-4 py-2.5 dark:border-slate-700/60 dark:bg-slate-800/60">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
             Tela Makinası Isı Çubuğu Kontrol Raporu
           </h2>
           <button
             type="button"
             onClick={addEntry}
-            className="flex items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-300"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-300"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
@@ -342,13 +407,14 @@ export default function IsiCubuguKontroluPage() {
             Satır Ekle
           </button>
         </div>
-        {entries.length === 0 ? (
+        {visibleEntries.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-400">
-            Henüz kayıt yok. Yeni kontrol eklemek için &quot;Satır Ekle&quot; butonuna tıklayın.
+            {MONTH_NAMES[month]} {year} için henüz kayıt yok. Yeni kontrol eklemek için &quot;Satır Ekle&quot; butonuna
+            tıklayın.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs">
+          <div className="overflow-x-auto touch-pan-x">
+            <table className="w-full min-w-[900px] border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-800 text-white">
                   <th rowSpan={2} className="border-r border-slate-700 px-2 py-2 text-center font-semibold">
@@ -387,7 +453,7 @@ export default function IsiCubuguKontroluPage() {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((entry, idx) => (
+                {visibleEntries.map((entry, idx) => (
                   <EntryRows
                     key={entry.id}
                     entry={entry}
@@ -478,9 +544,10 @@ function EntryRows({
                 <td key={field} className="border-r border-slate-200 px-1 py-1 dark:border-slate-700">
                   <input
                     type="number"
+                    inputMode="decimal"
                     value={olcum[field] ?? ""}
                     onChange={(e) => onNumber(entry.id, poz.key, field, e.target.value)}
-                    className="w-full rounded border border-slate-300 bg-white px-1 py-1 text-center text-xs outline-none focus:border-teal-500 dark:border-slate-600 dark:bg-slate-800"
+                    className="w-full min-w-[3.5rem] rounded border border-slate-300 bg-white px-1 py-1.5 text-center text-xs outline-none focus:border-teal-500 dark:border-slate-600 dark:bg-slate-800"
                   />
                 </td>
               )
@@ -526,10 +593,10 @@ function EntryRows({
                 <button
                   type="button"
                   onClick={() => onRemoveEntry(entry.id)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                  className="flex h-8 w-8 items-center justify-center rounded text-slate-400 transition hover:bg-red-50 hover:text-red-600 active:scale-95"
                   title="Kaydı sil"
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
                   </svg>
                 </button>
