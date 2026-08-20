@@ -33,8 +33,6 @@ export type StoredTelaBakimPayload = {
   days: Record<string, boolean>;
   /** Ay index (0-11) → aylık bakım notu */
   monthlyNotes: Record<number, string>;
-  /** true ise hafta sonu/resmi tatil günleri işaretlenemez (varsayılan davranış) */
-  blockWeekendHoliday: boolean;
 };
 
 export function telaBakimStorageKey(year: number): string {
@@ -44,7 +42,7 @@ export function telaBakimStorageKey(year: number): string {
 export const TELA_BAKIM_STORAGE_PREFIX = "dikim_tela_bakim_v1_";
 
 function defaultTelaBakimPayload(): StoredTelaBakimPayload {
-  return { makineAdi: "", sorumlu: "", days: {}, monthlyNotes: {}, blockWeekendHoliday: true };
+  return { makineAdi: "", sorumlu: "", days: {}, monthlyNotes: {} };
 }
 
 export function loadTelaBakimPayload(year: number): StoredTelaBakimPayload {
@@ -58,7 +56,6 @@ export function loadTelaBakimPayload(year: number): StoredTelaBakimPayload {
       sorumlu: parsed.sorumlu ?? base.sorumlu,
       days: parsed.days ?? base.days,
       monthlyNotes: parsed.monthlyNotes ?? base.monthlyNotes,
-      blockWeekendHoliday: parsed.blockWeekendHoliday ?? base.blockWeekendHoliday,
     };
   } catch {
     return defaultTelaBakimPayload();

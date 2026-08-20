@@ -16,7 +16,6 @@ import {
   loadTelaBakimPayload,
   persistTelaBakimPayload,
 } from "@/lib/telaBakim";
-import { isOfficialHolidayMonthDay, isWeekendMonthDay } from "@/lib/turkishHolidays";
 
 const DAY_COLUMNS = Array.from({ length: DAYS_IN_GRID }, (_, i) => i + 1);
 
@@ -29,7 +28,6 @@ export default function TelaBakimPage() {
   const [sorumlu, setSorumlu] = useState("");
   const [days, setDays] = useState<Record<string, boolean>>({});
   const [monthlyNotes, setMonthlyNotes] = useState<Record<number, string>>({});
-  const [blockWeekendHoliday, setBlockWeekendHoliday] = useState(true);
 
   /* ── Auth ──────────────────────────────────────────────── */
   useEffect(() => {
@@ -53,7 +51,6 @@ export default function TelaBakimPage() {
     setSorumlu(payload.sorumlu);
     setDays(payload.days);
     setMonthlyNotes(payload.monthlyNotes);
-    setBlockWeekendHoliday(payload.blockWeekendHoliday);
   }, [authorized, year]);
 
   function persist(next: {
@@ -61,14 +58,12 @@ export default function TelaBakimPage() {
     sorumlu?: string;
     days?: Record<string, boolean>;
     monthlyNotes?: Record<number, string>;
-    blockWeekendHoliday?: boolean;
   }) {
     persistTelaBakimPayload(year, {
       makineAdi: next.makineAdi ?? makineAdi,
       sorumlu: next.sorumlu ?? sorumlu,
       days: next.days ?? days,
       monthlyNotes: next.monthlyNotes ?? monthlyNotes,
-      blockWeekendHoliday: next.blockWeekendHoliday ?? blockWeekendHoliday,
     });
   }
 
@@ -83,22 +78,12 @@ export default function TelaBakimPage() {
   }
 
   function toggleDay(monthIndex: number, day: number) {
-    if (
-      blockWeekendHoliday &&
-      (isWeekendMonthDay(year, monthIndex + 1, day) || isOfficialHolidayMonthDay(year, monthIndex + 1, day))
-    )
-      return;
     const key = dayKey(monthIndex, day);
     setDays((prev) => {
       const next = { ...prev, [key]: !prev[key] };
       persist({ days: next });
       return next;
     });
-  }
-
-  function updateBlockWeekendHoliday(value: boolean) {
-    setBlockWeekendHoliday(value);
-    persist({ blockWeekendHoliday: value });
   }
 
   function updateMonthlyNote(monthIndex: number, value: string) {
@@ -174,21 +159,11 @@ export default function TelaBakimPage() {
           cell.value = "";
           return;
         }
-        const isHoliday = isOfficialHolidayMonthDay(year, monthIndex + 1, day);
-        const isWeekend = !isHoliday && isWeekendMonthDay(year, monthIndex + 1, day);
         const checked = !!days[dayKey(monthIndex, day)];
-        if (blockWeekendHoliday && (isHoliday || isWeekend)) {
-          cell.value = "×";
-          cell.font = { bold: true, color: { argb: "FFD97706" } };
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFBEB" } };
-          return;
-        }
         if (checked) {
           cell.value = "✓";
           cell.font = { bold: true, color: { argb: "FF059669" } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFECFDF5" } };
-        } else if (isHoliday || isWeekend) {
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFBEB" } };
         }
       });
       rIdx += 1;
@@ -319,26 +294,8 @@ export default function TelaBakimPage() {
 
       {/* ─── Günlük Bakım Takvimi ────────────────────────── */}
       <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-900/80">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50 px-4 py-2.5 dark:border-slate-700/60 dark:bg-slate-800/60">
+        <div className="border-b border-slate-200/80 bg-slate-50 px-4 py-2.5 dark:border-slate-700/60 dark:bg-slate-800/60">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Günlük Bakım</h2>
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={blockWeekendHoliday}
-              onClick={() => updateBlockWeekendHoliday(!blockWeekendHoliday)}
-              className={`relative h-5 w-9 shrink-0 rounded-full transition ${
-                blockWeekendHoliday ? "bg-teal-500" : "bg-slate-300 dark:bg-slate-600"
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${
-                  blockWeekendHoliday ? "left-4" : "left-0.5"
-                }`}
-              />
-            </button>
-            Hafta sonu/resmi tatilde işaretlemeyi engelle
-          </label>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] table-fixed border-collapse text-xs">
@@ -371,23 +328,10 @@ export default function TelaBakimPage() {
                     {DAY_COLUMNS.map((day) => {
                       const valid = day <= validDays;
                       const checked = !!days[dayKey(monthIndex, day)];
-                      const isHoliday = valid && isOfficialHolidayMonthDay(year, monthIndex + 1, day);
-                      const isWeekend = valid && !isHoliday && isWeekendMonthDay(year, monthIndex + 1, day);
-                      const isSpecial = isHoliday || isWeekend;
-                      const blocked = blockWeekendHoliday && isSpecial;
                       return (
                         <td key={day} className="border-r border-slate-100 p-0.5 text-center dark:border-slate-800">
                           {!valid ? (
                             <div className="mx-auto h-5 w-5 rounded bg-slate-100 dark:bg-slate-800/60" />
-                          ) : blocked ? (
-                            <div
-                              title={`${day} ${monthName} — ${isHoliday ? "resmi tatil" : "hafta sonu"}`}
-                              className="mx-auto flex h-5 w-5 items-center justify-center rounded border border-amber-200 bg-amber-50 text-amber-400 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-700"
-                            >
-                              <svg width="8" height="8" viewBox="0 0 20 20" fill="none" aria-hidden>
-                                <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-                              </svg>
-                            </div>
                           ) : (
                             <button
                               type="button"
@@ -396,15 +340,13 @@ export default function TelaBakimPage() {
                               title={
                                 checked
                                   ? `${day} ${monthName} — bakım yapıldı`
-                                  : `${day} ${monthName}${isSpecial ? ` (${isHoliday ? "resmi tatil" : "hafta sonu"})` : ""} — bakım işaretle`
+                                  : `${day} ${monthName} — bakım işaretle`
                               }
                               onClick={() => toggleDay(monthIndex, day)}
                               className={`mx-auto flex h-5 w-5 items-center justify-center rounded border transition ${
                                 checked
                                   ? "border-emerald-500 bg-emerald-500 text-white"
-                                  : isSpecial
-                                    ? "border-amber-200 bg-amber-50 text-transparent hover:border-emerald-300 dark:border-amber-900/50 dark:bg-amber-950/20"
-                                    : "border-slate-300 bg-white text-transparent hover:border-emerald-300"
+                                  : "border-slate-300 bg-white text-transparent hover:border-emerald-300"
                               }`}
                             >
                               <svg width="10" height="10" viewBox="0 0 20 20" fill="none" aria-hidden>
@@ -428,21 +370,6 @@ export default function TelaBakimPage() {
           </table>
         </div>
         <div className="flex flex-wrap items-center gap-4 border-t border-slate-200/80 px-4 py-2.5 text-[11px] text-slate-500 dark:border-slate-700/60 dark:text-slate-400">
-          {blockWeekendHoliday ? (
-            <span className="flex items-center gap-1.5">
-              <span className="flex h-4 w-4 items-center justify-center rounded border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20">
-                <svg width="7" height="7" viewBox="0 0 20 20" fill="none" aria-hidden>
-                  <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="text-amber-400 dark:text-amber-700" />
-                </svg>
-              </span>
-              Hafta sonu / resmi tatil — işaretlenemez
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5">
-              <span className="h-4 w-4 rounded border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20" />
-              Hafta sonu / resmi tatil — işaretlenebilir
-            </span>
-          )}
           <span className="flex items-center gap-1.5">
             <span className="h-4 w-4 rounded bg-slate-100 dark:bg-slate-800/60" />
             Ayda bu gün yok
