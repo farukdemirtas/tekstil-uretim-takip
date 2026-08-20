@@ -22,10 +22,13 @@ function emptyDraft(): AppPermissions {
     tamirOrani: false,
     veriSayfasi: false,
     prosesKontrol: false,
+    araKontrol: false,
     hataRapor: false,
     isBitirmeHesaplama: false,
     modelAnalizi: false,
     utuPaket: false,
+    telaBakim: false,
+    isiCubuguKontrolu: false,
     defaultDarkMode: false,
   };
 }

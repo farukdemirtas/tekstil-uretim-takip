@@ -4,6 +4,8 @@ import { getAppKv, setAppKv } from "./queries.js";
 
 const KV_LAST_BACKUP = "db_last_backup_download";
 const KV_LAST_RESTORE = "db_last_restore";
+const KV_BACKUP_HISTORY = "db_backup_history";
+const BACKUP_HISTORY_LIMIT = 3;
 
 function dbAll(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -56,6 +58,17 @@ function parseHistoryEvent(raw) {
   }
 }
 
+function parseHistoryList(raw) {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.map(parseHistoryEvent).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 export async function recordDatabaseBackupDownload({ username, bytes }) {
   const event = {
     at: new Date().toISOString(),
@@ -63,6 +76,12 @@ export async function recordDatabaseBackupDownload({ username, bytes }) {
     bytes: Math.max(0, Math.floor(Number(bytes) || 0)),
   };
   await setAppKv(KV_LAST_BACKUP, JSON.stringify(event));
+
+  const existingRaw = await getAppKv(KV_BACKUP_HISTORY);
+  const history = parseHistoryList(existingRaw);
+  history.unshift(event);
+  await setAppKv(KV_BACKUP_HISTORY, JSON.stringify(history.slice(0, BACKUP_HISTORY_LIMIT)));
+
   return event;
 }
 
@@ -158,9 +177,10 @@ export async function getDatabaseInfo() {
     await dbAll(`SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
   )[0];
 
-  const [backupRaw, restoreRaw] = await Promise.all([
+  const [backupRaw, restoreRaw, backupHistoryRaw] = await Promise.all([
     getAppKv(KV_LAST_BACKUP),
     getAppKv(KV_LAST_RESTORE),
+    getAppKv(KV_BACKUP_HISTORY),
   ]);
 
   return {
@@ -170,5 +190,6 @@ export async function getDatabaseInfo() {
     tableCount: Number(row?.c) || 0,
     lastBackupDownload: parseHistoryEvent(backupRaw),
     lastRestore: parseHistoryEvent(restoreRaw),
+    backupHistory: parseHistoryList(backupHistoryRaw),
   };
 }

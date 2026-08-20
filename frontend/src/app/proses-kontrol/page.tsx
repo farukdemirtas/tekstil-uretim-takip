@@ -11,6 +11,7 @@ import type { Worker } from "@/lib/types";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
+import { dedupeWorkersByName } from "@/lib/workers";
 import type * as XLSX from "xlsx";
 import { loadXlsx } from "@/lib/xlsxLazy";
 
@@ -63,6 +64,17 @@ function pct(total: number, max = MAX_TOTAL) {
 }
 let manualIdCounter = -1;
 
+/** Depodan yüklenen satırlar negatif id taşıyabilir (önceki oturumdan kalma);
+ *  sayaç bunların altına çekilmezse yeni eklenen satır eski biriyle aynı id'yi
+ *  alır ve ikisi de aynı satır gibi güncellenir. Yüklemeden sonra çağrılmalı. */
+function ensureManualIdCounterBelow(rows: { workerId: number }[]) {
+  for (const r of rows) {
+    if (r.workerId < 0 && r.workerId <= manualIdCounter) {
+      manualIdCounter = r.workerId - 1;
+    }
+  }
+}
+
 /* ══════════════════════════════════════════════════════════
    Sayfa
 ══════════════════════════════════════════════════════════ */
@@ -96,7 +108,7 @@ export default function ProsesKontrolPage() {
     void Promise.all([getTeams(), getProcesses(), getWorkersForAnalytics()]).then(([tms, prcs, wks]) => {
       setTeams(tms);
       setProcesses(prcs);
-      setAllWorkers(wks);
+      setAllWorkers(dedupeWorkersByName(wks));
       if (tms.length)  setAddTeam(tms[0].code);
       if (prcs.length) setAddProcess(prcs[0].name);
     });
@@ -145,6 +157,7 @@ export default function ProsesKontrolPage() {
         };
       });
 
+      ensureManualIdCounterBelow(manual);
       setRows([...fromProduction, ...manual]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Veri yüklenemedi");
@@ -306,6 +319,14 @@ export default function ProsesKontrolPage() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {hasPermission("araKontrol") ? (
+              <Link
+                href="/ara-kontrol"
+                className="flex items-center gap-1.5 rounded-xl border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-700 shadow-sm transition hover:bg-violet-50"
+              >
+                Ara Kontrol
+              </Link>
+            ) : null}
             <Link
               href="/hata-rapor"
               className="flex items-center gap-1.5 rounded-xl border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-700 shadow-sm transition hover:bg-violet-50"

@@ -65,6 +65,9 @@ export type Messages = {
     generalAnalysis: string;
     ironPack: string;
     processControl: string;
+    control: string;
+    interimControl: string;
+    sewing: string;
     jobCalc: string;
     tvScreens: string;
     excel: string;
@@ -100,6 +103,22 @@ export type Messages = {
     comparisonDesc: string;
     utuPaketTitle: string;
     utuPaketDesc: string;
+  };
+  controlHub: {
+    title: string;
+    navLabel: string;
+    prosesKontrolTitle: string;
+    prosesKontrolDesc: string;
+    araKontrolTitle: string;
+    araKontrolDesc: string;
+  };
+  sewingHub: {
+    title: string;
+    navLabel: string;
+    telaBakimTitle: string;
+    telaBakimDesc: string;
+    isiCubuguTitle: string;
+    isiCubuguDesc: string;
   };
   analysisSubnav: {
     navLabel: string;

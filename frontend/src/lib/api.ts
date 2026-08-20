@@ -2259,6 +2259,7 @@ export type DatabaseInfo = {
   tableCount: number;
   lastBackupDownload: DatabaseHistoryEvent | null;
   lastRestore: DatabaseHistoryEvent | null;
+  backupHistory: DatabaseHistoryEvent[];
 };
 
 export async function getDatabaseInfo(): Promise<DatabaseInfo> {

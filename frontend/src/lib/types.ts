@@ -115,6 +115,8 @@ export type AppPermissions = {
   veriSayfasi: boolean;
   /** Proses kontrol sayfası — numune hata takibi */
   prosesKontrol: boolean;
+  /** Ara kontrol sayfası — hat içi (in-line) uygunsuzluk raporu */
+  araKontrol: boolean;
   /** Hata rapor ve analiz sayfası */
   hataRapor: boolean;
   /** İş Hesaplama sayfası (darboğaz modeli) */
@@ -123,6 +125,10 @@ export type AppPermissions = {
   modelAnalizi: boolean;
   /** Ütü–paket hattı: optik, ütü, paketleme (ana üretimden ayrı) */
   utuPaket: boolean;
+  /** Dikim — Tela makinesi bakım formu (günlük/aylık bakım takibi) */
+  telaBakim: boolean;
+  /** Dikim — Tela makinesi ısı çubuğu kontrolü */
+  isiCubuguKontrolu: boolean;
   /** Girişte koyu tema; açık mod için false (yöneticilerde API’de false döner) */
   defaultDarkMode: boolean;
 };

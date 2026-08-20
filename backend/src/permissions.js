@@ -21,6 +21,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   veriSayfasi: false,
   /** Proses kontrol sayfası — numune hata takibi */
   prosesKontrol: false,
+  /** Ara kontrol sayfası — hat içi (in-line) uygunsuzluk raporu */
+  araKontrol: false,
   /** Hata rapor ve analiz sayfası */
   hataRapor: false,
   /** İş Hesaplama (proses hattı darboğaz) */
@@ -29,6 +31,10 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   modelAnalizi: false,
   /** Ütü–paket hattı: optik, ütü, paketleme (saatlik + beden) */
   utuPaket: false,
+  /** Dikim — Tela makinesi bakım formu (günlük/aylık bakım takibi) */
+  telaBakim: false,
+  /** Dikim — Tela makinesi ısı çubuğu kontrolü */
+  isiCubuguKontrolu: false,
   /** Girişte koyu mod (veri girişi kullanıcıları; yöneticiler her zaman açık mod varsayımı) */
   defaultDarkMode: false,
 };

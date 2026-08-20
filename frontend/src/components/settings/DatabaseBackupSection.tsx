@@ -193,20 +193,29 @@ export default function DatabaseBackupSection() {
         </h3>
         <dl className="mt-3 grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-600 dark:bg-slate-900/40">
-            <dt className="text-xs font-semibold text-slate-600 dark:text-slate-300">Son yedek indirme</dt>
-            <dd className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-              {loadingInfo ? "…" : formatDateTime(info?.lastBackupDownload?.at ?? null)}
-            </dd>
-            {!loadingInfo && info?.lastBackupDownload ? (
-              <dd className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {info.lastBackupDownload.by}
-                {info.lastBackupDownload.bytes
-                  ? ` · ${formatBytes(info.lastBackupDownload.bytes)}`
-                  : ""}
+            <dt className="text-xs font-semibold text-slate-600 dark:text-slate-300">Son 3 yedek indirme</dt>
+            {loadingInfo ? (
+              <dd className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">…</dd>
+            ) : info?.backupHistory && info.backupHistory.length > 0 ? (
+              <dd className="mt-2 flex flex-col gap-2">
+                {info.backupHistory.map((ev, idx) => (
+                  <div
+                    key={`${ev.at}-${idx}`}
+                    className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900/60"
+                  >
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {formatDateTime(ev.at)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      {ev.by}
+                      {ev.bytes ? ` · ${formatBytes(ev.bytes)}` : ""}
+                    </p>
+                  </div>
+                ))}
               </dd>
-            ) : !loadingInfo ? (
+            ) : (
               <dd className="mt-1 text-xs text-slate-400">Henüz kayıt yok</dd>
-            ) : null}
+            )}
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-600 dark:bg-slate-900/40">
             <dt className="text-xs font-semibold text-slate-600 dark:text-slate-300">Son geri yükleme</dt>

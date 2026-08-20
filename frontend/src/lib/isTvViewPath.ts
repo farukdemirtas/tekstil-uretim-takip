@@ -8,6 +8,9 @@ export function isTvViewPath(pathname: string): boolean {
     pathname.startsWith("/ekran5") ||
     pathname.startsWith("/ekranlar") ||
     pathname.startsWith("/proses-kontrol") ||
-    pathname.startsWith("/hata-rapor")
+    pathname.startsWith("/ara-kontrol") ||
+    pathname.startsWith("/hata-rapor") ||
+    pathname.startsWith("/dikim/tela-bakim") ||
+    pathname.startsWith("/dikim/isi-cubugu-kontrolu")
   );
 }

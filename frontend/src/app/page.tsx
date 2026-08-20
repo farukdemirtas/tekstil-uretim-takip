@@ -198,6 +198,8 @@ export default function HomePage() {
   const [secondaryStages, setSecondaryStages] = useState<HedefStageLineDto[]>([]);
   const [genelProsesTick, setGenelProsesTick] = useState(0);
   const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
+  const [controlMenuOpen, setControlMenuOpen] = useState(false);
+  const [sewingMenuOpen, setSewingMenuOpen] = useState(false);
 
   const rowsRef = useRef<ProductionRow[]>(rows);
   const selectedDateRef = useRef(selectedDate);
@@ -228,6 +230,24 @@ export default function HomePage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [analysisMenuOpen]);
+
+  useEffect(() => {
+    if (!controlMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setControlMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [controlMenuOpen]);
+
+  useEffect(() => {
+    if (!sewingMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSewingMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sewingMenuOpen]);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -1086,8 +1106,27 @@ export default function HomePage() {
           {hasPermission("veriSayfasi") ? (
             <Link href="/genel-verimlilik" className="btn-nav shrink-0">{t("nav.generalEfficiency")}</Link>
           ) : null}
-          {hasPermission("prosesKontrol") ? (
-            <Link href="/proses-kontrol" className="btn-nav shrink-0">{t("nav.processControl")}</Link>
+          {hasPermission("prosesKontrol") || hasPermission("araKontrol") ? (
+            <button
+              type="button"
+              className={`btn-nav shrink-0 border-2 border-transparent font-semibold transition hover:border-teal-400/50 dark:hover:border-teal-500/40 ${controlMenuOpen ? "border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-500/40 ring-offset-2 ring-offset-white dark:border-teal-600 dark:bg-teal-950/60 dark:text-teal-100 dark:ring-teal-500/35 dark:ring-offset-slate-900" : ""}`}
+              aria-expanded={controlMenuOpen}
+              aria-haspopup="dialog"
+              onClick={() => setControlMenuOpen(true)}
+            >
+              {t("nav.control")}
+            </button>
+          ) : null}
+          {hasPermission("telaBakim") || hasPermission("isiCubuguKontrolu") ? (
+            <button
+              type="button"
+              className={`btn-nav shrink-0 border-2 border-transparent font-semibold transition hover:border-teal-400/50 dark:hover:border-teal-500/40 ${sewingMenuOpen ? "border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-500/40 ring-offset-2 ring-offset-white dark:border-teal-600 dark:bg-teal-950/60 dark:text-teal-100 dark:ring-teal-500/35 dark:ring-offset-slate-900" : ""}`}
+              aria-expanded={sewingMenuOpen}
+              aria-haspopup="dialog"
+              onClick={() => setSewingMenuOpen(true)}
+            >
+              {t("nav.sewing")}
+            </button>
           ) : null}
           {hasPermission("isBitirmeHesaplama") ? (
             <Link href="/is-bitirme-hesaplama" className="btn-nav shrink-0">{t("nav.jobCalc")}</Link>
@@ -1582,6 +1621,168 @@ export default function HomePage() {
                     </span>
                   </span>
                   <span className="shrink-0 rounded-lg bg-teal-100 p-2 text-teal-700 dark:bg-teal-900/80 dark:text-teal-200">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                </Link>
+              ) : null}
+            </nav>
+            <p className="border-t border-slate-200/90 px-5 pb-4 pt-3 text-center text-[11px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              Seçmek için satıra dokunun veya tıklayın ·{" "}
+              <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                Esc
+              </kbd>{" "}
+              ile kapatın
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {controlMenuOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setControlMenuOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="control-hub-title"
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_25px_60px_-15px_rgba(15,23,42,0.35)] dark:border-slate-600 dark:bg-slate-900 dark:shadow-black/50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-4 text-white shadow-md">
+              <div>
+                <h2 id="control-hub-title" className="text-lg font-bold tracking-tight">
+                  {t("controlHub.title")}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setControlMenuOpen(false)}
+                className="rounded-xl p-2 text-white/90 transition hover:bg-white/15 hover:text-white"
+                aria-label={t("common.close")}
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <nav className="flex flex-col gap-2.5 p-4" aria-label={t("controlHub.navLabel")}>
+              {hasPermission("prosesKontrol") ? (
+                <Link
+                  href="/proses-kontrol"
+                  onClick={() => setControlMenuOpen(false)}
+                  className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-teal-400 hover:bg-teal-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-teal-500 dark:hover:bg-teal-950/50"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("controlHub.prosesKontrolTitle")}</span>
+                    <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {t("controlHub.prosesKontrolDesc")}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-teal-100 p-2 text-teal-700 dark:bg-teal-900/80 dark:text-teal-200">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                </Link>
+              ) : null}
+              {hasPermission("araKontrol") ? (
+                <Link
+                  href="/ara-kontrol"
+                  onClick={() => setControlMenuOpen(false)}
+                  className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-violet-400 hover:bg-violet-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-violet-500 dark:hover:bg-violet-950/50"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("controlHub.araKontrolTitle")}</span>
+                    <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {t("controlHub.araKontrolDesc")}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-violet-100 p-2 text-violet-700 dark:bg-violet-900/80 dark:text-violet-200">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                </Link>
+              ) : null}
+            </nav>
+            <p className="border-t border-slate-200/90 px-5 pb-4 pt-3 text-center text-[11px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              Seçmek için satıra dokunun veya tıklayın ·{" "}
+              <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                Esc
+              </kbd>{" "}
+              ile kapatın
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {sewingMenuOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setSewingMenuOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sewing-hub-title"
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_25px_60px_-15px_rgba(15,23,42,0.35)] dark:border-slate-600 dark:bg-slate-900 dark:shadow-black/50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-teal-600 to-emerald-600 px-5 py-4 text-white shadow-md">
+              <div>
+                <h2 id="sewing-hub-title" className="text-lg font-bold tracking-tight">
+                  {t("sewingHub.title")}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSewingMenuOpen(false)}
+                className="rounded-xl p-2 text-white/90 transition hover:bg-white/15 hover:text-white"
+                aria-label={t("common.close")}
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <nav className="flex flex-col gap-2.5 p-4" aria-label={t("sewingHub.navLabel")}>
+              {hasPermission("telaBakim") ? (
+                <Link
+                  href="/dikim/tela-bakim"
+                  onClick={() => setSewingMenuOpen(false)}
+                  className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-teal-400 hover:bg-teal-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-teal-500 dark:hover:bg-teal-950/50"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("sewingHub.telaBakimTitle")}</span>
+                    <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {t("sewingHub.telaBakimDesc")}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-teal-100 p-2 text-teal-700 dark:bg-teal-900/80 dark:text-teal-200">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                </Link>
+              ) : null}
+              {hasPermission("isiCubuguKontrolu") ? (
+                <Link
+                  href="/dikim/isi-cubugu-kontrolu"
+                  onClick={() => setSewingMenuOpen(false)}
+                  className="group flex items-center justify-between gap-3 rounded-xl border-2 border-slate-200 bg-slate-50/80 px-4 py-4 text-left shadow-sm transition hover:border-orange-400 hover:bg-orange-50/90 hover:shadow-md dark:border-slate-600 dark:bg-slate-800/60 dark:hover:border-orange-500 dark:hover:bg-orange-950/50"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{t("sewingHub.isiCubuguTitle")}</span>
+                    <span className="mt-0.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {t("sewingHub.isiCubuguDesc")}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-orange-100 p-2 text-orange-700 dark:bg-orange-900/80 dark:text-orange-200">
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>

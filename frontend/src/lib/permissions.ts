@@ -38,6 +38,7 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
       "Tek yetki: canlı hedefler (/genel-verimlilik) ile model başına şablon–yedek tablolar (/veri-sayfasi). Dk · saatlik · günlük adet girişi.",
   },
   { key: "prosesKontrol", label: "Proses Kontrol", description: "Numune bazlı hata takip sayfası (8 kontrol × 7 numune)" },
+  { key: "araKontrol", label: "Ara Kontrol", description: "Hat içi (in-line) kontrol uygunsuzluk raporu sayfası" },
   { key: "hataRapor", label: "Hata Rapor", description: "Günlük hata oranı ve personel bazlı analiz sayfası" },
   {
     key: "isBitirmeHesaplama",
@@ -54,6 +55,16 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
     label: "Ütü–Paket",
     description:
       "Optik, ütü ve paketleme takibi; optik/ütü saatlik giriş, paketleme otomatik (ana üretimden bağımsız)",
+  },
+  {
+    key: "telaBakim",
+    label: "Kesim — Tela Makinesi Bakımı",
+    description: "Tela makinesi günlük/aylık bakım formu (yıllık takvim + bakım notları)",
+  },
+  {
+    key: "isiCubuguKontrolu",
+    label: "Kesim — Isı Çubuğu Kontrolü",
+    description: "Tela makinesi ısı çubuğu sıcaklık kontrol kayıtları",
   },
 ];
 
