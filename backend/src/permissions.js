@@ -1,5 +1,7 @@
 /** Veri girişi kullanıcıları için varsayılanlar (köprü: eskiden bu ekranlar giriş yapan herkese açıktı) */
 export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
+  /** Ana sayfa — personel ekleme ve günlük üretim/adet veri girişi (köprü: eskiden herkese açıktı) */
+  anaSayfaVeriGirisi: true,
   analysis: false,
   karsilastirma: true,
   ayarlar: false,

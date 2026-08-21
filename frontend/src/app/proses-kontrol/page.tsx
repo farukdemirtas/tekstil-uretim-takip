@@ -12,8 +12,8 @@ import { hasPermission, isAdminRole } from "@/lib/permissions";
 import { WeekdayDatePicker } from "@/components/WeekdayDatePicker";
 import { todayWeekdayIso } from "@/lib/businessCalendar";
 import { dedupeWorkersByName } from "@/lib/workers";
-import type * as XLSX from "xlsx";
-import { loadXlsx } from "@/lib/xlsxLazy";
+import { loadExcelJS, downloadWorkbook } from "@/lib/exceljsLazy";
+import type { Border } from "exceljs";
 
 /* ─── Sabitler ───────────────────────────────────────────── */
 const SESSIONS   = 8;
@@ -257,37 +257,181 @@ export default function ProsesKontrolPage() {
     });
   })();
 
-  /* ── Excel ─────────────────────────────────────────────── */
+  /* ── Excel — ekrandaki tabloyla aynı görünüm (kenarlık, renk, bölüm gruplama) ── */
   async function exportExcel() {
-    const XLSX = await loadXlsx();
-    const wb = XLSX.utils.book_new();
+    const ExcelJS = await loadExcelJS();
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Proses Kontrol");
+
+    const thin: Partial<Border> = { style: "thin", color: { argb: "FFCBD5E1" } };
+    const allBorders = { top: thin, left: thin, bottom: thin, right: thin };
+    const turnStart = 4; // 1: No, 2: Ad Soyad, 3: Proses
+    const colToplam = turnStart + SESSIONS * 2;
+    const colPct = colToplam + 1;
+    const colAciklama = colPct + 1;
+    const totalCols = colAciklama;
+    const leftAlignCols = new Set([2, 3, colAciklama]);
+
     const urunStr = [dayMeta?.productModel, dayMeta?.productName].filter(Boolean).join(" — ");
-    const infoRows = [
-      ["Tarih", selectedDate],
-      ["Çalışılan Ürün", urunStr || "—"],
-      [],
-    ];
-    const header = [
-      "No", "Ad Soyad", "Proses", "Bölüm",
-      ...SESSION_LABELS.flatMap((l) => [`${l} K.A`, `${l} H.A`]),
-      "Toplam Hata", "% Hata", "Açıklama",
-    ];
-    const data = rows.map((r, i) => {
-      const total = sumArr(r.hata);
-      return [
-        i + 1, r.name, r.process, r.team,
-        ...r.hata.flatMap((h) => [SAMPLES, h]),
-        total, pct(total), r.note,
-      ];
+
+    /* Başlık */
+    ws.mergeCells(1, 1, 1, totalCols);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = "PROSES KONTROL RAPORU";
+    titleCell.font = { bold: true, size: 14, color: { argb: "FF0F172A" } };
+    titleCell.alignment = { vertical: "middle", horizontal: "center" };
+    ws.getRow(1).height = 26;
+
+    /* Tarih */
+    const infoRow = ws.getRow(2);
+    infoRow.getCell(1).value = "Tarih";
+    infoRow.getCell(1).font = { bold: true, color: { argb: "FF475569" } };
+    infoRow.getCell(2).value = selectedDate;
+    infoRow.getCell(2).font = { bold: true };
+
+    /* Çalışılan Ürün */
+    const urunRow = ws.getRow(3);
+    urunRow.getCell(1).value = "Çalışılan Ürün";
+    urunRow.getCell(1).font = { bold: true, color: { argb: "FF475569" } };
+    ws.mergeCells(3, 2, 3, totalCols);
+    urunRow.getCell(2).value = urunStr || "—";
+    urunRow.getCell(2).font = { bold: true };
+
+    /* Tablo başlığı — ekrandaki gibi iki satır: tur no + K.A/H.A (satır 5-6) */
+    const headerRowIdx = 5;
+    const h1 = ws.getRow(headerRowIdx);
+    const h2 = ws.getRow(headerRowIdx + 1);
+    ws.mergeCells(headerRowIdx, 1, headerRowIdx + 1, 1);
+    h1.getCell(1).value = "No";
+    ws.mergeCells(headerRowIdx, 2, headerRowIdx + 1, 2);
+    h1.getCell(2).value = "Ad Soyad";
+    ws.mergeCells(headerRowIdx, 3, headerRowIdx + 1, 3);
+    h1.getCell(3).value = "Proses";
+    SESSION_LABELS.forEach((l, i) => {
+      const c = turnStart + i * 2;
+      ws.mergeCells(headerRowIdx, c, headerRowIdx, c + 1);
+      h1.getCell(c).value = l;
+      h2.getCell(c).value = "K.A";
+      h2.getCell(c + 1).value = "H.A";
     });
-    const ws = XLSX.utils.aoa_to_sheet([...infoRows, header, ...data]);
-    ws["!cols"] = [
-      { wch: 4 }, { wch: 22 }, { wch: 18 }, { wch: 16 },
-      ...Array(SESSIONS * 2).fill({ wch: 7 }),
-      { wch: 10 }, { wch: 8 }, { wch: 28 },
-    ];
-    XLSX.utils.book_append_sheet(wb, ws, "Proses Kontrol");
-    XLSX.writeFile(wb, `proses-kontrol-${selectedDate}.xlsx`);
+    ws.mergeCells(headerRowIdx, colToplam, headerRowIdx + 1, colToplam);
+    h1.getCell(colToplam).value = "Toplam";
+    ws.mergeCells(headerRowIdx, colPct, headerRowIdx + 1, colPct);
+    h1.getCell(colPct).value = "Hata %";
+    ws.mergeCells(headerRowIdx, colAciklama, headerRowIdx + 1, colAciklama);
+    h1.getCell(colAciklama).value = "Açıklama";
+
+    for (let r = headerRowIdx; r <= headerRowIdx + 1; r++) {
+      for (let c = 1; c <= totalCols; c++) {
+        const cell = ws.getCell(r, c);
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: r === headerRowIdx ? 10 : 9 };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: r === headerRowIdx ? "FF1E293B" : "FF334155" },
+        };
+        cell.border = allBorders;
+        cell.alignment = { vertical: "middle", horizontal: leftAlignCols.has(c) ? "left" : "center", wrapText: true };
+      }
+    }
+    h1.height = 20;
+    h2.height = 16;
+
+    /* Kolon genişlikleri — ekrandaki kolon oranlarıyla aynı */
+    const widths = [5, 22, 18, ...Array(SESSIONS * 2).fill(6.5), 9, 9, 26];
+    widths.forEach((w, i) => (ws.getColumn(i + 1).width = w));
+
+    let rIdx = headerRowIdx + 2;
+    for (const section of sections) {
+      ws.mergeCells(rIdx, 1, rIdx, totalCols);
+      const teamCell = ws.getCell(rIdx, 1);
+      teamCell.value = teamLabel(section.team);
+      teamCell.font = { bold: true, color: { argb: "FF1E293B" } };
+      teamCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+      teamCell.alignment = { vertical: "middle" };
+      ws.getRow(rIdx).height = 20;
+      rIdx += 1;
+
+      section.rows.forEach((row, idx) => {
+        const total = sumArr(row.hata);
+        const p = parseFloat(pct(total));
+        const pArgb = p === 0 ? "FF059669" : p < 10 ? "FFD97706" : "FFDC2626";
+        const excelRow = ws.getRow(rIdx);
+        const values: (string | number)[] = [
+          section.startNo + idx,
+          row.name,
+          row.process,
+          ...row.hata.flatMap((h) => [SAMPLES, h]),
+          total,
+          p,
+          row.note,
+        ];
+        values.forEach((v, i) => {
+          const col = i + 1;
+          const cell = excelRow.getCell(col);
+          cell.value = v;
+          cell.border = allBorders;
+          cell.alignment = { vertical: "middle", horizontal: leftAlignCols.has(col) ? "left" : "center" };
+          if (row.manual) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFAF5FF" } };
+          }
+          const offsetInTurns = col - turnStart;
+          const isKaCol = col >= turnStart && col < colToplam && offsetInTurns % 2 === 0;
+          const isHaCol = col >= turnStart && col < colToplam && offsetInTurns % 2 === 1;
+          if (isKaCol) {
+            cell.font = { color: { argb: "FF94A3B8" } };
+          }
+          if (isHaCol && (Number(v) || 0) > 0) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF1F2" } };
+            cell.font = { color: { argb: "FFE11D48" }, bold: true };
+          }
+          if (col === colToplam || col === colPct) {
+            cell.font = { bold: true, color: { argb: pArgb } };
+          }
+          if (col === colPct) {
+            cell.numFmt = '"%"0.0';
+          }
+        });
+        rIdx += 1;
+      });
+    }
+
+    /* TOPLAM satırı */
+    const footerRowIdx = rIdx;
+    for (let c = 1; c <= totalCols; c++) {
+      const cell = ws.getCell(footerRowIdx, c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.border = allBorders;
+    }
+    ws.getCell(footerRowIdx, 1).value = "TOPLAM";
+    ws.mergeCells(footerRowIdx, 1, footerRowIdx, 3);
+
+    const grandTotal = rows.reduce((acc, r) => acc + sumArr(r.hata), 0);
+    const grandMax = rows.length * MAX_TOTAL;
+    const grandPct = grandMax > 0 ? parseFloat(((grandTotal / grandMax) * 100).toFixed(1)) : 0;
+    const sessionTotals = Array(SESSIONS)
+      .fill(0)
+      .map((_, i) => rows.reduce((acc, r) => acc + r.hata[i], 0));
+    sessionTotals.forEach((t, i) => {
+      const c = turnStart + i * 2;
+      const kaCell = ws.getCell(footerRowIdx, c);
+      kaCell.value = rows.length * SAMPLES;
+      kaCell.font = { color: { argb: "FF94A3B8" } };
+      const haCell = ws.getCell(footerRowIdx, c + 1);
+      haCell.value = t;
+      haCell.font = { bold: true, color: { argb: t > 0 ? "FFFCD34D" : "FF64748B" } };
+    });
+    const grandCell = ws.getCell(footerRowIdx, colToplam);
+    grandCell.value = grandTotal;
+    grandCell.font = { bold: true, color: { argb: "FFFCD34D" } };
+    const grandPctCell = ws.getCell(footerRowIdx, colPct);
+    grandPctCell.value = grandPct;
+    grandPctCell.numFmt = '"%"0.0';
+    grandPctCell.font = { bold: true, color: { argb: "FFFCD34D" } };
+
+    ws.views = [{ state: "frozen", ySplit: headerRowIdx + 1 }];
+    await downloadWorkbook(wb, `proses-kontrol-${selectedDate}.xlsx`);
   }
 
   /* ══ Render ════════════════════════════════════════════════ */

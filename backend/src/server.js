@@ -465,15 +465,19 @@ app.get("/api/workers", async (_req, res) => {
   }
 });
 
-/** Analiz ekranları: aktif + üretim geçmişi olan pasif kayıtlar */
-app.get("/api/workers/for-analysis", requireAnyPermission(["analysis", "ekran2"]), async (_req, res) => {
-  try {
-    const workers = await getWorkersForAnalytics();
-    res.json(workers);
-  } catch (error) {
-    res.status(500).json({ message: "Çalışan listesi alınamadı", error: String(error) });
-  }
-});
+/** Analiz + personel seçimi olan ekranlar: aktif + üretim geçmişi olan pasif kayıtlar */
+app.get(
+  "/api/workers/for-analysis",
+  requireAnyPermission(["analysis", "ekran2", "karsilastirma", "isBitirmeHesaplama", "prosesKontrol", "araKontrol"]),
+  async (_req, res) => {
+    try {
+      const workers = await getWorkersForAnalytics();
+      res.json(workers);
+    } catch (error) {
+      res.status(500).json({ message: "Çalışan listesi alınamadı", error: String(error) });
+    }
+  },
+);
 
 /* ── İsim Havuzu (worker_names) ── */
 app.get("/api/worker-names", requireAuth, async (req, res) => {

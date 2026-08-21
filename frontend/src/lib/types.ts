@@ -94,6 +94,8 @@ export type HourFilter = "" | "t1000" | "t1300" | "t1600" | "t1830";
 
 /** Sunucu ile aynı anahtarlar (JWT ve PATCH) */
 export type AppPermissions = {
+  /** Ana sayfa — personel ekleme ve günlük üretim/adet veri girişi */
+  anaSayfaVeriGirisi: boolean;
   analysis: boolean;
   karsilastirma: boolean;
   ayarlar: boolean;

@@ -7,6 +7,7 @@ import type { AppPermissions, User } from "@/lib/types";
 
 function emptyDraft(): AppPermissions {
   return {
+    anaSayfaVeriGirisi: false,
     analysis: false,
     karsilastirma: false,
     ayarlar: false,

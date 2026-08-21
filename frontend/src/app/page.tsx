@@ -981,6 +981,8 @@ export default function HomePage() {
     return <LoginForm onLogin={handleLogin} />;
   }
 
+  const canDataEntry = isAdminRole() || hasPermission("anaSayfaVeriGirisi");
+
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 p-3 pb-20 md:gap-5 md:p-6 md:pb-10">
       {/* ── Header ─────────────────────────────────────────────────────── */}
@@ -1181,9 +1183,9 @@ export default function HomePage() {
         )}
       </div>
 
-      <WorkerForm onSubmit={handleAddWorker} existingRows={rows} />
+      {canDataEntry ? <WorkerForm onSubmit={handleAddWorker} existingRows={rows} /> : null}
 
-      {!loading && rows.length > 0 ? (
+      {canDataEntry && !loading && rows.length > 0 ? (
         <>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {/* Ek sayım toggle */}
@@ -1915,7 +1917,19 @@ export default function HomePage() {
         </div>
       )}
 
-      {loading ? (
+      {!canDataEntry ? (
+        <div className="surface-card flex flex-col items-center justify-center gap-2 py-16 text-center">
+          <svg className="h-9 w-9 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 10-8 0v2" />
+          </svg>
+          <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+            Ana sayfada veri girişi yapma yetkiniz yok.
+          </p>
+          <p className="max-w-sm text-xs text-slate-400 dark:text-slate-500">
+            Erişim için yöneticinize başvurun. Yetkili olduğunuz diğer sayfalara yukarıdaki menüden ulaşabilirsiniz.
+          </p>
+        </div>
+      ) : loading ? (
         <div className="surface-card flex flex-col items-center justify-center gap-3 py-16">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-teal-500 dark:border-slate-700 dark:border-t-teal-400" />
           <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{t("home.loadingData")}</span>
@@ -1936,7 +1950,7 @@ export default function HomePage() {
       )}
 
       {/* İkinci model giriş paneli */}
-      {!loading && (
+      {canDataEntry && !loading && (
         <SecondaryModelPanel
           selectedDate={selectedDate}
           primaryModelId={activeModelIdRef.current}
@@ -1948,7 +1962,7 @@ export default function HomePage() {
       )}
 
       {/* Yönetici: Excel içe aktarma var; yapıştırma paneli yalnızca «veri girişi» + Toplu ekle yetkisi */}
-      {!loading && rows.length > 0 && role !== "admin" && hasPermission("topluEkle") ? (
+      {canDataEntry && !loading && rows.length > 0 && role !== "admin" && hasPermission("topluEkle") ? (
         <BulkEntryPanel
           rows={rows}
           selectedDate={selectedDate}

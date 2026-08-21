@@ -6,6 +6,12 @@ export const THEME_CHANGE_EVENT = "tekstil-theme-change";
 
 export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; description: string }[] = [
   {
+    key: "anaSayfaVeriGirisi",
+    label: "Ana Sayfa — Veri Girişi",
+    description:
+      "Ana sayfada personel ekleme ve günlük üretim/adet girişi (personel tablosu, Excel yapıştırma, ikinci model paneli)",
+  },
+  {
     key: "defaultDarkMode",
     label: "Koyu modda açılış",
     description: "Girişte arayüz koyu temada açılır. Kapalıysa açık tema ile açılır; sonraki girişte geçerli olur.",
