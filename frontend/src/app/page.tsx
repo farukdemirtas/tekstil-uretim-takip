@@ -1045,6 +1045,7 @@ export default function HomePage() {
           </div>
 
           {/* Genel tamamlanan chip */}
+          {canDataEntry ? (
           <div
             className="flex items-center gap-1.5 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-1.5 dark:border-emerald-900/40 dark:from-emerald-950/50 dark:to-teal-950/40"
             title={t("nav.completedHint")}
@@ -1053,8 +1054,9 @@ export default function HomePage() {
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t("nav.completed")}</span>
             <span className="text-sm font-black tabular-nums text-emerald-800 dark:text-emerald-200">{genelTamamlanan}</span>
           </div>
+          ) : null}
           {/* Verimlilik chip */}
-          {rows.length > 0 ? (
+          {canDataEntry && rows.length > 0 ? (
             <div
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 ${
                 personnelEfficiencyLive.count > 0
@@ -1918,13 +1920,12 @@ export default function HomePage() {
       )}
 
       {!canDataEntry ? (
-        <div className="surface-card flex flex-col items-center justify-center gap-2 py-16 text-center">
-          <svg className="h-9 w-9 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 10-8 0v2" />
-          </svg>
-          <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-            Ana sayfada veri girişi yapma yetkiniz yok.
-          </p>
+        <div className="surface-card flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <img
+            src="/ana-sayfa-erisim-logo.png"
+            alt="Yeşil İmaj Tekstil"
+            className="h-auto w-full max-w-[280px] object-contain sm:max-w-sm"
+          />
           <p className="max-w-sm text-xs text-slate-400 dark:text-slate-500">
             Erişim için yöneticinize başvurun. Yetkili olduğunuz diğer sayfalara yukarıdaki menüden ulaşabilirsiniz.
           </p>
@@ -1973,17 +1974,19 @@ export default function HomePage() {
         />
       ) : null}
 
-      <AdminPanel
-        workerCount={uniquePersonnelCount}
-        stageTotals={hedefStageTotals}
-        stageError={hedefStageError}
-        ekran1TotalCompleted={ekran1Summary?.totalCompleted ?? null}
-        ekran1TodayProduced={ekran1Summary?.todayProduced ?? null}
-        ekran1Stages={ekran1Summary?.stages ?? null}
-        ekran1DailySummaryStages={ekran1Summary?.dailySummaryStages ?? null}
-        secondaryStages={secondaryStages}
-        secondaryModelLabel={secondaryModelLabel}
-      />
+      {canDataEntry ? (
+        <AdminPanel
+          workerCount={uniquePersonnelCount}
+          stageTotals={hedefStageTotals}
+          stageError={hedefStageError}
+          ekran1TotalCompleted={ekran1Summary?.totalCompleted ?? null}
+          ekran1TodayProduced={ekran1Summary?.todayProduced ?? null}
+          ekran1Stages={ekran1Summary?.stages ?? null}
+          ekran1DailySummaryStages={ekran1Summary?.dailySummaryStages ?? null}
+          secondaryStages={secondaryStages}
+          secondaryModelLabel={secondaryModelLabel}
+        />
+      ) : null}
     </main>
   );
 }
