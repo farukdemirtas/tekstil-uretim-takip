@@ -1140,14 +1140,16 @@ export default function HomePage() {
               {t("nav.tvScreens")}
             </Link>
           ) : null}
-          <button
-            type="button"
-            onClick={() => { setExcelPanelOpen((v) => !v); if (!bulkExportStart) setBulkExportStart(selectedDate); if (!bulkExportEnd) setBulkExportEnd(selectedDate); }}
-            className="btn-nav shrink-0"
-          >
-            {t("nav.excel")}
-          </button>
-          {role === "admin" ? (
+          {canDataEntry ? (
+            <button
+              type="button"
+              onClick={() => { setExcelPanelOpen((v) => !v); if (!bulkExportStart) setBulkExportStart(selectedDate); if (!bulkExportEnd) setBulkExportEnd(selectedDate); }}
+              className="btn-nav shrink-0"
+            >
+              {t("nav.excel")}
+            </button>
+          ) : null}
+          {canDataEntry && role === "admin" ? (
             <ExcelImportPanel
               teamMeta={teamMeta}
               open={importOpen}
@@ -1338,7 +1340,7 @@ export default function HomePage() {
       ) : null}
 
       {/* Excel birleşik panel */}
-      {excelPanelOpen ? (
+      {canDataEntry && excelPanelOpen ? (
         <div className="surface-card dark:text-slate-100">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
