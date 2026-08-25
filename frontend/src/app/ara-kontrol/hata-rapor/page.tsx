@@ -314,8 +314,8 @@ export default function AraKontrolHataRaporPage() {
     <div className="min-h-screen bg-slate-50 p-3 sm:p-5">
       {/* ─── Üst Bar ─────────────────────────────────────── */}
       <div className="mb-5 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
             <Link
               href="/ara-kontrol"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50"
@@ -324,9 +324,9 @@ export default function AraKontrolHataRaporPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
             </Link>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900">Ara Kontrol — Hata Rapor Analiz</h1>
-              <p className="text-xs text-slate-500">
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold text-slate-900 sm:text-lg">Ara Kontrol — Hata Rapor Analiz</h1>
+              <p className="truncate text-[11px] text-slate-500 sm:text-xs">
                 Hat içi (in-line) kontrol uygunsuzluk sonuçları · personel &amp; hata tipi bazlı analiz
               </p>
             </div>
@@ -335,7 +335,7 @@ export default function AraKontrolHataRaporPage() {
             type="button"
             onClick={exportExcel}
             disabled={rows.length === 0}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-500 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-500 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2 sm:text-sm"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
@@ -378,7 +378,7 @@ export default function AraKontrolHataRaporPage() {
             <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Tarih</label>
             <WeekdayDatePicker value={selectedDate} onChange={setSelectedDate} />
           </div>
-          <div className="flex min-w-[200px] flex-1 flex-col gap-1">
+          <div className="flex min-w-[200px] flex-1 basis-full flex-col gap-1 sm:basis-auto">
             <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Çalışılan Ürün</label>
             <div className="flex min-h-[38px] items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
               {urunLabel ? <span className="font-medium text-slate-800">{urunLabel}</span> : <span className="text-slate-400">—</span>}
@@ -458,7 +458,7 @@ export default function AraKontrolHataRaporPage() {
               </svg>
             }
           >
-            <div className="overflow-x-auto">
+            <div className="touch-pan-x overflow-x-auto">
               <table className="w-full min-w-[600px] border-collapse text-sm">
                 <thead>
                   <tr className="bg-slate-800 text-white">
@@ -509,7 +509,7 @@ export default function AraKontrolHataRaporPage() {
               </svg>
             }
           >
-            <div className="overflow-x-auto">
+            <div className="touch-pan-x overflow-x-auto">
               <table className="w-full border-collapse text-xs" style={{ minWidth: 980 }}>
                 <thead>
                   <tr className="bg-slate-800 text-white">
@@ -599,9 +599,9 @@ export default function AraKontrolHataRaporPage() {
                     const p = parseFloat(hataOrani(total, row.kontrolEdilenAdet));
                     const barPct = Math.min(100, p);
                     return (
-                      <div key={row.workerId} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
-                        <span className="w-6 text-center text-sm font-bold text-slate-400">{idx + 1}</span>
-                        <div className="w-36 shrink-0">
+                      <div key={row.workerId} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 sm:gap-3 sm:px-4">
+                        <span className="w-5 shrink-0 text-center text-sm font-bold text-slate-400 sm:w-6">{idx + 1}</span>
+                        <div className="w-20 shrink-0 sm:w-36">
                           <p className="truncate text-sm font-semibold text-slate-800">{row.name}</p>
                           <p className="truncate text-xs text-slate-400">
                             {row.team} · {row.process}

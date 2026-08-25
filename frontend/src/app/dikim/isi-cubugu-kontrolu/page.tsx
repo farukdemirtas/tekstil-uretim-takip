@@ -413,6 +413,10 @@ export default function IsiCubuguKontroluPage() {
             tıklayın.
           </div>
         ) : (
+          <>
+          <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-1.5 text-[11px] text-slate-400 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-500 sm:hidden">
+            ← Tabloyu kaydırmak için sağa/sola sürükleyin
+          </p>
           <div className="overflow-x-auto touch-pan-x">
             <table className="w-full min-w-[900px] border-collapse text-xs">
               <thead>
@@ -469,6 +473,7 @@ export default function IsiCubuguKontroluPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

@@ -579,8 +579,8 @@ export default function AraKontrolPage() {
     <div className="min-h-screen bg-slate-50 p-3 sm:p-5">
       {/* ─── Üst Bar ─────────────────────────────────────── */}
       <div className="mb-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
             <Link
               href="/"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
@@ -589,22 +589,22 @@ export default function AraKontrolPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
             </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Ara Kontrol Uygunsuzluk Raporu</h1>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold text-slate-900 sm:text-2xl dark:text-white">Ara Kontrol Uygunsuzluk Raporu</h1>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {hasPermission("prosesKontrol") ? (
               <Link
                 href="/proses-kontrol"
-                className="flex items-center gap-1.5 rounded-xl border border-teal-300 bg-white px-3 py-2 text-sm font-semibold text-teal-700 shadow-sm transition hover:bg-teal-50"
+                className="flex items-center gap-1.5 rounded-xl border border-teal-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-teal-700 shadow-sm transition hover:bg-teal-50 sm:px-3 sm:py-2 sm:text-sm"
               >
                 Proses Kontrol
               </Link>
             ) : null}
             <Link
               href="/ara-kontrol/hata-rapor"
-              className="flex items-center gap-1.5 rounded-xl border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-700 shadow-sm transition hover:bg-violet-50"
+              className="flex items-center gap-1.5 rounded-xl border border-violet-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-violet-700 shadow-sm transition hover:bg-violet-50 sm:px-3 sm:py-2 sm:text-sm"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -615,7 +615,7 @@ export default function AraKontrolPage() {
               type="button"
               onClick={() => void exportExcel()}
               disabled={rows.length === 0}
-              className="flex items-center gap-1.5 rounded-xl border border-emerald-500 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-500 bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2 sm:text-sm"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
@@ -694,7 +694,7 @@ export default function AraKontrolPage() {
           </div>
 
           {/* Çalışılan Ürün — API'den otomatik, bantta dönen model */}
-          <div className="flex min-w-[200px] flex-1 flex-col gap-1">
+          <div className="flex min-w-[200px] flex-1 basis-full flex-col gap-1 sm:basis-auto">
             <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
               Çalışılan Ürün
             </label>
@@ -747,7 +747,7 @@ export default function AraKontrolPage() {
         {/* Personel Ekle Formu */}
         {mode === "auto" && showAddForm && (
           <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-800/40 dark:bg-violet-950/20">
-            <div className="flex min-w-[220px] flex-1 flex-col gap-1">
+            <div className="flex min-w-[220px] flex-1 basis-full flex-col gap-1 sm:basis-auto">
               <label className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
                 Personel
               </label>
@@ -866,7 +866,10 @@ export default function AraKontrolPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-surface">
-          <div className="overflow-x-auto">
+          <p className="border-b border-slate-100 bg-slate-50/80 px-3 py-1.5 text-[11px] text-slate-400 sm:hidden">
+            ← Tabloyu kaydırmak için sağa/sola sürükleyin
+          </p>
+          <div className="touch-pan-x overflow-x-auto">
             <table className="w-full border-collapse text-xs" style={{ minWidth: 1900 }}>
               <colgroup>
                 <col style={{ width: 32 }} />
@@ -1011,7 +1014,7 @@ export default function AraKontrolPage() {
                               aria-checked={row.kritikOperasyon}
                               title={row.kritikOperasyon ? "Kritik operasyon işaretini kaldır" : "Kritik operasyon olarak işaretle"}
                               onClick={() => updateKritikOperasyon(row.workerId, !row.kritikOperasyon)}
-                              className={`inline-flex h-5 w-5 items-center justify-center rounded border transition ${
+                              className={`inline-flex h-6 w-6 items-center justify-center rounded border transition ${
                                 row.kritikOperasyon
                                   ? "border-rose-500 bg-rose-500 text-white"
                                   : "border-slate-300 bg-white text-transparent hover:border-rose-300"
@@ -1085,7 +1088,7 @@ export default function AraKontrolPage() {
                                   ? removeFreeRow(row.workerId)
                                   : handleRemoveWorker(row.workerId, row.manual ?? false)
                               }
-                              className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+                              className="min-h-[28px] min-w-[28px] rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 transition hover:bg-red-50 hover:text-red-500 active:bg-red-100"
                             >
                               Sil
                             </button>

@@ -299,6 +299,9 @@ export default function TelaBakimPage() {
         <div className="border-b border-slate-200/80 bg-slate-50 px-4 py-2.5 dark:border-slate-700/60 dark:bg-slate-800/60">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Günlük Bakım</h2>
         </div>
+        <p className="border-b border-slate-100 bg-slate-50/80 px-4 py-1.5 text-[11px] text-slate-400 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-500 sm:hidden">
+          ← Takvimi kaydırmak için sağa/sola sürükleyin
+        </p>
         <div className="overflow-x-auto touch-pan-x">
           <table className="w-full min-w-[930px] table-fixed border-collapse text-xs">
             <colgroup>
