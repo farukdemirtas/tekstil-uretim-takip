@@ -1304,7 +1304,8 @@ export default function HomePage() {
                                   min={0}
                                   step={1}
                                   disabled={disabled}
-                                  value={row.ekSayim ?? 0}
+                                  value={row.ekSayim && row.ekSayim > 0 ? row.ekSayim : ""}
+                                  placeholder=""
                                   onChange={(e) => {
                                     const n = e.target.value === "" ? 0 : Number(e.target.value);
                                     handleEkSayimChange(
