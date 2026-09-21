@@ -176,6 +176,8 @@ export default function ProductModelsSection() {
   const [utuPaketApplyErr, setUtuPaketApplyErr] = useState<string | null>(null);
   const [hedefConflicts, setHedefConflicts] = useState<ModelSessionConflict[]>([]);
   const [utuPaketConflicts, setUtuPaketConflicts] = useState<ModelSessionConflict[]>([]);
+  const [applyProductionOnSave, setApplyProductionOnSave] = useState(true);
+  const [applyUtuPaketOnSave, setApplyUtuPaketOnSave] = useState(true);
 
   const processNames = useMemo(() => processes.map((p) => p.name).sort((a, b) => a.localeCompare(b, "tr")), [processes]);
 
@@ -184,11 +186,7 @@ export default function ProductModelsSection() {
     setHedefApplyStart(prod.start);
     setHedefApplyEnd(prod.end);
     setSessionStartDate(prod.start);
-    const up = resolveSessionRange(
-      d.utuPaketFirstDate,
-      d.utuPaketLastDate,
-      d.utuPaketSessionStartDate || prod.start
-    );
+    const up = resolveSessionRange(d.utuPaketFirstDate, d.utuPaketLastDate, d.utuPaketSessionStartDate);
     setUtuPaketApplyStart(up.start);
     setUtuPaketApplyEnd(up.end);
   }
@@ -294,6 +292,8 @@ export default function ProductModelsSection() {
     setUtuPaketApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
     setHedefConflicts([]);
     setUtuPaketConflicts([]);
+    setApplyProductionOnSave(true);
+    setApplyUtuPaketOnSave(true);
     setError(null);
     try { await loadTeamsAndProcesses(); } catch (e) {
       setError(e instanceof Error ? e.message : "Bölüm ve proses listesi alınamadı");
@@ -326,6 +326,8 @@ export default function ProductModelsSection() {
       setUtuPaketApplyEnd(clampToWeekdayIso(todayWeekdayIso()));
       setHedefConflicts([]);
       setUtuPaketConflicts([]);
+      setApplyProductionOnSave(true);
+      setApplyUtuPaketOnSave(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Takipsan verisi alınamadı");
     } finally {
@@ -359,6 +361,8 @@ export default function ProductModelsSection() {
       setUtuPaketApplyErr(null);
       setHedefConflicts([]);
       setUtuPaketConflicts([]);
+      setApplyProductionOnSave(false);
+      setApplyUtuPaketOnSave(false);
       const rows = (d.baselines || []).slice().sort((a, b) => a.sortOrder - b.sortOrder).map((row) => ({ teamCode: row.teamCode, processName: row.processName, arkaHalf: row.arkaHalf ? 1 : 0 }));
       setBaselines(rows.length ? rows : [emptyRow()]);
       const dailyRows = (d.dailySummaryProcesses || []).slice().sort((a, b) => a.sortOrder - b.sortOrder).map((row) => ({ teamCode: row.teamCode, processName: row.processName, arkaHalf: row.arkaHalf ? 1 : 0 }));
@@ -390,20 +394,87 @@ export default function ProductModelsSection() {
     if (editingId === null) return;
     setSaving(true);
     setError(null);
+    const prodStart = clampToWeekdayIso(hedefApplyStart);
+    const prodEnd = clampToWeekdayIso(hedefApplyEnd);
+    const upStart = clampToWeekdayIso(utuPaketApplyStart);
+    const upEnd = clampToWeekdayIso(utuPaketApplyEnd);
+    if (applyProductionOnSave && (!prodStart || !prodEnd || prodStart > prodEnd)) {
+      setError("Üretim günleri için geçerli bir hafta içi tarih aralığı seçin.");
+      setSaving(false);
+      return;
+    }
+    if (applyUtuPaketOnSave && (!upStart || !upEnd || upStart > upEnd)) {
+      setError("Ütü–paket günleri için geçerli bir hafta içi tarih aralığı seçin.");
+      setSaving(false);
+      return;
+    }
+    if (applyProductionOnSave && !baselines.some((b) => b.teamCode.trim() && b.processName.trim())) {
+      setError("Üretime atamak için en az bir çalışılacak bölüm (bölüm + proses) seçin.");
+      setSaving(false);
+      return;
+    }
     const payload = {
       modelCode,
       productName,
-      baselines: baselines.map((b) => ({ teamCode: b.teamCode, processName: b.processName, arkaHalf: b.arkaHalf ? 1 : 0 })),
+      baselines: (applyProductionOnSave
+        ? baselines
+        : baselines.filter((b) => b.teamCode.trim() && b.processName.trim())
+      ).map((b) => ({ teamCode: b.teamCode, processName: b.processName, arkaHalf: b.arkaHalf ? 1 : 0 })),
       dailySummaryProcesses: dailySummaryRows.filter((b) => b.teamCode.trim() && b.processName.trim()).map((b) => ({ teamCode: b.teamCode, processName: b.processName, arkaHalf: b.arkaHalf ? 1 : 0 })),
-      sessionStartDate: sessionStartDate || null,
+      requireBaselines: applyProductionOnSave,
+      sessionStartDate: applyProductionOnSave ? prodStart : (editingId === "new" ? null : sessionStartDate || null),
+      ...(applyUtuPaketOnSave ? { utuPaketSessionStartDate: upStart } : {}),
       primaryConsignmentId: primaryConsignmentId.trim() || null,
       secondaryConsignmentId: secondaryConsignmentId.trim() || null,
       targetQuantity: Math.max(0, Math.floor(Number(targetQuantity) || 0)),
       ...(editingId === "new" && fromTakipsan ? { fromTakipsan: true, takipsanProductLabel, takipsanOrderCode } : {}),
     };
     try {
-      if (editingId === "new") { await createProductModel(payload); } else { await updateProductModel(editingId, payload); }
+      let savedId: number;
+      if (editingId === "new") {
+        const created = await createProductModel(payload);
+        savedId = created.id;
+      } else {
+        await updateProductModel(editingId, payload);
+        savedId = editingId;
+      }
+
+      const applyErrors: string[] = [];
+      if (applyProductionOnSave) {
+        try {
+          await applyHedefSession({
+            modelId: savedId,
+            startDate: prodStart,
+            endDate: prodEnd,
+            productName,
+            productModel: modelCode,
+          });
+        } catch (e) {
+          applyErrors.push(e instanceof Error ? e.message : "Üretim günleri kaydedilemedi");
+        }
+      }
+      if (applyUtuPaketOnSave) {
+        try {
+          await applyUtuPaketSession({
+            modelId: savedId,
+            startDate: upStart,
+            endDate: upEnd,
+            productName,
+            productModel: modelCode,
+          });
+        } catch (e) {
+          applyErrors.push(e instanceof Error ? e.message : "Ütü–paket günleri kaydedilemedi");
+        }
+      }
+
       await loadAll();
+      if (applyErrors.length) {
+        setEditingId(savedId);
+        setApplyProductionOnSave(false);
+        setApplyUtuPaketOnSave(false);
+        setError(`Model kaydedildi fakat günler tam uygulanamadı: ${applyErrors.join(" · ")}`);
+        return;
+      }
       setEditingId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Kayıt başarısız");
@@ -694,72 +765,93 @@ export default function ProductModelsSection() {
               </div>
             </div>
 
-            {/* ── Üretim günlerine uygula (takip başlangıcı + model ata) ── */}
-            {hasPermission("hedefTakip") ? (
-              <div className="px-5 py-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-teal-700 dark:text-teal-400">Üretim Günlerine Uygula</p>
-                    <p className="text-[11px] text-slate-400">Seçili hafta içi günlere bu modeli ata; Ekran 1 «Biten» de bu tarihten sayılır. Tarihler sistemde kayıtlı aralıktan otomatik gelir.</p>
-                  </div>
+            {/* ── Üretim günleri (bağımsız seçim) ── */}
+            <div className="px-5 py-4">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-teal-700 dark:text-teal-400">Üretim Günleri</p>
+                  <p className="text-[11px] text-slate-400">
+                    Seçili hafta içi günlere bu modeli ata; Ekran 1 «Biten» bu tarihten sayılır. Üretim yoksa kutuyu kapatın.
+                  </p>
                 </div>
-                <div className="flex flex-wrap items-end gap-3">
-                  <WeekdayDatePicker label="Başlangıç" value={hedefApplyStart} onChange={(v) => { setHedefApplyStart(coerceWeekdayPickerValue(v)); setSessionStartDate(coerceWeekdayPickerValue(v)); setHedefApplyMsg(null); setHedefApplyErr(null); }} className="min-w-[10rem] flex-1" />
-                  <WeekdayDatePicker label="Bitiş" value={hedefApplyEnd} onChange={(v) => { setHedefApplyEnd(coerceWeekdayPickerValue(v)); setHedefApplyMsg(null); setHedefApplyErr(null); }} className="min-w-[10rem] flex-1" />
-                  {typeof editingId === "number" ? (
-                    <button
-                      type="button"
-                      disabled={hedefApplyBusy}
-                      onClick={() => {
-                        void handleHedefApplyToProduction();
-                      }}
-                      className="flex items-center gap-1.5 rounded-lg border border-teal-400 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 disabled:opacity-50 dark:border-teal-700 dark:text-teal-300 dark:hover:bg-teal-950/30"
-                    >
-                      {hedefApplyBusy
-                        ? <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                        : null}
-                      {hedefApplyBusy ? "Uygulanıyor…" : "Günlere uygula"}
-                    </button>
-                  ) : null}
-                </div>
-                {hedefApplyMsg ? (
-                  <p className="mt-2.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">✓ {hedefApplyMsg}</p>
-                ) : null}
-                <SessionConflictWarning conflicts={hedefConflicts} label="Üretim" />
-                {hedefApplyErr ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {hedefApplyErr}</p> : null}
+                <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-teal-200 bg-teal-50/70 px-2.5 py-1.5 text-xs font-semibold text-teal-800 dark:border-teal-800/60 dark:bg-teal-950/30 dark:text-teal-200">
+                  <input
+                    type="checkbox"
+                    checked={applyProductionOnSave}
+                    onChange={(e) => setApplyProductionOnSave(e.target.checked)}
+                    className="rounded"
+                  />
+                  Kaydederken üretimi ata
+                </label>
               </div>
-            ) : (
-              <div className="px-5 py-4">
-                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Takip Başlangıcı</p>
-                <WeekdayDatePicker label="Başlangıç tarihi" value={sessionStartDate} onChange={(v) => setSessionStartDate(coerceWeekdayPickerValue(v))} className="max-w-xs" />
-                <p className="mt-1.5 text-[11px] text-slate-400">Ekran 1 ve hedef özette «Biten» bu tarihten itibaren sayılır.</p>
+              <div className={`flex flex-wrap items-end gap-3 ${applyProductionOnSave ? "" : "opacity-50"}`}>
+                <WeekdayDatePicker
+                  label="Başlangıç"
+                  value={hedefApplyStart}
+                  onChange={(v) => { setHedefApplyStart(coerceWeekdayPickerValue(v)); setSessionStartDate(coerceWeekdayPickerValue(v)); setHedefApplyMsg(null); setHedefApplyErr(null); }}
+                  className="min-w-[10rem] flex-1"
+                />
+                <WeekdayDatePicker
+                  label="Bitiş"
+                  value={hedefApplyEnd}
+                  onChange={(v) => { setHedefApplyEnd(coerceWeekdayPickerValue(v)); setHedefApplyMsg(null); setHedefApplyErr(null); }}
+                  className="min-w-[10rem] flex-1"
+                />
+                {typeof editingId === "number" ? (
+                  <button
+                    type="button"
+                    disabled={hedefApplyBusy}
+                    onClick={() => { void handleHedefApplyToProduction(); }}
+                    className="flex items-center gap-1.5 rounded-lg border border-teal-400 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 disabled:opacity-50 dark:border-teal-700 dark:text-teal-300 dark:hover:bg-teal-950/30"
+                  >
+                    {hedefApplyBusy ? "Uygulanıyor…" : "Günlere uygula"}
+                  </button>
+                ) : (
+                  <p className="pb-2 text-[11px] text-slate-400">Kaydet ile uygulanır</p>
+                )}
               </div>
-            )}
+              {hedefApplyMsg ? (
+                <p className="mt-2.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-800 dark:border-teal-800/50 dark:bg-teal-950/30 dark:text-teal-200">✓ {hedefApplyMsg}</p>
+              ) : null}
+              <SessionConflictWarning conflicts={hedefConflicts} label="Üretim" />
+              {hedefApplyErr ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {hedefApplyErr}</p> : null}
+            </div>
 
-            {/* ── Ütü–paket günlerine uygula (veri girişinden bağımsız) ── */}
-            {hasPermission("utuPaket") && typeof editingId === "number" ? (
-              <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
-                <div className="mb-3">
+            {/* ── Ütü–paket günleri (üretimden bağımsız) ── */}
+            <div className="border-t border-slate-200/80 px-5 py-4 dark:border-slate-700/80">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-400">
-                    Ütü–Paket İçin Uygula
+                    Ütü–Paket Günleri
                   </p>
                   <p className="text-[11px] text-slate-400">
-                    Seçili günlere bu modeli ata; ütü–paket veri girişi, Takipsan paketleme ve Ekran5 bu modele göre çalışır (veri girişi modelinden bağımsız). Tarihler sistemde kayıtlı aralıktan otomatik gelir.
+                    Üretim olmadan da çalışabilir. Ütü–paket veri girişi, Takipsan paketleme ve Ekran5 bu modele göre gider.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-end gap-3">
-                  <WeekdayDatePicker
-                    label="Başlangıç"
-                    value={utuPaketApplyStart}
-                    onChange={(v) => { setUtuPaketApplyStart(coerceWeekdayPickerValue(v)); setUtuPaketApplyMsg(null); setUtuPaketApplyErr(null); }}
-                    className="min-w-[10rem] flex-1"
+                <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50/70 px-2.5 py-1.5 text-xs font-semibold text-indigo-800 dark:border-indigo-800/60 dark:bg-indigo-950/30 dark:text-indigo-200">
+                  <input
+                    type="checkbox"
+                    checked={applyUtuPaketOnSave}
+                    onChange={(e) => setApplyUtuPaketOnSave(e.target.checked)}
+                    className="rounded"
                   />
-                  <WeekdayDatePicker
-                    label="Bitiş"
-                    value={utuPaketApplyEnd}
-                    onChange={(v) => { setUtuPaketApplyEnd(coerceWeekdayPickerValue(v)); setUtuPaketApplyMsg(null); setUtuPaketApplyErr(null); }}
-                    className="min-w-[10rem] flex-1"
-                  />
+                  Kaydederken ütü–pakete ata
+                </label>
+              </div>
+              <div className={`flex flex-wrap items-end gap-3 ${applyUtuPaketOnSave ? "" : "opacity-50"}`}>
+                <WeekdayDatePicker
+                  label="Başlangıç"
+                  value={utuPaketApplyStart}
+                  onChange={(v) => { setUtuPaketApplyStart(coerceWeekdayPickerValue(v)); setUtuPaketApplyMsg(null); setUtuPaketApplyErr(null); }}
+                  className="min-w-[10rem] flex-1"
+                />
+                <WeekdayDatePicker
+                  label="Bitiş"
+                  value={utuPaketApplyEnd}
+                  onChange={(v) => { setUtuPaketApplyEnd(coerceWeekdayPickerValue(v)); setUtuPaketApplyMsg(null); setUtuPaketApplyErr(null); }}
+                  className="min-w-[10rem] flex-1"
+                />
+                {typeof editingId === "number" ? (
                   <button
                     type="button"
                     disabled={utuPaketApplyBusy}
@@ -768,20 +860,23 @@ export default function ProductModelsSection() {
                   >
                     {utuPaketApplyBusy ? "Uygulanıyor…" : "Ütü–pakete uygula"}
                   </button>
-                </div>
-                {utuPaketApplyMsg ? (
-                  <p className="mt-2.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800 dark:border-indigo-800/50 dark:bg-indigo-950/30 dark:text-indigo-200">
-                    ✓ {utuPaketApplyMsg}
-                  </p>
-                ) : null}
-                <SessionConflictWarning conflicts={utuPaketConflicts} label="Ütü–paket" />
-                {utuPaketApplyErr ? (
-                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {utuPaketApplyErr}</p>
-                ) : null}
+                ) : (
+                  <p className="pb-2 text-[11px] text-slate-400">Kaydet ile uygulanır</p>
+                )}
               </div>
-            ) : null}
+              {utuPaketApplyMsg ? (
+                <p className="mt-2.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-800 dark:border-indigo-800/50 dark:bg-indigo-950/30 dark:text-indigo-200">
+                  ✓ {utuPaketApplyMsg}
+                </p>
+              ) : null}
+              <SessionConflictWarning conflicts={utuPaketConflicts} label="Ütü–paket" />
+              {utuPaketApplyErr ? (
+                <p className="mt-2 text-xs text-red-600 dark:text-red-400">⚠ {utuPaketApplyErr}</p>
+              ) : null}
+            </div>
 
             {/* ── Çalışılacak bölümler ── */}
+            {applyProductionOnSave ? (
             <div className="px-5 py-4">
               <div className="mb-3 flex items-center justify-between">
                 <div>
@@ -805,6 +900,14 @@ export default function ProductModelsSection() {
                   max={MAX_BASELINE_ROWS} addLabel="Bölüm satırı ekle" canRemove />
               )}
             </div>
+            ) : (
+            <div className="px-5 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Çalışılacak Bölümler</p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                «Kaydederken üretimi ata» kapalı olduğu için bölüm seçimi gerekmez. Yalnızca ütü–paket için kaydedebilirsiniz.
+              </p>
+            </div>
+            )}
 
             {/* ── Günlük özet prosesleri ── */}
             <div className="px-5 py-4">

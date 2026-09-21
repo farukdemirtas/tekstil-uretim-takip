@@ -964,6 +964,10 @@ export async function createProductModel(payload: {
   takipsanOrderCode?: string;
   targetQuantity?: number;
   sessionStartDate?: string | null;
+  utuPaketSessionStartDate?: string | null;
+  primaryConsignmentId?: string | null;
+  secondaryConsignmentId?: string | null;
+  requireBaselines?: boolean;
 }): Promise<{ id: number; modelCode: string; productName: string; targetQuantity?: number }> {
   const res = await apiFetch(`${apiBase()}/product-models`, {
     method: "POST",
@@ -985,9 +989,11 @@ export async function updateProductModel(
     baselines: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
     dailySummaryProcesses?: Array<{ teamCode: string; processName: string; arkaHalf?: number }>;
     sessionStartDate?: string | null;
+    utuPaketSessionStartDate?: string | null;
     targetQuantity?: number;
     primaryConsignmentId?: string | null;
     secondaryConsignmentId?: string | null;
+    requireBaselines?: boolean;
   }
 ): Promise<{ id: number; modelCode: string; productName: string; sessionStartDate?: string | null; targetQuantity?: number }> {
   const res = await apiFetch(`${apiBase()}/product-models/${id}`, {

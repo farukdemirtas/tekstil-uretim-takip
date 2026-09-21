@@ -2515,10 +2515,12 @@ export function getProductModelWithBaselines(id) {
 const MAX_HEDEF_BASELINE_ROWS = 20;
 const MAX_DAILY_SUMMARY_ROWS = 20;
 
-function validateBaselineRows(teamCodes, baselines) {
+function validateBaselineRows(teamCodes, baselines, { required = true } = {}) {
   const set = new Set(teamCodes);
-  const rows = Array.isArray(baselines) ? baselines : [];
-  if (rows.length === 0) {
+  const rows = (Array.isArray(baselines) ? baselines : []).filter(
+    (b) => String(b?.teamCode ?? "").trim() && String(b?.processName ?? "").trim()
+  );
+  if (required && rows.length === 0) {
     throw new Error("En az bir çalışılacak bölüm satırı gerekli");
   }
   if (rows.length > MAX_HEDEF_BASELINE_ROWS) {
@@ -2526,13 +2528,11 @@ function validateBaselineRows(teamCodes, baselines) {
   }
   for (let i = 0; i < rows.length; i++) {
     const b = rows[i];
-    if (!b || !String(b.teamCode ?? "").trim() || !String(b.processName ?? "").trim()) {
-      throw new Error(`Satır ${i + 1}: bölüm ve proses seçilmelidir`);
-    }
     if (!set.has(String(b.teamCode))) {
       throw new Error(`Geçersiz bölüm kodu: ${b.teamCode}`);
     }
   }
+  return rows;
 }
 
 function validateDailySummaryRows(teamCodes, rows) {
@@ -2571,6 +2571,39 @@ async function insertDailySummaryRows(modelId, rows) {
   });
 }
 
+function isSqliteUniqueConstraint(err) {
+  const msg = String(err?.message || err || "");
+  return /UNIQUE constraint failed/i.test(msg);
+}
+
+function uniqueModelCodeError(code, existing) {
+  const label = [existing?.productName, existing?.modelCode || code].filter(Boolean).join(" — ");
+  return new Error(
+    `Bu model kodu zaten kayıtlı${label ? ` (${label})` : ""}. Aynı kodla ikinci model eklenemez; listeden mevcut modeli düzenleyin veya ikinci sevkiyatı o modele bağlayın.`
+  );
+}
+
+async function findProductModelByCode(code, excludeId = null) {
+  const trimmed = String(code || "").trim();
+  if (!trimmed) return null;
+  if (excludeId != null && Number.isFinite(Number(excludeId))) {
+    return dbGet(
+      `SELECT id, model_code AS modelCode, product_name AS productName
+       FROM product_models
+       WHERE TRIM(LOWER(model_code)) = TRIM(LOWER(?)) AND id != ?
+       LIMIT 1`,
+      [trimmed, Number(excludeId)]
+    );
+  }
+  return dbGet(
+    `SELECT id, model_code AS modelCode, product_name AS productName
+     FROM product_models
+     WHERE TRIM(LOWER(model_code)) = TRIM(LOWER(?))
+     LIMIT 1`,
+    [trimmed]
+  );
+}
+
 export async function refreshProductModelTargetsFromTakipsan(takipsan, modelId = null) {
   const qty = Math.max(0, Math.floor(Number(takipsan?.orderQuantity) || 0));
   const orderCode = String(takipsan?.orderCode || "").trim();
@@ -2584,6 +2617,8 @@ export async function refreshProductModelTargetsFromTakipsan(takipsan, modelId =
   const productLabel = productRef || buildTakipsanProductLabel(productName, modelCode);
 
   if (modelId != null && Number.isFinite(Number(modelId)) && Number(modelId) > 0) {
+    const codeConflict = modelCode ? await findProductModelByCode(modelCode, Number(modelId)) : null;
+    const nextCode = codeConflict ? "" : modelCode;
     await dbRun(
       `UPDATE product_models SET
         target_quantity = ?,
@@ -2592,7 +2627,7 @@ export async function refreshProductModelTargetsFromTakipsan(takipsan, modelId =
         product_name = CASE WHEN ? != '' THEN ? ELSE product_name END,
         model_code = CASE WHEN ? != '' THEN ? ELSE model_code END
        WHERE id = ?`,
-      [qty, productLabel, productLabel, orderCode, orderCode, productName, productName, modelCode, modelCode, Number(modelId)]
+      [qty, productLabel, productLabel, orderCode, orderCode, productName, productName, nextCode, nextCode, Number(modelId)]
     );
     return { ok: true, targetQuantity: qty, productLabel, productName, modelCode };
   }
@@ -2642,9 +2677,15 @@ export async function createProductModel(payload, teamCodes) {
   }
   if (!code) throw new Error("Model kodu gerekli");
 
+  const existingCode = await findProductModelByCode(code);
+  if (existingCode) throw uniqueModelCodeError(code, existingCode);
+
   const tqty = Math.max(0, Math.floor(Number(payload?.targetQuantity) || 0));
   const sessionStart = payload?.sessionStartDate
     ? String(payload.sessionStartDate).trim()
+    : null;
+  const utuPaketSessionStart = payload?.utuPaketSessionStartDate
+    ? String(payload.utuPaketSessionStartDate).trim()
     : null;
   const productLabel = fromTakipsan
     ? tsl || (pname && code ? buildTakipsanProductLabel(pname, code) : "")
@@ -2656,20 +2697,25 @@ export async function createProductModel(payload, teamCodes) {
     ? String(payload.secondaryConsignmentId).trim()
     : null;
 
-  validateBaselineRows(teamCodes, payload?.baselines);
+  const requireBaselines = payload?.requireBaselines !== false;
+  const rows = validateBaselineRows(teamCodes, payload?.baselines, { required: requireBaselines });
   validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
-  const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
   const dailyRows = Array.isArray(payload?.dailySummaryProcesses) ? payload.dailySummaryProcesses : [];
 
   return new Promise((resolve, reject) => {
     db.run(
       `INSERT INTO product_models (
         model_code, product_name, takipsan_product_label, takipsan_order_code, target_quantity, session_start_date,
-        primary_consignment_id, secondary_consignment_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [code, pname, productLabel, toc, tqty, sessionStart, primaryConsignmentId, secondaryConsignmentId],
+        utu_paket_session_start_date, primary_consignment_id, secondary_consignment_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [code, pname, productLabel, toc, tqty, sessionStart, utuPaketSessionStart, primaryConsignmentId, secondaryConsignmentId],
       function onIns(err) {
-        if (err) return reject(err);
+        if (err) {
+          if (isSqliteUniqueConstraint(err)) {
+            return reject(uniqueModelCodeError(code, { modelCode: code, productName: pname }));
+          }
+          return reject(err);
+        }
         const modelId = this.lastID;
         const stmt = db.prepare(
           `INSERT INTO model_hedef_baselines (model_id, sort_order, team_code, process_name, arka_half)
@@ -2689,6 +2735,8 @@ export async function createProductModel(payload, teamCodes) {
               productName: pname,
               targetQuantity: tqty,
               takipsanProductLabel: productLabel,
+              sessionStartDate: sessionStart,
+              utuPaketSessionStartDate: utuPaketSessionStart,
             });
           } catch (e) {
             reject(e);
@@ -2709,6 +2757,13 @@ export async function updateProductModel(id, payload, teamCodes) {
         ? String(payload.sessionStartDate).trim()
         : null
       : existing.sessionStartDate ?? null;
+
+  const utuPaketSessionStart =
+    payload?.utuPaketSessionStartDate !== undefined
+      ? payload.utuPaketSessionStartDate
+        ? String(payload.utuPaketSessionStartDate).trim()
+        : null
+      : existing.utuPaketSessionStartDate ?? null;
 
   const secondaryConsignmentId =
     payload?.secondaryConsignmentId !== undefined
@@ -2736,22 +2791,38 @@ export async function updateProductModel(id, payload, teamCodes) {
     : String(payload?.productName ?? "").trim();
   if (!code) throw new Error("Model kodu gerekli");
 
+  const existingCode = await findProductModelByCode(code, id);
+  if (existingCode) throw uniqueModelCodeError(code, existingCode);
+
   const targetQuantity =
     payload?.targetQuantity !== undefined
       ? Math.max(0, Math.floor(Number(payload.targetQuantity) || 0))
       : Math.max(0, Math.floor(Number(existing.targetQuantity) || 0));
 
-  validateBaselineRows(teamCodes, payload?.baselines);
+  const requireBaselines = payload?.requireBaselines !== false;
+  const filledBaselines = validateBaselineRows(teamCodes, payload?.baselines, { required: requireBaselines });
+  const rows =
+    !requireBaselines && filledBaselines.length === 0
+      ? (existing.baselines || []).map((b) => ({
+          teamCode: b.teamCode,
+          processName: b.processName,
+          arkaHalf: b.arkaHalf ? 1 : 0,
+        }))
+      : filledBaselines;
   validateDailySummaryRows(teamCodes, payload?.dailySummaryProcesses);
-  const rows = Array.isArray(payload?.baselines) ? payload.baselines : [];
   const dailyRows = Array.isArray(payload?.dailySummaryProcesses) ? payload.dailySummaryProcesses : [];
 
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE product_models SET model_code = ?, product_name = ?, target_quantity = ?, session_start_date = ?, primary_consignment_id = ?, secondary_consignment_id = ? WHERE id = ?`,
-      [code, pname, targetQuantity, sessionStart, primaryConsignmentId, secondaryConsignmentId, id],
+      `UPDATE product_models SET model_code = ?, product_name = ?, target_quantity = ?, session_start_date = ?, utu_paket_session_start_date = ?, primary_consignment_id = ?, secondary_consignment_id = ? WHERE id = ?`,
+      [code, pname, targetQuantity, sessionStart, utuPaketSessionStart, primaryConsignmentId, secondaryConsignmentId, id],
       function onUp(err) {
-        if (err) return reject(err);
+        if (err) {
+          if (isSqliteUniqueConstraint(err)) {
+            return reject(uniqueModelCodeError(code, { modelCode: code, productName: pname }));
+          }
+          return reject(err);
+        }
         if (this.changes === 0) return reject(new Error("Kayıt bulunamadı"));
         db.run("DELETE FROM model_hedef_baselines WHERE model_id = ?", [id], (delErr) => {
           if (delErr) return reject(delErr);
@@ -2774,6 +2845,7 @@ export async function updateProductModel(id, payload, teamCodes) {
                 productName: pname,
                 targetQuantity,
                 sessionStartDate: sessionStart,
+                utuPaketSessionStartDate: utuPaketSessionStart,
                 primaryConsignmentId,
                 secondaryConsignmentId,
               });

@@ -922,7 +922,7 @@ app.post(
   }
 );
 
-app.post("/api/hedef/apply-session", requirePermission("hedefTakip"), async (req, res) => {
+app.post("/api/hedef/apply-session", requireAnyPermission(["hedefTakip", "ayarlar"]), async (req, res) => {
   const { modelId, startDate, endDate, productName, productModel } = req.body || {};
   const mid = Number(modelId);
   if (!Number.isFinite(mid) || mid < 1) {
@@ -957,7 +957,7 @@ app.post("/api/hedef/apply-session", requirePermission("hedefTakip"), async (req
   }
 });
 
-app.post("/api/utu-paket/apply-session", requirePermission("utuPaket"), async (req, res) => {
+app.post("/api/utu-paket/apply-session", requireAnyPermission(["utuPaket", "ayarlar"]), async (req, res) => {
   const { modelId, startDate, endDate, productName, productModel } = req.body || {};
   const mid = Number(modelId);
   if (!Number.isFinite(mid) || mid < 1) {
