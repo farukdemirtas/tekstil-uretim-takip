@@ -18,6 +18,7 @@ import {
   getTeams,
   hideWorkerForCalendarDay,
   login,
+  consumeSsoTicket,
   removeWorker,
   removeAllWorkersForDay,
   copyRosterToFutureDates,
@@ -250,6 +251,34 @@ export default function HomePage() {
   }, [sewingMenuOpen]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sso = params.get("sso");
+    if (sso) {
+      params.delete("sso");
+      const qs = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`);
+      void consumeSsoTicket(sso)
+        .then((result) => {
+          setAuthToken(result.token);
+          window.localStorage.setItem("auth_token", result.token);
+          window.localStorage.setItem("auth_user", result.username);
+          if (typeof result.role === "string") {
+            window.localStorage.setItem("auth_role", result.role);
+            setRole(result.role);
+          }
+          if (result.permissions && typeof result.permissions === "object") {
+            persistPermissions(result.permissions);
+            applyThemeFromPermissions(result.permissions);
+          } else {
+            clearStoredPermissions();
+          }
+          setPermTick((n) => n + 1);
+          setCurrentUser(result.username);
+          setIsAuthenticated(true);
+        })
+        .catch(() => {});
+      return;
+    }
     const token = window.localStorage.getItem("auth_token");
     const username = window.localStorage.getItem("auth_user");
     const storedRole = window.localStorage.getItem("auth_role");

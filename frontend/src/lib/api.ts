@@ -109,6 +109,29 @@ export async function login(payload: {
   return data as { token: string; username: string; role: string; permissions?: AppPermissions };
 }
 
+export async function consumeSsoTicket(ticket: string): Promise<{
+  token: string;
+  username: string;
+  role: string;
+  permissions?: AppPermissions;
+}> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase()}/auth/sso-consume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket }),
+    });
+  } catch {
+    throw new Error("SSO oturumu alınamadı");
+  }
+  const data = (await response.json().catch(() => ({}))) as { message?: string };
+  if (!response.ok) {
+    throw new Error(typeof data.message === "string" ? data.message : "SSO oturumu geçersiz");
+  }
+  return data as { token: string; username: string; role: string; permissions?: AppPermissions };
+}
+
 export async function getWorkerNames(): Promise<{ id: number; name: string }[]> {
   const res = await apiFetch(`${apiBase()}/worker-names`, { cache: "no-store", headers: authHeaders() });
   if (!res.ok) throw new Error("İsim listesi alınamadı");

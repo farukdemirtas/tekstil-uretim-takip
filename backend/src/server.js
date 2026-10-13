@@ -1,7 +1,7 @@
 import "./loadEnv.js";
 import express from "express";
 import cors from "cors";
-import { createHmac } from "crypto";
+import { createHmac, randomUUID } from "crypto";
 import { initDb } from "./db.js";
 import {
   getWorkerNames,
@@ -157,6 +157,7 @@ const AUTH_PASS = process.env.APP_PASSWORD || "admin55";
 // Burada signing secret olarak kullanıyoruz.
 const AUTH_TOKEN = process.env.APP_TOKEN || "yeva-local-token";
 const TOKEN_SECRET = process.env.APP_TOKEN_SECRET || AUTH_TOKEN;
+const ssoTickets = new Map();
 const VALID_HOURS = [
   "",
   "t1000",
@@ -180,7 +181,7 @@ app.use(cors());
 app.use(express.json());
 
 function requireAuth(req, res, next) {
-  if (req.path === "/api/health" || req.path === "/api/auth/login") {
+  if (req.path === "/api/health" || req.path === "/api/auth/login" || req.path === "/api/auth/sso-consume") {
     return next();
   }
   const token = req.headers["x-auth-token"];
@@ -375,6 +376,38 @@ app.post("/api/auth/login", (req, res) => {
       return res.json({ token, username: user.username, role: user.role, permissions });
     })
     .catch(() => res.status(500).json({ message: "Giriş doğrulanamadı" }));
+});
+
+app.post("/api/auth/sso-ticket", (req, res) => {
+  const user = req.user;
+  const token = req.headers["x-auth-token"];
+  if (!user || !token || typeof token !== "string") {
+    return res.status(401).json({ message: "Yetkisiz" });
+  }
+  const ticket = randomUUID();
+  ssoTickets.set(ticket, {
+    token,
+    username: user.username,
+    role: user.role,
+    permissions: user.permissions,
+    exp: Date.now() + 90_000,
+  });
+  res.json({ ticket });
+});
+
+app.post("/api/auth/sso-consume", (req, res) => {
+  const ticket = typeof req.body?.ticket === "string" ? req.body.ticket : "";
+  const row = ssoTickets.get(ticket);
+  if (row) ssoTickets.delete(ticket);
+  if (!row || row.exp < Date.now()) {
+    return res.status(401).json({ message: "SSO oturumu geçersiz veya süresi doldu" });
+  }
+  res.json({
+    token: row.token,
+    username: row.username,
+    role: row.role,
+    permissions: row.permissions,
+  });
 });
 
 app.get("/api/users", requireAdmin, async (_req, res) => {
