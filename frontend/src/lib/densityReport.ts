@@ -1,3 +1,5 @@
+import type { Workbook, Worksheet } from "exceljs";
+
 import { downloadWorkbook, loadExcelJS } from "@/lib/exceljsLazy";
 
 export const DENSITY_TEMPLATE_URL = "/templates/density-taslak.xlsx";
@@ -372,8 +374,8 @@ function dataUrlToBytes(dataUrl: string) {
 }
 
 function addPhoto(
-  wb: { addImage: (img: { buffer: ArrayBuffer; extension: "jpeg" | "png" }) => number },
-  ws: { addImage: (id: number, range: unknown) => void },
+  wb: Workbook,
+  ws: Worksheet,
   photo: DensityPhoto,
   tlCol: number,
   tlRow: number,
@@ -389,7 +391,7 @@ function addPhoto(
     tl: { col: tlCol, row: tlRow },
     br: { col: brCol, row: brRow },
     editAs: "oneCell",
-  });
+  } as Parameters<Worksheet["addImage"]>[1]);
 }
 
 export async function downloadDensityExcel(form: DensityForm, photos: DensityPhotos = emptyDensityPhotos()) {
