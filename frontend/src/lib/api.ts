@@ -479,6 +479,26 @@ export async function copyRosterToFutureDates(
   };
 }
 
+export async function removeSelectedWorkersForDay(
+  date: string,
+  workerIds: number[],
+  scope: "only_day" | "from_day" = "from_day"
+): Promise<{ removed: number; scope: string }> {
+  const response = await apiFetch(`${apiBase()}/workers/bulk-remove`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ date, workerIds, scope }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { message?: string }).message ?? "Seçilen personel silinemedi");
+  }
+  return {
+    removed: Number((data as { removed?: number }).removed) || 0,
+    scope: String((data as { scope?: string }).scope || scope),
+  };
+}
+
 export async function removeAllWorkersForDay(
   date: string,
   scope: "only_day" | "from_day" = "from_day"
@@ -1076,6 +1096,33 @@ export async function setEkran1IzinPanosuEnabled(enabled: boolean): Promise<bool
   }
   const data = (await res.json()) as { enabled?: boolean };
   notifyEkranRefresh("ekran1-izin-panosu");
+  return data.enabled !== false;
+}
+
+/** EKRAN5 beden tablosu slaytı açık mı (varsayılan: evet) */
+export async function getEkran5BedenTablosuEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch(`${apiBase()}/ekran5/beden-tablosu`, { cache: "no-store" });
+    if (!res.ok) return true;
+    const data = (await res.json()) as { enabled?: boolean };
+    return data.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
+export async function setEkran5BedenTablosuEnabled(enabled: boolean): Promise<boolean> {
+  const res = await apiFetch(`${apiBase()}/ekran5/beden-tablosu`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { message?: string }).message || "Beden tablosu ayarı kaydedilemedi");
+  }
+  const data = (await res.json()) as { enabled?: boolean };
+  notifyEkranRefresh("ekran5-beden-tablosu");
   return data.enabled !== false;
 }
 

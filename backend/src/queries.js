@@ -421,6 +421,51 @@ export function unhideWorkerForSingleCalendarDay(workerId, date) {
   });
 }
 
+function normalizePositiveIntIds(workerIds) {
+  if (!Array.isArray(workerIds)) return [];
+  return [...new Set(workerIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+}
+
+/** Seçilen çalışanları listeden kaldırır (soft delete, seçilen günden itibaren). */
+export function deleteWorkersForDate(workerIds, date) {
+  const ids = normalizePositiveIntIds(workerIds);
+  if (ids.length === 0) return Promise.resolve({ removed: 0 });
+  const placeholders = ids.map(() => "?").join(",");
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE workers SET deleted_at = CASE
+         WHEN deleted_at IS NULL OR deleted_at > ? THEN ?
+         ELSE deleted_at
+       END
+       WHERE id IN (${placeholders})`,
+      [date, date, ...ids],
+      function onUpdate(err) {
+        if (err) return reject(err);
+        resolve({ removed: this.changes });
+      }
+    );
+  });
+}
+
+/** Seçilen çalışanları yalnızca o takvim günü listede gösterme. */
+export function hideWorkersForSingleCalendarDay(workerIds, date) {
+  const ids = normalizePositiveIntIds(workerIds);
+  if (ids.length === 0) return Promise.resolve({ hidden: 0 });
+  const placeholders = ids.map(() => "?").join(",");
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT OR IGNORE INTO worker_roster_day_hide (worker_id, hide_date)
+       SELECT w.id, ? FROM workers w
+       WHERE w.id IN (${placeholders})`,
+      [date, ...ids],
+      function onRun(err) {
+        if (err) return reject(err);
+        resolve({ hidden: this.changes });
+      }
+    );
+  });
+}
+
 /** Yalnızca o takvim günü ana listede gösterme; ertesi günlerde yine listelenir. */
 export function hideAllVisibleWorkersForSingleCalendarDay(date) {
   return new Promise((resolve, reject) => {
@@ -4811,6 +4856,21 @@ export async function getEkran1IzinPanosuEnabled() {
 export async function setEkran1IzinPanosuEnabled(enabled) {
   const on = Boolean(enabled);
   await setAppKv(EKRAN1_IZIN_PANOSU_KV, on ? "1" : "0");
+  await bumpEkranRefreshSignal();
+  return { enabled: on };
+}
+
+const EKRAN5_BEDEN_TABLOSU_KV = "ekran5_beden_tablosu_enabled";
+
+export async function getEkran5BedenTablosuEnabled() {
+  const v = await getAppKv(EKRAN5_BEDEN_TABLOSU_KV);
+  if (v === null || v === "") return true;
+  return v === "1" || v === "true";
+}
+
+export async function setEkran5BedenTablosuEnabled(enabled) {
+  const on = Boolean(enabled);
+  await setAppKv(EKRAN5_BEDEN_TABLOSU_KV, on ? "1" : "0");
   await bumpEkranRefreshSignal();
   return { enabled: on };
 }

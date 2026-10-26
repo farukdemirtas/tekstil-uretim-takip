@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   getBedenCekiTargets,
   getEkran1GenelIlerleme,
+  getEkran5BedenTablosuEnabled,
   getEkran5Target,
   getEkranRefreshSignal,
   getPersonnelBirthdaysToday,
@@ -14,6 +15,7 @@ import {
   getUtuPaketSecondaryAnalytics,
   getUtuPaketSecondaryDayMeta,
   setAuthToken,
+  setEkran5BedenTablosuEnabled,
   setEkran5Target,
   syncTakipsan,
   type PersonnelBirthdayRow,
@@ -61,9 +63,14 @@ function ekran5SlideHeading(productLabel: string, jobLabel: string): string {
   return name || job;
 }
 
-function buildSlideList(opts: { hasSecondaryData: boolean; showPrimary: boolean }): SlideDef[] {
-  const primary = SLIDES.map((key) => ({ key, secondary: false as const }));
-  const secondary = SLIDES.map((key) => ({ key, secondary: true as const }));
+function buildSlideList(opts: {
+  hasSecondaryData: boolean;
+  showPrimary: boolean;
+  includeBeden: boolean;
+}): SlideDef[] {
+  const keys = opts.includeBeden ? SLIDES : SLIDES.filter((k) => k !== "beden");
+  const primary = keys.map((key) => ({ key, secondary: false as const }));
+  const secondary = keys.map((key) => ({ key, secondary: true as const }));
   if (!opts.hasSecondaryData) return primary;
   if (opts.showPrimary) return [...primary, ...secondary];
   return secondary;
@@ -671,6 +678,8 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   const [slideProgress, setSlideProgress] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
   const [hedefOpen, setHedefOpen]         = useState(false);
+  const [bedenTablosuEnabled, setBedenTablosuEnabled] = useState(true);
+  const [bedenTablosuSaving, setBedenTablosuSaving] = useState(false);
 
   // ── Doğum günü ──────────────────────────────────────────────────────────────
   const [birthdayToday, setBirthdayToday]               = useState<PersonnelBirthdayRow[]>([]);
@@ -938,8 +947,33 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
   /** Aynı tarayıcıda ayar kaydı → anlık yenile (BroadcastChannel + custom event) */
   useEffect(() => {
     if (!hasToken) return;
-    return subscribeEkranRefresh(() => void load(true));
+    return subscribeEkranRefresh(() => {
+      void getEkran5BedenTablosuEnabled()
+        .then(setBedenTablosuEnabled)
+        .catch(() => {});
+      void load(true);
+    });
   }, [hasToken, load]);
+
+  useEffect(() => {
+    if (!hasToken) return;
+    void getEkran5BedenTablosuEnabled()
+      .then(setBedenTablosuEnabled)
+      .catch(() => setBedenTablosuEnabled(true));
+  }, [hasToken]);
+
+  const toggleBedenTablosu = useCallback(async () => {
+    if (bedenTablosuSaving) return;
+    setBedenTablosuSaving(true);
+    try {
+      const enabled = await setEkran5BedenTablosuEnabled(!bedenTablosuEnabled);
+      setBedenTablosuEnabled(enabled);
+    } catch {
+      /* sessiz — TV akışı bozulmasın */
+    } finally {
+      setBedenTablosuSaving(false);
+    }
+  }, [bedenTablosuEnabled, bedenTablosuSaving]);
 
   /** Farklı cihazdaki TV ekranları için sunucu sinyali yedek yoklama */
   useEffect(() => {
@@ -949,7 +983,13 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
       const sig = await getEkranRefreshSignal().catch(() => "");
       if (!sig || sig === "0") return;
       if (lastSignal === "") { lastSignal = sig; return; }
-      if (sig !== lastSignal) { lastSignal = sig; void load(true); }
+      if (sig !== lastSignal) {
+        lastSignal = sig;
+        void getEkran5BedenTablosuEnabled()
+          .then(setBedenTablosuEnabled)
+          .catch(() => {});
+        void load(true);
+      }
     };
     void checkSignal();
     const id = setInterval(() => void checkSignal(), REMOTE_SIGNAL_POLL_MS);
@@ -958,14 +998,19 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
 
   // Slayt döngüsü
   const allSlides = useMemo(
-    () => buildSlideList({ hasSecondaryData: secondaryHasData, showPrimary: ekran5ShowPrimary }),
-    [secondaryHasData, ekran5ShowPrimary]
+    () =>
+      buildSlideList({
+        hasSecondaryData: secondaryHasData,
+        showPrimary: ekran5ShowPrimary,
+        includeBeden: bedenTablosuEnabled,
+      }),
+    [secondaryHasData, ekran5ShowPrimary, bedenTablosuEnabled]
   );
   const slideCount = allSlides.length;
 
   useEffect(() => {
     if (slide >= slideCount) setSlide(0);
-  }, [slide, slideCount, secondaryHasData, ekran5ShowPrimary]);
+  }, [slide, slideCount, secondaryHasData, ekran5ShowPrimary, bedenTablosuEnabled]);
 
   useEffect(() => {
     setSlideProgress(0);
@@ -1253,6 +1298,20 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void toggleBedenTablosu()}
+              disabled={bedenTablosuSaving}
+              title={bedenTablosuEnabled ? "Beden tablosu slaytını kapat" : "Beden tablosu slaytını aç"}
+              aria-pressed={bedenTablosuEnabled}
+              className={`rounded-xl px-3 py-2 text-xs font-bold shadow-sm transition disabled:opacity-60 sm:text-sm ${
+                bedenTablosuEnabled
+                  ? "border-2 border-teal-400 bg-teal-600 text-white hover:bg-teal-700"
+                  : "border-2 border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {bedenTablosuSaving ? "…" : bedenTablosuEnabled ? "Beden tablosu: Açık" : "Beden tablosu: Kapalı"}
+            </button>
             {/* Hedef düzenle butonu */}
             <button type="button" onClick={() => setHedefOpen(true)}
               className="flex items-center gap-1.5 rounded-xl border-2 border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-100">

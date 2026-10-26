@@ -15,6 +15,8 @@ import {
   deleteWorker,
   deleteWorkerForDate,
   deleteAllWorkersForVisibleDay,
+  deleteWorkersForDate,
+  hideWorkersForSingleCalendarDay,
   hideAllVisibleWorkersForSingleCalendarDay,
   copyRosterToFutureWeekdays,
   hideWorkerForSingleCalendarDay,
@@ -81,6 +83,8 @@ import {
   getEkranRefreshSignal,
   getEkran1IzinPanosuEnabled,
   setEkran1IzinPanosuEnabled,
+  getEkran5BedenTablosuEnabled,
+  setEkran5BedenTablosuEnabled,
   upsertScreenHeartbeat,
   removeScreenPresence,
   getScreenPresenceStatus,
@@ -264,6 +268,16 @@ app.get("/api/ekran1/izin-panosu", async (_req, res) => {
   }
 });
 
+/** EKRAN5 beden tablosu slaytı — auth gerekmez (TV okur) */
+app.get("/api/ekran5/beden-tablosu", async (_req, res) => {
+  try {
+    const enabled = await getEkran5BedenTablosuEnabled();
+    res.json({ enabled });
+  } catch (e) {
+    res.status(500).json({ message: String(e.message || e) });
+  }
+});
+
 app.use(requireAuth);
 
 /** EKRAN1 izin panosu slaytını aç/kapat */
@@ -272,6 +286,18 @@ app.put("/api/ekran1/izin-panosu", requirePermission("ekran1"), async (req, res)
     const enabled = req.body?.enabled !== false && req.body?.enabled !== 0 && req.body?.enabled !== "0";
     const result = await setEkran1IzinPanosuEnabled(enabled);
     logActivity(req, "ekran1_izin_panosu", "app_kv", { enabled: result.enabled });
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ message: String(e.message || e) });
+  }
+});
+
+/** EKRAN5 beden tablosu slaytını aç/kapat */
+app.put("/api/ekran5/beden-tablosu", requireAnyPermission(["ekran5", "utuPaket", "ayarlar"]), async (req, res) => {
+  try {
+    const enabled = req.body?.enabled !== false && req.body?.enabled !== 0 && req.body?.enabled !== "0";
+    const result = await setEkran5BedenTablosuEnabled(enabled);
+    logActivity(req, "ekran5_beden_tablosu", "app_kv", { enabled: result.enabled });
     res.json(result);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
@@ -1166,6 +1192,46 @@ app.delete("/api/workers/:id/hide-for-day", requireAuth, async (req, res) => {
     return res.json({ ok: true, removed: result.removed });
   } catch (error) {
     return res.status(500).json({ message: "Gizleme kaldırılamadı", error: String(error) });
+  }
+});
+
+app.post("/api/workers/bulk-remove", requireAuth, async (req, res) => {
+  const date = req.body?.date;
+  const scopeRaw = typeof req.body?.scope === "string" ? req.body.scope.trim() : "from_day";
+  const scope = scopeRaw === "only_day" ? "only_day" : "from_day";
+  const workerIds = Array.isArray(req.body?.workerIds)
+    ? [...new Set(req.body.workerIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
+    : [];
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ message: "Geçersiz veya eksik date (YYYY-MM-DD)" });
+  }
+  if (workerIds.length === 0) {
+    return res.status(400).json({ message: "En az bir personel seçin" });
+  }
+  if (workerIds.length > 500) {
+    return res.status(400).json({ message: "En fazla 500 personel seçilebilir" });
+  }
+  try {
+    if (scope === "only_day") {
+      const result = await hideWorkersForSingleCalendarDay(workerIds, date);
+      logActivity(req, "calisan_secili_liste_kaldir", "workers", {
+        date,
+        count: result.hidden,
+        ids: workerIds,
+        scope: "only_day",
+      });
+      return res.json({ ok: true, removed: result.hidden, scope: "only_day" });
+    }
+    const result = await deleteWorkersForDate(workerIds, date);
+    logActivity(req, "calisan_secili_liste_kaldir", "workers", {
+      date,
+      count: result.removed,
+      ids: workerIds,
+      scope: "from_day",
+    });
+    return res.json({ ok: true, removed: result.removed, scope: "from_day" });
+  } catch (error) {
+    return res.status(500).json({ message: "Seçilen personel silinemedi", error: String(error) });
   }
 });
 

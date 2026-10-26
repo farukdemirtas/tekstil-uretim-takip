@@ -38,6 +38,8 @@ const ACTION_LABELS: Record<string, string> = {
   utu_paket_ikinci_kaydet: "Ütü–paket 2. model kaydı",
   izin_yoklama_senkron: "İzin yoklamasından sahada yok senkronu",
   takipsan_senkron: "Takipsan senkronu",
+  ekran1_izin_panosu: "EKRAN1 izin panosu",
+  ekran5_beden_tablosu: "EKRAN5 beden tablosu",
 };
 
 type FilterForm = {

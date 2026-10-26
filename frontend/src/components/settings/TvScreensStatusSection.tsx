@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   getEkran1IzinPanosuEnabled,
+  getEkran5BedenTablosuEnabled,
   getScreenPresenceStatus,
   setEkran1IzinPanosuEnabled,
+  setEkran5BedenTablosuEnabled,
   type ScreenPresenceStatusPayload,
 } from "@/lib/api";
 
@@ -46,6 +48,9 @@ export default function TvScreensStatusSection() {
   const [izinPanoEnabled, setIzinPanoEnabled] = useState(true);
   const [izinPanoLoading, setIzinPanoLoading] = useState(true);
   const [izinPanoSaving, setIzinPanoSaving] = useState(false);
+  const [bedenTablosuEnabled, setBedenTablosuEnabled] = useState(true);
+  const [bedenTablosuLoading, setBedenTablosuLoading] = useState(true);
+  const [bedenTablosuSaving, setBedenTablosuSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -70,6 +75,16 @@ export default function TvScreensStatusSection() {
     }
   }, []);
 
+  const loadBedenTablosu = useCallback(async () => {
+    try {
+      setBedenTablosuEnabled(await getEkran5BedenTablosuEnabled());
+    } catch {
+      setBedenTablosuEnabled(true);
+    } finally {
+      setBedenTablosuLoading(false);
+    }
+  }, []);
+
   const toggleIzinPano = useCallback(async () => {
     if (izinPanoSaving) return;
     setIzinPanoSaving(true);
@@ -83,12 +98,26 @@ export default function TvScreensStatusSection() {
     }
   }, [izinPanoEnabled, izinPanoSaving]);
 
+  const toggleBedenTablosu = useCallback(async () => {
+    if (bedenTablosuSaving) return;
+    setBedenTablosuSaving(true);
+    try {
+      const next = !bedenTablosuEnabled;
+      setBedenTablosuEnabled(await setEkran5BedenTablosuEnabled(next));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Beden tablosu ayarı kaydedilemedi");
+    } finally {
+      setBedenTablosuSaving(false);
+    }
+  }, [bedenTablosuEnabled, bedenTablosuSaving]);
+
   useEffect(() => {
     void load();
     void loadIzinPano();
+    void loadBedenTablosu();
     const id = window.setInterval(() => void load(), REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [load, loadIzinPano]);
+  }, [load, loadIzinPano, loadBedenTablosu]);
 
   const onlineCount = data?.screens.filter((s) => s.online).length ?? 0;
   const totalCount = data?.screens.length ?? 0;
@@ -147,6 +176,36 @@ export default function TvScreensStatusSection() {
             {izinPanoLoading || izinPanoSaving
               ? "Kaydediliyor…"
               : izinPanoEnabled
+                ? "Açık — Kapat"
+                : "Kapalı — Aç"}
+          </button>
+        </div>
+      </article>
+
+      <article className="mt-3 rounded-lg border border-teal-200 bg-teal-50/60 p-4 dark:border-teal-900 dark:bg-teal-950/20">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">EKRAN5 · Beden tablosu</h3>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              Açıkken ütü–paket TV döngüsünde Beden Tablosu slaytı da gösterilir.
+              Kapalıyken yalnızca paketleme, optik ve ütü slaytları döner. Tüm açık EKRAN5
+              oturumları birkaç saniye içinde güncellenir.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void toggleBedenTablosu()}
+            disabled={bedenTablosuLoading || bedenTablosuSaving}
+            aria-pressed={bedenTablosuEnabled}
+            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:opacity-60 ${
+              bedenTablosuEnabled
+                ? "bg-teal-600 text-white hover:bg-teal-700"
+                : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+            }`}
+          >
+            {bedenTablosuLoading || bedenTablosuSaving
+              ? "Kaydediliyor…"
+              : bedenTablosuEnabled
                 ? "Açık — Kapat"
                 : "Kapalı — Aç"}
           </button>

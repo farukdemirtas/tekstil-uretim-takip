@@ -43,6 +43,7 @@ type ProductionTableProps = {
   onEditWorker: (workerId: number, payload: { process: string; team: string }) => Promise<void>;
   onSaveNote?: (workerId: number, note: string) => Promise<void>;
   canDeleteWorkers?: boolean;
+  onBulkDeleteWorkers?: (workerIds: number[]) => void;
 };
 
 const FALLBACK_TEAM_ORDER = ["SAG_ON", "SOL_ON", "YAKA_HAZIRLIK", "ARKA_HAZIRLIK", "BITIM", "ADET"];
@@ -113,6 +114,32 @@ function absentMobileTimeShell(absent: boolean) {
     : "border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-700";
 }
 
+function RowSelectCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  return (
+    <input
+      type="checkbox"
+      className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-teal-600 accent-teal-600 focus:ring-teal-500/40 dark:border-slate-500 dark:bg-slate-800"
+      checked={checked}
+      ref={(el) => {
+        if (el) el.indeterminate = Boolean(indeterminate) && !checked;
+      }}
+      onChange={onChange}
+      onClick={(e) => e.stopPropagation()}
+      aria-label={label}
+    />
+  );
+}
+
 function ProcessSelectEditor({
   value,
   onChange,
@@ -166,6 +193,7 @@ export default function ProductionTable({
   onEditWorker,
   onSaveNote,
   canDeleteWorkers,
+  onBulkDeleteWorkers,
 }: ProductionTableProps) {
   const { t } = useI18n();
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -178,6 +206,8 @@ export default function ProductionTable({
   const [teamLabels, setTeamLabels] = useState<Record<string, string>>(FALLBACK_LABELS);
   const [processNames, setProcessNames] = useState<string[]>([]);
   const [prosesMap, setProsesMapState] = useState<ProsesMap>({});
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [menuPosition, setMenuPosition] = useState<{
     top: number;
@@ -282,7 +312,9 @@ export default function ProductionTable({
     [selectedDate]
   );
   const timeColCount = timeFields.length;
-  const tableColSpan = 2 + timeColCount + 1 + 3 + 1;
+  const canBulkSelect = Boolean(canDeleteWorkers) && Boolean(onBulkDeleteWorkers);
+  const selectEnabled = canBulkSelect && bulkSelectMode;
+  const tableColSpan = (selectEnabled ? 1 : 0) + 2 + timeColCount + 1 + 3 + 1;
 
   function persistProsesServerSnapshot() {
     void saveProsesVeriRowsToServer(
@@ -509,6 +541,53 @@ export default function ProductionTable({
     return rows.filter((r) => r.name.toLocaleLowerCase("tr").includes(q));
   }, [rows, nameSearch]);
 
+  const visibleWorkerIds = useMemo(
+    () => [...new Set(displayRows.map((r) => r.workerId))],
+    [displayRows]
+  );
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setBulkSelectMode(false);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    const valid = new Set(rows.map((r) => r.workerId));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<number>();
+      for (const id of prev) {
+        if (valid.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [rows]);
+
+  function toggleSelectedId(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectedIds(ids: number[], select: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (select) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  const allVisibleSelected =
+    visibleWorkerIds.length > 0 && visibleWorkerIds.every((id) => selectedIds.has(id));
+  const someVisibleSelected = visibleWorkerIds.some((id) => selectedIds.has(id));
+
   const sortedSectionTeams = useMemo(() => {
     const inData = [...new Set(displayRows.map((r) => r.team))];
     const order = teamOrder.length ? teamOrder : FALLBACK_TEAM_ORDER;
@@ -554,7 +633,7 @@ export default function ProductionTable({
   return (
     <div className="flex flex-col gap-3">
       {rows.length > 0 ? (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Arama kutusu */}
           <div className="relative min-w-0 flex-1">
             <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400 dark:text-slate-500">
@@ -593,6 +672,42 @@ export default function ProductionTable({
           }`}>
             {nameSearch.trim() ? t("production.peopleFiltered", { filtered: displayRows.length, total: rows.length }) : t("production.peopleBadge", { count: rows.length })}
           </span>
+          {canBulkSelect ? (
+            <button
+              type="button"
+              onClick={() => {
+                setBulkSelectMode((open) => {
+                  if (open) setSelectedIds(new Set());
+                  return !open;
+                });
+              }}
+              className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium shadow-sm transition ${
+                bulkSelectMode
+                  ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800/70 dark:bg-red-950/40 dark:text-red-300"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+              aria-pressed={bulkSelectMode}
+            >
+              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+              </svg>
+              {bulkSelectMode ? t("production.bulkSelectDone") : t("production.bulkSelectMode")}
+            </button>
+          ) : null}
+          {selectEnabled && selectedIds.size > 0 && onBulkDeleteWorkers ? (
+            <button
+              type="button"
+              onClick={() => onBulkDeleteWorkers([...selectedIds])}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-red-200/80 bg-white px-3 text-xs font-semibold text-red-600 shadow-sm transition hover:bg-red-50 dark:border-red-900/50 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/30"
+            >
+              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+              </svg>
+              {t("nav.deleteSelectedWorkers")}
+              <span className="tabular-nums">({selectedIds.size})</span>
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -696,6 +811,7 @@ export default function ProductionTable({
       <div className="hidden overflow-auto rounded-2xl border border-slate-200/90 shadow-sm dark:border-slate-700/80 md:block">
         <table className={`w-full border-collapse text-sm ${timeColCount > 4 ? "min-w-[1280px]" : "min-w-[960px]"}`}>
           <colgroup>
+            {selectEnabled ? <col className="w-10" /> : null}
             <col className="w-8" />
             <col className="min-w-[12rem] w-[16.5rem]" />
             {timeFields.map((f) => (
@@ -709,6 +825,18 @@ export default function ProductionTable({
           </colgroup>
           <thead>
             <tr className="bg-slate-900 text-white dark:bg-slate-950">
+              {selectEnabled ? (
+                <th className="px-2 py-3 text-center">
+                  <RowSelectCheckbox
+                    checked={allVisibleSelected}
+                    indeterminate={someVisibleSelected}
+                    onChange={() =>
+                      toggleSelectedIds(visibleWorkerIds, !allVisibleSelected)
+                    }
+                    label={t("production.selectAll")}
+                  />
+                </th>
+              ) : null}
               <th className="px-2 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">No</th>
               <th className="px-3 py-3 text-left text-xs font-bold">{t("production.nameAndEfficiency")}</th>
               {timeFields.map((f) => (
@@ -743,8 +871,25 @@ export default function ProductionTable({
                       {/* Çok prosesli personel — isim başlık satırı */}
                       {isMulti && (
                         <tr className="border-b border-indigo-100/80 bg-indigo-50/60 dark:border-indigo-900/30 dark:bg-indigo-950/20">
+                          {selectEnabled ? (
+                            <td className="px-2 py-1.5 text-center">
+                              <RowSelectCheckbox
+                                checked={group.rows.every((r) => selectedIds.has(r.workerId))}
+                                indeterminate={
+                                  group.rows.some((r) => selectedIds.has(r.workerId)) &&
+                                  !group.rows.every((r) => selectedIds.has(r.workerId))
+                                }
+                                onChange={() => {
+                                  const ids = [...new Set(group.rows.map((r) => r.workerId))];
+                                  const allOn = ids.every((id) => selectedIds.has(id));
+                                  toggleSelectedIds(ids, !allOn);
+                                }}
+                                label={t("production.selectWorker")}
+                              />
+                            </td>
+                          ) : null}
                           <td className="px-2 py-1.5" />
-                          <td colSpan={tableColSpan - 1} className="px-3 py-1.5">
+                          <td colSpan={tableColSpan - (selectEnabled ? 2 : 1)} className="px-3 py-1.5">
                             <div className="flex items-center gap-2">
                               <svg className="shrink-0 text-indigo-400 dark:text-indigo-500" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
@@ -770,6 +915,15 @@ export default function ProductionTable({
                             id={`production-row-${row.workerId}`}
                             className={`border-b border-slate-100 align-middle transition-colors dark:border-slate-700/60 ${absentRowSurface(absent, isMulti)}`}
                           >
+                            {selectEnabled ? (
+                              <td className="px-2 py-2 text-center">
+                                <RowSelectCheckbox
+                                  checked={selectedIds.has(row.workerId)}
+                                  onChange={() => toggleSelectedId(row.workerId)}
+                                  label={t("production.selectWorker")}
+                                />
+                              </td>
+                            ) : null}
                             <td className={`px-2 py-2 text-center tabular-nums ${absent ? "text-red-800/70 dark:text-red-300/70" : "text-slate-600 dark:text-slate-400"}`}>{no}</td>
                             {/* Ad Soyad + Proses — birleşik hücre */}
                             <td className={`py-2 ${isMulti ? "pl-7 pr-3" : "px-3"}`}>
@@ -950,6 +1104,21 @@ export default function ProductionTable({
                   {/* Çok prosesli — mobil isim başlık kartı */}
                   {isMulti && (
                     <div className="flex items-center gap-2 border-b border-indigo-100/80 bg-indigo-50/70 px-4 py-2 dark:border-indigo-900/30 dark:bg-indigo-950/25">
+                      {selectEnabled ? (
+                        <RowSelectCheckbox
+                          checked={group.rows.every((r) => selectedIds.has(r.workerId))}
+                          indeterminate={
+                            group.rows.some((r) => selectedIds.has(r.workerId)) &&
+                            !group.rows.every((r) => selectedIds.has(r.workerId))
+                          }
+                          onChange={() => {
+                            const ids = [...new Set(group.rows.map((r) => r.workerId))];
+                            const allOn = ids.every((id) => selectedIds.has(id));
+                            toggleSelectedIds(ids, !allOn);
+                          }}
+                          label={t("production.selectWorker")}
+                        />
+                      ) : null}
                       <svg className="shrink-0 text-indigo-400 dark:text-indigo-500" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                       </svg>
@@ -975,7 +1144,14 @@ export default function ProductionTable({
                         className={`p-3 odd:bg-white even:bg-slate-50 dark:odd:bg-slate-800 dark:even:bg-slate-800/60 ${absentMobileShell(absent)} ${isMulti ? "pl-5" : ""}`}
                       >
                         <div className="mb-2 flex items-start justify-between gap-2">
-                          <div className="min-w-0">
+                          {selectEnabled ? (
+                            <RowSelectCheckbox
+                              checked={selectedIds.has(row.workerId)}
+                              onChange={() => toggleSelectedId(row.workerId)}
+                              label={t("production.selectWorker")}
+                            />
+                          ) : null}
+                          <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                               <span className="text-xs text-slate-400">{no}.</span>
                               {isMulti ? (

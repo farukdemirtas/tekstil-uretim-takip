@@ -79,6 +79,7 @@ export type Messages = {
     copyRoster: string;
     copyRosterBusy: string;
     deleteAllWorkers: string;
+    deleteSelectedWorkers: string;
     deleting: string;
     absent: string;
     noTarget: string;
@@ -185,6 +186,8 @@ export type Messages = {
     excelDownload: string;
     bulkRemoveTitle: string;
     bulkRemoveQuestion: string;
+    selectedRemoveTitle: string;
+    selectedRemoveQuestion: string;
     bulkRemoveOnlyDayTitle: string;
     bulkRemoveOnlyDayDesc: string;
     bulkRemoveFromDayTitle: string;
@@ -203,6 +206,11 @@ export type Messages = {
     clearSearch: string;
     peopleBadge: string;
     peopleFiltered: string;
+    selectAll: string;
+    selectWorker: string;
+    selectedCount: string;
+    bulkSelectMode: string;
+    bulkSelectDone: string;
     noSearchResults: string;
     noSearchHint: string;
     actions: string;

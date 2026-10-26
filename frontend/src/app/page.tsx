@@ -21,6 +21,7 @@ import {
   consumeSsoTicket,
   removeWorker,
   removeAllWorkersForDay,
+  removeSelectedWorkersForDay,
   copyRosterToFutureDates,
   saveProduction,
   saveEkSayim,
@@ -176,6 +177,9 @@ export default function HomePage() {
   const [teamMeta, setTeamMeta] = useState<Array<{ code: string; label: string }>>([]);
   const [clearingAllWorkers, setClearingAllWorkers] = useState(false);
   const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false);
+  const [selectedRemoveOpen, setSelectedRemoveOpen] = useState(false);
+  const [selectedRemoveIds, setSelectedRemoveIds] = useState<number[]>([]);
+  const [clearingSelectedWorkers, setClearingSelectedWorkers] = useState(false);
   const [copyRosterOpen, setCopyRosterOpen] = useState(false);
   const [copyRosterEndDate, setCopyRosterEndDate] = useState("");
   const [copyRosterBusy, setCopyRosterBusy] = useState(false);
@@ -956,6 +960,41 @@ export default function HomePage() {
         : `Emin misiniz?\n\n${tarih} tarihi ve sonrasında listedeki ${n} personel pasif sayılacak (o gün ve ileri tarihler listede görünmez). Geçmiş günler ve analizler etkilenmez.`;
     if (!window.confirm(mesaj)) return;
     void runBulkRemoveFromList(scope);
+  }
+
+  function openSelectedRemove(workerIds: number[]) {
+    const ids = [...new Set(workerIds.filter((id) => Number.isInteger(id) && id > 0))];
+    if (ids.length === 0) return;
+    setSelectedRemoveIds(ids);
+    setSelectedRemoveOpen(true);
+  }
+
+  async function runSelectedRemove(scope: "only_day" | "from_day") {
+    if (selectedRemoveIds.length === 0) return;
+    setSelectedRemoveOpen(false);
+    setClearingSelectedWorkers(true);
+    setError(null);
+    try {
+      await removeSelectedWorkersForDay(selectedDate, selectedRemoveIds, scope);
+      setSelectedRemoveIds([]);
+      await loadDateData(selectedDate);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Seçilen personel silinemedi");
+    } finally {
+      setClearingSelectedWorkers(false);
+    }
+  }
+
+  function confirmThenSelectedRemove(scope: "only_day" | "from_day") {
+    const n = selectedRemoveIds.length;
+    if (n === 0) return;
+    const tarih = selectedDate;
+    const mesaj =
+      scope === "only_day"
+        ? `Emin misiniz?\n\n${tarih} tarihinde seçilen ${n} personel için “sahada yok” işareti konacak: satırlar listede soluk kalır, üretim hücreleri kilitlenir. Sonraki iş günlerinde normal görünürler. Kayıtlar silinmez.`
+        : `Emin misiniz?\n\n${tarih} tarihi ve sonrasında seçilen ${n} personel pasif sayılacak (o gün ve ileri tarihler listede görünmez). Geçmiş günler ve analizler etkilenmez.`;
+    if (!window.confirm(mesaj)) return;
+    void runSelectedRemove(scope);
   }
 
   function openCopyRosterModal() {
@@ -1837,6 +1876,64 @@ export default function HomePage() {
         </div>
       ) : null}
 
+      {selectedRemoveOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+          role="presentation"
+          onClick={() => !clearingSelectedWorkers && setSelectedRemoveOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="selected-remove-title"
+            className="surface-card max-w-md space-y-4 p-5 shadow-xl dark:text-slate-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="selected-remove-title" className="text-base font-semibold text-slate-900 dark:text-white">
+              {t("home.selectedRemoveTitle")}
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              {t("home.selectedRemoveQuestion", { date: selectedDate, count: selectedRemoveIds.length })}
+            </p>
+            <ul className="list-inside list-disc space-y-2 text-sm text-slate-600 dark:text-slate-400">
+              <li>
+                <strong className="text-slate-800 dark:text-slate-200">{t("home.bulkRemoveOnlyDayTitle")}</strong>{" "}
+                {t("home.bulkRemoveOnlyDayDesc")}
+              </li>
+              <li>
+                <strong className="text-slate-800 dark:text-slate-200">{t("home.bulkRemoveFromDayTitle")}</strong>{" "}
+                {t("home.bulkRemoveFromDayDesc")}
+              </li>
+            </ul>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                onClick={() => setSelectedRemoveOpen(false)}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                disabled={clearingSelectedWorkers}
+                className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/60"
+                onClick={() => confirmThenSelectedRemove("only_day")}
+              >
+                {t("home.bulkRemoveOnlyDayBtn")}
+              </button>
+              <button
+                type="button"
+                disabled={clearingSelectedWorkers}
+                className="rounded-xl border border-red-300 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50 dark:border-red-800 dark:bg-red-800 dark:hover:bg-red-700"
+                onClick={() => confirmThenSelectedRemove("from_day")}
+              >
+                {t("home.bulkRemoveFromDayBtn")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {bulkRemoveOpen && hasPermission("topluListeKaldir") ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
@@ -1974,6 +2071,7 @@ export default function HomePage() {
           modelKey={productModel.trim() || undefined}
           onCellChange={(id, field, value) => void handleCellChange(id, field, value)}
           onDeleteWorker={(id, name) => void handleDeleteWorker(id, name)}
+          onBulkDeleteWorkers={openSelectedRemove}
           onHideWorkerForDay={(id, name) => void handleHideWorkerForDay(id, name)}
           onUnhideWorkerForDay={(id, name) => void handleUnhideWorkerForDay(id, name)}
           onEditWorker={handleEditWorker}
