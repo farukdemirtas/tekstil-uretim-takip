@@ -402,7 +402,7 @@ export async function downloadDensityExcel(form: DensityForm, photos: DensityPho
 
   // ExcelJS bazı şablon CF kurallarını yazarken çöküyor; görünüm formülleri durur.
   wb.eachSheet((sheet) => {
-    const list = sheet.conditionalFormattings;
+    const list = (sheet as unknown as { conditionalFormattings?: unknown[] }).conditionalFormattings;
     if (Array.isArray(list) && list.length) list.splice(0, list.length);
   });
 
