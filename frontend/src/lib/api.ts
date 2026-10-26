@@ -2399,6 +2399,76 @@ export async function downloadDatabaseBackup(): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+export type DensityReportSummary = {
+  id: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  brand: string;
+  style: string;
+  article: string;
+  poNumber: string;
+  boxType: string;
+};
+
+export type DensityReportDetail = DensityReportSummary & {
+  payload: Record<string, unknown>;
+  photos: Record<string, { dataUrl: string; ext: "jpeg" | "png" } | null>;
+};
+
+export async function listDensityReports(): Promise<DensityReportSummary[]> {
+  const res = await apiFetch(`${apiBase()}/density-reports`, { headers: authHeaders() });
+  const data = (await res.json().catch(() => ({}))) as { message?: string } | DensityReportSummary[];
+  if (!res.ok) throw new Error(typeof (data as { message?: string }).message === "string" ? (data as { message: string }).message : "Kayıtlar alınamadı");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getDensityReport(id: number): Promise<DensityReportDetail> {
+  const res = await apiFetch(`${apiBase()}/density-reports/${id}`, { headers: authHeaders() });
+  const data = (await res.json().catch(() => ({}))) as DensityReportDetail & { message?: string };
+  if (!res.ok) throw new Error(data.message || "Kayıt alınamadı");
+  return data;
+}
+
+export async function saveDensityReport(body: {
+  payload: unknown;
+  photos?: unknown;
+}): Promise<DensityReportDetail> {
+  const res = await apiFetch(`${apiBase()}/density-reports`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as DensityReportDetail & { message?: string };
+  if (!res.ok) throw new Error(data.message || "Kayıt kaydedilemedi");
+  return data;
+}
+
+export async function updateDensityReport(
+  id: number,
+  body: { payload: unknown; photos?: unknown },
+): Promise<DensityReportDetail> {
+  const res = await apiFetch(`${apiBase()}/density-reports/${id}`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as DensityReportDetail & { message?: string };
+  if (!res.ok) throw new Error(data.message || "Kayıt güncellenemedi");
+  return data;
+}
+
+export async function deleteDensityReport(id: number): Promise<void> {
+  const res = await apiFetch(`${apiBase()}/density-reports/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(data.message || "Kayıt silinemedi");
+  }
+}
+
 export async function restoreDatabaseBackup(
   source: File | Blob | string
 ): Promise<{ ok: boolean; tableCount: number }> {

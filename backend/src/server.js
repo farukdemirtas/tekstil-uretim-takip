@@ -137,6 +137,11 @@ import {
   getSecondarySimpleTotals,
   addWorkerToSecondary,
   removeWorkerFromSecondary,
+  listDensityReports,
+  getDensityReport,
+  createDensityReport,
+  updateDensityReport,
+  deleteDensityReport,
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
@@ -182,7 +187,7 @@ const VALID_HOURS = [
 initDb();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "8mb" }));
 
 function requireAuth(req, res, next) {
   if (req.path === "/api/health" || req.path === "/api/auth/login" || req.path === "/api/auth/sso-consume") {
@@ -351,6 +356,98 @@ function logActivity(req, action, resource, details) {
     console.error("activity_logs:", e?.message || e);
   });
 }
+
+function sanitizeDensityPhotos(raw) {
+  const keys = ["cartonTop", "cartonSide", "cartonClosed"];
+  const out = {};
+  const src = raw && typeof raw === "object" ? raw : {};
+  for (const key of keys) {
+    const p = src[key];
+    if (!p || typeof p !== "object") {
+      out[key] = null;
+      continue;
+    }
+    const dataUrl = typeof p.dataUrl === "string" ? p.dataUrl : "";
+    const ext = p.ext === "png" ? "png" : "jpeg";
+    if (!dataUrl.startsWith("data:image/") || dataUrl.length > 1_800_000) {
+      out[key] = null;
+      continue;
+    }
+    out[key] = { dataUrl, ext };
+  }
+  return out;
+}
+
+app.get("/api/density-reports", requirePermission("density"), async (_req, res) => {
+  try {
+    res.json(await listDensityReports());
+  } catch (e) {
+    res.status(500).json({ message: String(e?.message || e) });
+  }
+});
+
+app.get("/api/density-reports/:id", requirePermission("density"), async (req, res) => {
+  try {
+    const row = await getDensityReport(req.params.id);
+    if (!row) return res.status(404).json({ message: "Kayıt bulunamadı" });
+    res.json(row);
+  } catch (e) {
+    res.status(500).json({ message: String(e?.message || e) });
+  }
+});
+
+app.post("/api/density-reports", requirePermission("density"), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const payload = body.payload && typeof body.payload === "object" ? body.payload : {};
+    const row = await createDensityReport({
+      createdBy: req.user?.username || "",
+      brand: payload.brand || body.brand,
+      style: payload.style || body.style,
+      article: payload.article || body.article,
+      poNumber: payload.poNumber || body.poNumber,
+      boxType: payload.boxType || body.boxType,
+      payload,
+      photos: sanitizeDensityPhotos(body.photos),
+    });
+    logActivity(req, "density_kaydet", "density_reports", { id: row?.id });
+    res.status(201).json(row);
+  } catch (e) {
+    res.status(400).json({ message: String(e?.message || e) });
+  }
+});
+
+app.put("/api/density-reports/:id", requirePermission("density"), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const payload = body.payload && typeof body.payload === "object" ? body.payload : {};
+    const row = await updateDensityReport(req.params.id, {
+      brand: payload.brand || body.brand,
+      style: payload.style || body.style,
+      article: payload.article || body.article,
+      poNumber: payload.poNumber || body.poNumber,
+      boxType: payload.boxType || body.boxType,
+      payload,
+      photos: sanitizeDensityPhotos(body.photos),
+    });
+    if (!row) return res.status(404).json({ message: "Kayıt bulunamadı" });
+    logActivity(req, "density_guncelle", "density_reports", { id: row.id });
+    res.json(row);
+  } catch (e) {
+    res.status(400).json({ message: String(e?.message || e) });
+  }
+});
+
+app.delete("/api/density-reports/:id", requirePermission("density"), async (req, res) => {
+  try {
+    const ok = await deleteDensityReport(req.params.id);
+    if (!ok) return res.status(404).json({ message: "Kayıt bulunamadı" });
+    logActivity(req, "density_sil", "density_reports", { id: Number(req.params.id) });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ message: String(e?.message || e) });
+  }
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });

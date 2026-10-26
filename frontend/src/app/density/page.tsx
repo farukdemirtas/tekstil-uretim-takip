@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useI18n } from "@/components/I18nProvider";
+import { getDensityReport, saveDensityReport, setAuthToken, updateDensityReport } from "@/lib/api";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 import {
   applySizeTypology,
@@ -30,6 +32,8 @@ import {
   emptyDensityPhotos,
   fileToDensityPhoto,
   loadDensityForm,
+  mergeDensityForm,
+  mergeDensityPhotos,
   persistDensityForm,
   type DensityForm,
   type DensityPhoto,
@@ -53,13 +57,13 @@ function Field({
   className?: string;
 }) {
   return (
-    <label className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
+    <div className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
       <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
         {label}
       </span>
       {children}
       {hint ? <span className="text-[11px] text-slate-400 dark:text-slate-500">{hint}</span> : null}
-    </label>
+    </div>
   );
 }
 
@@ -70,6 +74,7 @@ function SelectField({
   placeholder,
   disabled,
   formatOption,
+  searchPlaceholder,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -77,21 +82,167 @@ function SelectField({
   placeholder?: string;
   disabled?: boolean;
   formatOption?: (v: string) => string;
+  searchPlaceholder?: string;
 }) {
-  return (
-    <select
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-      className={fieldClass}
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0, maxH: 224, openUp: false });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchable = options.length > 8;
+  const shown = value ? (formatOption ? formatOption(value) : value) : placeholder ?? "";
+  const filtered = useMemo(() => {
+    const n = q.trim().toLocaleLowerCase("tr");
+    if (!n) return options;
+    return options.filter((opt) => {
+      const text = `${opt} ${formatOption ? formatOption(opt) : ""}`.toLocaleLowerCase("tr");
+      return text.includes(n);
+    });
+  }, [options, q, formatOption]);
+
+  function placeMenu() {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom - 10;
+    const spaceAbove = r.top - 10;
+    const openUp = spaceBelow < 200 && spaceAbove > spaceBelow;
+    const maxH = Math.max(140, Math.min(280, openUp ? spaceAbove : spaceBelow));
+    setMenuPos({
+      top: openUp ? Math.max(8, r.top - maxH - 6) : r.bottom + 6,
+      left: Math.min(r.left, window.innerWidth - r.width - 8),
+      width: r.width,
+      maxH,
+      openUp,
+    });
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    placeMenu();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    function onReposition() {
+      placeMenu();
+    }
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [open]);
+
+  const menu = open ? (
+    <div
+      ref={menuRef}
+      style={{
+        position: "fixed",
+        top: menuPos.top,
+        left: menuPos.left,
+        width: menuPos.width,
+        zIndex: 80,
+      }}
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_-12px_rgba(15,23,42,0.45)] ring-1 ring-teal-500/15 dark:border-slate-600 dark:bg-slate-800"
     >
-      {placeholder ? <option value="">{placeholder}</option> : null}
-      {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {formatOption ? formatOption(opt) : opt}
-        </option>
-      ))}
-    </select>
+      {searchable ? (
+        <div className="border-b border-slate-100 p-2 dark:border-slate-700">
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={searchPlaceholder ?? "Ara…"}
+            className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+          />
+        </div>
+      ) : null}
+      <ul className="overflow-auto py-1" style={{ maxHeight: menuPos.maxH }}>
+        {placeholder ? (
+          <li>
+            <button
+              type="button"
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+              className="flex w-full px-3 py-2 text-left text-sm text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/60"
+            >
+              {placeholder}
+            </button>
+          </li>
+        ) : null}
+        {filtered.map((opt) => {
+          const active = opt === value;
+          return (
+            <li key={opt}>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(opt);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm ${
+                  active
+                    ? "bg-teal-50 font-semibold text-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
+                    : "text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-700/60"
+                }`}
+              >
+                <span className="min-w-0 truncate">{formatOption ? formatOption(opt) : opt}</span>
+                {active ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
+        {filtered.length === 0 ? <li className="px-3 py-2 text-sm text-slate-400">—</li> : null}
+      </ul>
+    </div>
+  ) : null;
+
+  return (
+    <div className="relative">
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={disabled}
+        aria-expanded={open}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((o) => !o);
+          setQ("");
+        }}
+        className={`${fieldClass} flex items-center justify-between gap-2 text-left ${
+          value ? "" : "text-slate-400 dark:text-slate-500"
+        }`}
+      >
+        <span className="min-w-0 truncate">{shown}</span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          className={`shrink-0 text-teal-600 transition ${open ? "rotate-180" : ""}`}
+          aria-hidden
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && typeof document !== "undefined" ? createPortal(menu, document.body) : null}
+    </div>
   );
 }
 
@@ -107,7 +258,7 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-3xl border border-white/70 bg-white/90 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.28)] ring-1 ring-slate-200/70 dark:border-slate-700/80 dark:bg-slate-900/85 dark:ring-slate-700/60">
+    <section className="overflow-visible rounded-3xl border border-white/70 bg-white/90 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.28)] ring-1 ring-slate-200/70 dark:border-slate-700/80 dark:bg-slate-900/85 dark:ring-slate-700/60">
       <div className="flex items-start gap-3 border-b border-slate-100 bg-gradient-to-r from-teal-50/90 via-white to-white px-4 py-3.5 sm:px-5 dark:border-slate-800 dark:from-teal-950/40 dark:via-slate-900 dark:to-slate-900">
         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-600 text-[11px] font-bold text-white shadow-sm">
           {step}
@@ -202,8 +353,10 @@ export default function DensityPage() {
   const [form, setForm] = useState<DensityForm>(emptyDensityForm);
   const [photos, setPhotos] = useState<DensityPhotos>(emptyDensityPhotos);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savedHint, setSavedHint] = useState(false);
+  const [savedHint, setSavedHint] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   useEffect(() => {
     const token = window.localStorage.getItem("auth_token");
@@ -213,6 +366,24 @@ export default function DensityPage() {
     }
     if (!isAdminRole() && !hasPermission("density")) {
       router.replace("/");
+      return;
+    }
+    setAuthToken(token);
+    const idRaw = new URLSearchParams(window.location.search).get("id");
+    const id = Number(idRaw);
+    if (Number.isInteger(id) && id > 0) {
+      void getDensityReport(id)
+        .then((row) => {
+          setForm(mergeDensityForm(row.payload as Partial<DensityForm>));
+          setPhotos(mergeDensityPhotos(row.photos as DensityPhotos));
+          setEditingId(row.id);
+          setAuthorized(true);
+        })
+        .catch((e) => {
+          setForm(loadDensityForm());
+          setError(e instanceof Error ? e.message : "Kayıt alınamadı");
+          setAuthorized(true);
+        });
       return;
     }
     setForm(loadDensityForm());
@@ -256,13 +427,32 @@ export default function DensityPage() {
     }
   }
 
+  async function onSave() {
+    setError(null);
+    setSaving(true);
+    try {
+      const body = { payload: form, photos };
+      const row = editingId
+        ? await updateDensityReport(editingId, body)
+        : await saveDensityReport(body);
+      setEditingId(row.id);
+      router.replace(`/density?id=${row.id}`);
+      setSavedHint(t("density.saved"));
+      window.setTimeout(() => setSavedHint(null), 2500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("density.saveFailed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function onDownload() {
     setError(null);
     setBusy(true);
     try {
       await downloadDensityExcel(form, photos);
-      setSavedHint(true);
-      window.setTimeout(() => setSavedHint(false), 2500);
+      setSavedHint(t("density.downloaded"));
+      window.setTimeout(() => setSavedHint(null), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("density.downloadFailed"));
     } finally {
@@ -324,15 +514,31 @@ export default function DensityPage() {
                   {t("density.langEn")}
                 </button>
               </div>
+              <Link
+                href="/density/kayitlarim"
+                className="rounded-xl bg-white/15 px-3 py-2 text-xs font-semibold text-white backdrop-blur hover:bg-white/25 sm:text-sm"
+              >
+                {t("density.records")}
+              </Link>
               <button
                 type="button"
                 onClick={() => {
+                  setEditingId(null);
                   setForm(emptyDensityForm());
                   setPhotos(emptyDensityPhotos());
+                  router.replace("/density");
                 }}
                 className="rounded-xl bg-white/15 px-3 py-2 text-xs font-semibold text-white backdrop-blur hover:bg-white/25 sm:text-sm"
               >
-                {t("density.clear")}
+                {editingId ? t("density.newRecord") : t("density.clear")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void onSave()}
+                disabled={saving}
+                className="rounded-xl bg-white/15 px-3 py-2 text-xs font-semibold text-white backdrop-blur hover:bg-white/25 disabled:opacity-50 sm:text-sm"
+              >
+                {saving ? t("density.saving") : t("density.save")}
               </button>
               <button
                 type="button"
@@ -356,7 +562,12 @@ export default function DensityPage() {
         ) : null}
         {savedHint ? (
           <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-            {t("density.downloaded")}
+            {savedHint}
+          </p>
+        ) : null}
+        {editingId ? (
+          <p className="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-2.5 text-sm font-semibold text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200">
+            {t("density.editing")} #{editingId}
           </p>
         ) : null}
 
@@ -364,6 +575,7 @@ export default function DensityPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Field label={t("density.brand")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.brand}
                 onChange={(v) => patch({ brand: v })}
                 options={DENSITY_BRANDS}
@@ -401,6 +613,7 @@ export default function DensityPage() {
             </Field>
             <Field label={t("density.poType")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.poType}
                 onChange={(v) => patch({ poType: v })}
                 options={DENSITY_PO_TYPES}
@@ -409,6 +622,7 @@ export default function DensityPage() {
             </Field>
             <Field label={t("density.delivery")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.delivery}
                 onChange={(v) => patch({ delivery: v })}
                 options={DENSITY_DELIVERIES}
@@ -422,6 +636,7 @@ export default function DensityPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Field label={t("density.boxType")} className="sm:col-span-2 lg:col-span-3">
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.boxType}
                 onChange={(v) => patch({ boxType: v })}
                 options={DENSITY_BOXES.map((b) => b.label)}
@@ -439,6 +654,7 @@ export default function DensityPage() {
             </Field>
             <Field label={t("density.specialLength")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.specialL || DENSITY_SPECIAL_VALUE}
                 onChange={(v) => patch({ specialL: v || DENSITY_SPECIAL_VALUE })}
                 options={DENSITY_SPECIAL_DIMS}
@@ -447,6 +663,7 @@ export default function DensityPage() {
             </Field>
             <Field label={t("density.specialWidth")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.specialW || DENSITY_SPECIAL_VALUE}
                 onChange={(v) => patch({ specialW: v || DENSITY_SPECIAL_VALUE })}
                 options={DENSITY_SPECIAL_DIMS}
@@ -455,6 +672,7 @@ export default function DensityPage() {
             </Field>
             <Field label={t("density.specialHeight")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.specialH || DENSITY_SPECIAL_VALUE}
                 onChange={(v) => patch({ specialH: v || DENSITY_SPECIAL_VALUE })}
                 options={DENSITY_SPECIAL_DIMS}
@@ -463,6 +681,7 @@ export default function DensityPage() {
             </Field>
             <Field label={t("density.plancha")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.plancha}
                 onChange={(v) => patch({ plancha: v })}
                 options={DENSITY_PLANCHA}
@@ -472,6 +691,7 @@ export default function DensityPage() {
             </Field>
             <Field label={t("density.shipment")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.shipment}
                 onChange={(v) => patch({ shipment: v })}
                 options={DENSITY_SHIPMENTS}
@@ -481,6 +701,7 @@ export default function DensityPage() {
             </Field>
             <Field label={t("density.gtop")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.gtop}
                 onChange={(v) => patch({ gtop: v })}
                 options={DENSITY_GTOP}
@@ -549,6 +770,7 @@ export default function DensityPage() {
           <div className="mb-4 max-w-md">
             <Field label={t("density.sizeTypology")}>
               <SelectField
+                searchPlaceholder={t("density.searchOption")}
                 value={form.sizeTypology}
                 onChange={(v) => setForm((prev) => applySizeTypology(prev, v))}
                 options={DENSITY_SIZE_TYPOLOGIES.map((row) => row.label)}
@@ -579,6 +801,7 @@ export default function DensityPage() {
                 <div className="flex flex-col gap-2.5">
                   <Field label={t("density.selectSize")}>
                     <SelectField
+                searchPlaceholder={t("density.searchOption")}
                       value={slot.size}
                       onChange={(v) => patchSize(i, { size: v })}
                       options={DENSITY_SIZES}
@@ -587,6 +810,7 @@ export default function DensityPage() {
                   </Field>
                   <Field label={t("density.ppc")}>
                     <SelectField
+                searchPlaceholder={t("density.searchOption")}
                       value={slot.ppc}
                       onChange={(v) => patchSize(i, { ppc: v })}
                       options={DENSITY_PPC}
@@ -595,6 +819,7 @@ export default function DensityPage() {
                   </Field>
                   <Field label={t("density.gw")}>
                     <SelectField
+                searchPlaceholder={t("density.searchOption")}
                       value={slot.gw}
                       onChange={(v) => patchSize(i, { gw: v })}
                       options={DENSITY_GW}

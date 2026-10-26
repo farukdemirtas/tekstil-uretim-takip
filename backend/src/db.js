@@ -931,6 +931,23 @@ export function initDb() {
       `CREATE INDEX IF NOT EXISTS idx_screen_presence_last_seen ON screen_presence (last_seen_at)`
     );
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS density_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        created_by TEXT NOT NULL DEFAULT '',
+        brand TEXT NOT NULL DEFAULT '',
+        style TEXT NOT NULL DEFAULT '',
+        article TEXT NOT NULL DEFAULT '',
+        po_number TEXT NOT NULL DEFAULT '',
+        box_type TEXT NOT NULL DEFAULT '',
+        payload TEXT NOT NULL DEFAULT '{}',
+        photos TEXT NOT NULL DEFAULT '{}'
+      )
+    `);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_density_reports_updated ON density_reports (updated_at DESC)`);
+
     seedTeamsAndProcessesIfEmpty();
     migrateWorkersRemoveTeamCheckIfNeeded();
   });

@@ -189,14 +189,12 @@ export type DensityPhotos = Record<DensityPhotoKey, DensityPhoto | null>;
 export const DENSITY_PICTURE_ROWS: {
   key: DensityPhotoKey;
   example: string;
-  tlCol: number;
   tlRow: number;
-  brCol: number;
   brRow: number;
 }[] = [
-  { key: "cartonTop", example: "/templates/density-examples/picture-1.jpg", tlCol: 2, tlRow: 16, brCol: 18, brRow: 24 },
-  { key: "cartonSide", example: "/templates/density-examples/picture-2.jpg", tlCol: 2, tlRow: 24, brCol: 18, brRow: 34 },
-  { key: "cartonClosed", example: "/templates/density-examples/picture-3.png", tlCol: 2, tlRow: 34, brCol: 18, brRow: 44 },
+  { key: "cartonTop", example: "/templates/density-examples/picture-1.jpg", tlRow: 16, brRow: 24 },
+  { key: "cartonSide", example: "/templates/density-examples/picture-2.jpg", tlRow: 24, brRow: 34 },
+  { key: "cartonClosed", example: "/templates/density-examples/picture-3.png", tlRow: 34, brRow: 44 },
 ];
 
 export type DensitySizeSlot = {
@@ -290,9 +288,7 @@ export function isFilledSizeSlot(slot: DensitySizeSlot) {
 }
 
 export function compactDensitySizes(sizes: DensitySizeSlot[]): DensitySizeSlot[] {
-  const filled = sizes.filter(isFilledSizeSlot).map((slot) => ({ ...slot }));
-  while (filled.length < 8) filled.push(emptyDensitySizeSlot());
-  return filled.slice(0, 8);
+  return sizes.filter(isFilledSizeSlot).map((slot) => ({ ...slot })).slice(0, 8);
 }
 
 export function applySizeTypology(form: DensityForm, typologyLabel: string): DensityForm {
@@ -312,26 +308,40 @@ export function applySizeTypology(form: DensityForm, typologyLabel: string): Den
   };
 }
 
+export function mergeDensityForm(parsed: Partial<DensityForm> | null | undefined): DensityForm {
+  const base = emptyDensityForm();
+  if (!parsed || typeof parsed !== "object") return base;
+  return {
+    ...base,
+    ...parsed,
+    specialL: parsed.specialL || DENSITY_SPECIAL_VALUE,
+    specialW: parsed.specialW || DENSITY_SPECIAL_VALUE,
+    specialH: parsed.specialH || DENSITY_SPECIAL_VALUE,
+    sizes: compactDensitySizes(
+      Array.from({ length: 8 }, (_, i) => ({
+        ...emptyDensitySizeSlot(),
+        ...(parsed.sizes?.[i] ?? {}),
+      })),
+    ),
+  };
+}
+
+export function mergeDensityPhotos(parsed: Partial<DensityPhotos> | null | undefined): DensityPhotos {
+  const base = emptyDensityPhotos();
+  if (!parsed || typeof parsed !== "object") return base;
+  return {
+    cartonTop: parsed.cartonTop?.dataUrl ? parsed.cartonTop : null,
+    cartonSide: parsed.cartonSide?.dataUrl ? parsed.cartonSide : null,
+    cartonClosed: parsed.cartonClosed?.dataUrl ? parsed.cartonClosed : null,
+  };
+}
+
 export function loadDensityForm(): DensityForm {
   if (typeof window === "undefined") return emptyDensityForm();
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return emptyDensityForm();
-    const parsed = JSON.parse(raw) as DensityForm;
-    const base = emptyDensityForm();
-    return {
-      ...base,
-      ...parsed,
-      specialL: parsed.specialL || DENSITY_SPECIAL_VALUE,
-      specialW: parsed.specialW || DENSITY_SPECIAL_VALUE,
-      specialH: parsed.specialH || DENSITY_SPECIAL_VALUE,
-      sizes: compactDensitySizes(
-        Array.from({ length: 8 }, (_, i) => ({
-          ...emptyDensitySizeSlot(),
-          ...(parsed.sizes?.[i] ?? {}),
-        })),
-      ),
-    };
+    return mergeDensityForm(JSON.parse(raw) as DensityForm);
   } catch {
     return emptyDensityForm();
   }
@@ -387,10 +397,11 @@ function addPhoto(
     buffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     extension: photo.ext,
   });
+  const pad = 0.08;
   ws.addImage(id, {
-    tl: { col: tlCol, row: tlRow },
-    br: { col: brCol, row: brRow },
-    editAs: "oneCell",
+    tl: { col: tlCol + pad, row: tlRow + pad },
+    br: { col: brCol - pad, row: brRow - pad },
+    editAs: "twoCell",
   } as Parameters<Worksheet["addImage"]>[1]);
 }
 
@@ -494,7 +505,13 @@ export async function downloadDensityExcel(form: DensityForm, photos: DensityPho
   DENSITY_PICTURE_ROWS.forEach((rowDef) => {
     const photo = photos[rowDef.key];
     if (!photo) return;
-    addPhoto(wb, ws, photo, rowDef.tlCol, rowDef.tlRow, rowDef.brCol, rowDef.brRow);
+    for (let i = 0; i < 8; i++) {
+      const slot = sizes[i] ?? emptyDensitySizeSlot();
+      if (!isFilledSizeSlot(slot)) continue;
+      const tlCol = SIZE_VALUE_COLS[i] - 2;
+      const brCol = SIZE_VALUE_COLS[i];
+      addPhoto(wb, ws, photo, tlCol, rowDef.tlRow, brCol, rowDef.brRow);
+    }
   });
 
   const poPart = form.poNumber.trim() || "PO";

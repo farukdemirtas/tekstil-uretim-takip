@@ -6929,3 +6929,105 @@ export function getScreenPresenceStatus({ offlineAfterSec = 60 } = {}) {
     );
   });
 }
+
+function densitySummary(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    createdBy: row.created_by || "",
+    brand: row.brand || "",
+    style: row.style || "",
+    article: row.article || "",
+    poNumber: row.po_number || "",
+    boxType: row.box_type || "",
+  };
+}
+
+function parseDensityJson(raw, fallback) {
+  try {
+    const v = JSON.parse(raw || "");
+    if (v && typeof v === "object" && !Array.isArray(v)) return v;
+  } catch {
+    /* ignore */
+  }
+  return fallback;
+}
+
+export function listDensityReports() {
+  return dbAll(
+    `SELECT id, created_at, updated_at, created_by, brand, style, article, po_number, box_type
+     FROM density_reports ORDER BY datetime(updated_at) DESC, id DESC LIMIT 200`
+  ).then((rows) => rows.map(densitySummary));
+}
+
+export function getDensityReport(id) {
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) return Promise.resolve(null);
+  return dbGet(`SELECT * FROM density_reports WHERE id = ?`, [n]).then((row) => {
+    if (!row) return null;
+    return {
+      ...densitySummary(row),
+      payload: parseDensityJson(row.payload, {}),
+      photos: parseDensityJson(row.photos, {}),
+    };
+  });
+}
+
+export function createDensityReport({ createdBy, brand, style, article, poNumber, boxType, payload, photos }) {
+  const now = utcNowSqlite();
+  const payloadJson = JSON.stringify(payload ?? {});
+  const photosJson = JSON.stringify(photos ?? {});
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO density_reports
+        (created_at, updated_at, created_by, brand, style, article, po_number, box_type, payload, photos)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        now,
+        now,
+        String(createdBy || "").slice(0, 80),
+        String(brand || "").slice(0, 80),
+        String(style || "").slice(0, 20),
+        String(article || "").slice(0, 20),
+        String(poNumber || "").slice(0, 40),
+        String(boxType || "").slice(0, 80),
+        payloadJson,
+        photosJson,
+      ],
+      function onIns(err) {
+        if (err) return reject(err);
+        resolve(getDensityReport(this.lastID));
+      }
+    );
+  });
+}
+
+export function updateDensityReport(id, { brand, style, article, poNumber, boxType, payload, photos }) {
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) return Promise.resolve(null);
+  const now = utcNowSqlite();
+  return dbRun(
+    `UPDATE density_reports
+     SET updated_at = ?, brand = ?, style = ?, article = ?, po_number = ?, box_type = ?, payload = ?, photos = ?
+     WHERE id = ?`,
+    [
+      now,
+      String(brand || "").slice(0, 80),
+      String(style || "").slice(0, 20),
+      String(article || "").slice(0, 20),
+      String(poNumber || "").slice(0, 40),
+      String(boxType || "").slice(0, 80),
+      JSON.stringify(payload ?? {}),
+      JSON.stringify(photos ?? {}),
+      n,
+    ]
+  ).then((changes) => (changes ? getDensityReport(n) : null));
+}
+
+export function deleteDensityReport(id) {
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) return Promise.resolve(false);
+  return dbRun(`DELETE FROM density_reports WHERE id = ?`, [n]).then((changes) => changes > 0);
+}
