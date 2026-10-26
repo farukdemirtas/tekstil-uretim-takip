@@ -72,6 +72,11 @@ export const PERMISSION_ROWS: { key: keyof AppPermissions; label: string; descri
     label: "Kesim — Isı Çubuğu Kontrolü",
     description: "Tela makinesi ısı çubuğu sıcaklık kontrol kayıtları",
   },
+  {
+    key: "density",
+    label: "Density Report",
+    description: "Kutu tipi, beden ve ölçü seçimleriyle taslak Density Excel raporu",
+  },
 ];
 
 export function isAdminRole(): boolean {

@@ -131,6 +131,8 @@ export type AppPermissions = {
   telaBakim: boolean;
   /** Dikim — Tela makinesi ısı çubuğu kontrolü */
   isiCubuguKontrolu: boolean;
+  /** Density Report — kutu/beden şablon Excel formu */
+  density: boolean;
   /** Girişte koyu tema; açık mod için false (yöneticilerde API’de false döner) */
   defaultDarkMode: boolean;
 };

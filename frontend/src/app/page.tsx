@@ -1203,6 +1203,9 @@ export default function HomePage() {
           {hasPermission("isBitirmeHesaplama") ? (
             <Link href="/is-bitirme-hesaplama" className="btn-nav shrink-0">{t("nav.jobCalc")}</Link>
           ) : null}
+          {hasPermission("density") ? (
+            <Link href="/density" className="btn-nav shrink-0">{t("nav.density")}</Link>
+          ) : null}
           {hasPermission("ekran1") || hasPermission("ekran2") || hasPermission("ekran3") || hasPermission("ekran4") ? (
             <Link href="/ekran1" className="btn-nav shrink-0">
               {t("nav.tvScreens")}

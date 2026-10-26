@@ -37,6 +37,8 @@ export const DEFAULT_DATA_ENTRY_PERMISSIONS = {
   telaBakim: false,
   /** Dikim — Tela makinesi ısı çubuğu kontrolü */
   isiCubuguKontrolu: false,
+  /** Density Report (kutu / beden taslak Excel) */
+  density: false,
   /** Girişte koyu mod (veri girişi kullanıcıları; yöneticiler her zaman açık mod varsayımı) */
   defaultDarkMode: false,
 };

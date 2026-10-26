@@ -30,6 +30,7 @@ function emptyDraft(): AppPermissions {
     utuPaket: false,
     telaBakim: false,
     isiCubuguKontrolu: false,
+    density: false,
     defaultDarkMode: false,
   };
 }
