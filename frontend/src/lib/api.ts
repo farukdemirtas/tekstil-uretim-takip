@@ -2409,6 +2409,7 @@ export type DensityReportSummary = {
   article: string;
   poNumber: string;
   boxType: string;
+  fileName: string;
 };
 
 export type DensityReportDetail = DensityReportSummary & {

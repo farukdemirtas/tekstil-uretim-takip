@@ -6942,6 +6942,7 @@ function densitySummary(row) {
     article: row.article || "",
     poNumber: row.po_number || "",
     boxType: row.box_type || "",
+    fileName: row.file_name || "",
   };
 }
 
@@ -6957,7 +6958,7 @@ function parseDensityJson(raw, fallback) {
 
 export function listDensityReports() {
   return dbAll(
-    `SELECT id, created_at, updated_at, created_by, brand, style, article, po_number, box_type
+    `SELECT id, created_at, updated_at, created_by, brand, style, article, po_number, box_type, file_name
      FROM density_reports ORDER BY datetime(updated_at) DESC, id DESC LIMIT 200`
   ).then((rows) => rows.map(densitySummary));
 }
@@ -6975,15 +6976,15 @@ export function getDensityReport(id) {
   });
 }
 
-export function createDensityReport({ createdBy, brand, style, article, poNumber, boxType, payload, photos }) {
+export function createDensityReport({ createdBy, brand, style, article, poNumber, boxType, fileName, payload, photos }) {
   const now = utcNowSqlite();
   const payloadJson = JSON.stringify(payload ?? {});
   const photosJson = JSON.stringify(photos ?? {});
   return new Promise((resolve, reject) => {
     db.run(
       `INSERT INTO density_reports
-        (created_at, updated_at, created_by, brand, style, article, po_number, box_type, payload, photos)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (created_at, updated_at, created_by, brand, style, article, po_number, box_type, file_name, payload, photos)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         now,
         now,
@@ -6993,6 +6994,7 @@ export function createDensityReport({ createdBy, brand, style, article, poNumber
         String(article || "").slice(0, 20),
         String(poNumber || "").slice(0, 40),
         String(boxType || "").slice(0, 80),
+        String(fileName || "").slice(0, 180),
         payloadJson,
         photosJson,
       ],
@@ -7004,13 +7006,13 @@ export function createDensityReport({ createdBy, brand, style, article, poNumber
   });
 }
 
-export function updateDensityReport(id, { brand, style, article, poNumber, boxType, payload, photos }) {
+export function updateDensityReport(id, { brand, style, article, poNumber, boxType, fileName, payload, photos }) {
   const n = Number(id);
   if (!Number.isInteger(n) || n <= 0) return Promise.resolve(null);
   const now = utcNowSqlite();
   return dbRun(
     `UPDATE density_reports
-     SET updated_at = ?, brand = ?, style = ?, article = ?, po_number = ?, box_type = ?, payload = ?, photos = ?
+     SET updated_at = ?, brand = ?, style = ?, article = ?, po_number = ?, box_type = ?, file_name = ?, payload = ?, photos = ?
      WHERE id = ?`,
     [
       now,
@@ -7019,6 +7021,7 @@ export function updateDensityReport(id, { brand, style, article, poNumber, boxTy
       String(article || "").slice(0, 20),
       String(poNumber || "").slice(0, 40),
       String(boxType || "").slice(0, 80),
+      String(fileName || "").slice(0, 180),
       JSON.stringify(payload ?? {}),
       JSON.stringify(photos ?? {}),
       n,

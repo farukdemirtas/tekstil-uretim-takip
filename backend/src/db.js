@@ -942,11 +942,13 @@ export function initDb() {
         article TEXT NOT NULL DEFAULT '',
         po_number TEXT NOT NULL DEFAULT '',
         box_type TEXT NOT NULL DEFAULT '',
+        file_name TEXT NOT NULL DEFAULT '',
         payload TEXT NOT NULL DEFAULT '{}',
         photos TEXT NOT NULL DEFAULT '{}'
       )
     `);
     db.run(`CREATE INDEX IF NOT EXISTS idx_density_reports_updated ON density_reports (updated_at DESC)`);
+    db.run(`ALTER TABLE density_reports ADD COLUMN file_name TEXT NOT NULL DEFAULT ''`, () => {});
 
     seedTeamsAndProcessesIfEmpty();
     migrateWorkersRemoveTeamCheckIfNeeded();

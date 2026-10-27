@@ -131,7 +131,9 @@ export default function DensityRecordsPage() {
               <ul className="flex flex-col gap-2">
                 {records.map((row) => {
                   const title =
-                    [row.brand, row.style, row.article, row.poNumber].filter(Boolean).join(" · ") || `#${row.id}`;
+                    String(row.fileName || "").trim() ||
+                    [row.brand, row.style, row.article, row.poNumber].filter(Boolean).join(" · ") ||
+                    `#${row.id}`;
                   return (
                     <li
                       key={row.id}

@@ -322,6 +322,8 @@ export type Messages = {
     downloaded: string;
     downloadFailed: string;
     photoFailed: string;
+    fileName: string;
+    fileNameHint: string;
     orderInfo: string;
     brand: string;
     selectBrand: string;
@@ -361,6 +363,7 @@ export type Messages = {
     length: string;
     width: string;
     attachGarmentPhoto: string;
+    garmentPhotoHint: string;
     sizesTitle: string;
     sizesHint: string;
     removeSize: string;

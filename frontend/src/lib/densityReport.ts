@@ -182,12 +182,27 @@ export type DensityPhoto = {
   ext: "jpeg" | "png";
 };
 
-export type DensityPhotoKey = "cartonTop" | "cartonSide" | "cartonClosed";
+export type DensityPhotoKey =
+  | "cartonTop"
+  | "cartonSide"
+  | "cartonClosed"
+  | "garmentThickness"
+  | "garmentLength"
+  | "garmentWidth";
 
 export type DensityPhotos = Record<DensityPhotoKey, DensityPhoto | null>;
 
+export const DENSITY_PHOTO_KEYS: DensityPhotoKey[] = [
+  "cartonTop",
+  "cartonSide",
+  "cartonClosed",
+  "garmentThickness",
+  "garmentLength",
+  "garmentWidth",
+];
+
 export const DENSITY_PICTURE_ROWS: {
-  key: DensityPhotoKey;
+  key: Extract<DensityPhotoKey, "cartonTop" | "cartonSide" | "cartonClosed">;
   example: string;
   tlRow: number;
   brRow: number;
@@ -197,6 +212,20 @@ export const DENSITY_PICTURE_ROWS: {
   { key: "cartonClosed", example: "/templates/density-examples/picture-3.png", tlRow: 34, brRow: 44 },
 ];
 
+/** Şablon birleşik hücreleri: G5:H10, J5:K10, M5:N10 (ExcelJS 0-tabanlı) */
+export const DENSITY_GARMENT_PICTURES: {
+  key: Extract<DensityPhotoKey, "garmentThickness" | "garmentLength" | "garmentWidth">;
+  example: string;
+  tlCol: number;
+  tlRow: number;
+  brCol: number;
+  brRow: number;
+}[] = [
+  { key: "garmentThickness", example: "/templates/density-examples/garment-thickness.png", tlCol: 6, tlRow: 4, brCol: 8, brRow: 10 },
+  { key: "garmentLength", example: "/templates/density-examples/garment-length.png", tlCol: 9, tlRow: 4, brCol: 11, brRow: 10 },
+  { key: "garmentWidth", example: "/templates/density-examples/garment-width.png", tlCol: 12, tlRow: 4, brCol: 14, brRow: 10 },
+];
+
 export type DensitySizeSlot = {
   size: string;
   ppc: string;
@@ -204,6 +233,7 @@ export type DensitySizeSlot = {
 };
 
 export type DensityForm = {
+  fileName: string;
   brand: string;
   style: string;
   article: string;
@@ -229,7 +259,14 @@ export function emptyDensitySizeSlot(): DensitySizeSlot {
 }
 
 export function emptyDensityPhotos(): DensityPhotos {
-  return { cartonTop: null, cartonSide: null, cartonClosed: null };
+  return {
+    cartonTop: null,
+    cartonSide: null,
+    cartonClosed: null,
+    garmentThickness: null,
+    garmentLength: null,
+    garmentWidth: null,
+  };
 }
 
 export async function fileToDensityPhoto(file: File): Promise<DensityPhoto> {
@@ -251,6 +288,7 @@ export async function fileToDensityPhoto(file: File): Promise<DensityPhoto> {
 
 export function emptyDensityForm(): DensityForm {
   return {
+    fileName: "",
     brand: "",
     style: "",
     article: "",
@@ -329,11 +367,22 @@ export function mergeDensityForm(parsed: Partial<DensityForm> | null | undefined
 export function mergeDensityPhotos(parsed: Partial<DensityPhotos> | null | undefined): DensityPhotos {
   const base = emptyDensityPhotos();
   if (!parsed || typeof parsed !== "object") return base;
-  return {
-    cartonTop: parsed.cartonTop?.dataUrl ? parsed.cartonTop : null,
-    cartonSide: parsed.cartonSide?.dataUrl ? parsed.cartonSide : null,
-    cartonClosed: parsed.cartonClosed?.dataUrl ? parsed.cartonClosed : null,
-  };
+  const next = { ...base };
+  for (const key of DENSITY_PHOTO_KEYS) {
+    const p = parsed[key];
+    next[key] = p?.dataUrl ? p : null;
+  }
+  return next;
+}
+
+export function sanitizeDensityDownloadName(form: DensityForm) {
+  const raw = String(form.fileName || "").trim();
+  const style = padStyle(form.style);
+  const article = padArticle(form.article);
+  const fallback = `Density-Report-${style || "style"}-${article || "article"}-${form.poNumber.trim() || "PO"}`;
+  const base = (raw || fallback).replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+  const noExt = base.replace(/\.xlsx$/i, "");
+  return `${noExt || fallback}.xlsx`;
 }
 
 export function loadDensityForm(): DensityForm {
@@ -514,7 +563,11 @@ export async function downloadDensityExcel(form: DensityForm, photos: DensityPho
     }
   });
 
-  const poPart = form.poNumber.trim() || "PO";
-  const name = `Density-Report-${style || "style"}-${article || "article"}-${poPart}.xlsx`;
-  await downloadWorkbook(wb, name.replace(/[^\w.\-]+/g, "_"));
+  DENSITY_GARMENT_PICTURES.forEach((box) => {
+    const photo = photos[box.key];
+    if (!photo) return;
+    addPhoto(wb, ws, photo, box.tlCol, box.tlRow, box.brCol, box.brRow);
+  });
+
+  await downloadWorkbook(wb, sanitizeDensityDownloadName(form));
 }

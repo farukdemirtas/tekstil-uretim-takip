@@ -19,6 +19,7 @@ import {
   DENSITY_GTOP,
   DENSITY_GW,
   DENSITY_PLANCHA,
+  DENSITY_GARMENT_PICTURES,
   DENSITY_PICTURE_ROWS,
   DENSITY_PO_TYPES,
   DENSITY_PPC,
@@ -467,6 +468,9 @@ export default function DensityPage() {
     cartonTop: { label: t("density.picture1"), hint: t("density.picture1Hint") },
     cartonSide: { label: t("density.picture2"), hint: t("density.picture2Hint") },
     cartonClosed: { label: t("density.picture3"), hint: t("density.picture3Hint") },
+    garmentThickness: { label: t("density.thickness"), hint: t("density.garmentPhotoHint") },
+    garmentLength: { label: t("density.length"), hint: t("density.garmentPhotoHint") },
+    garmentWidth: { label: t("density.width"), hint: t("density.garmentPhotoHint") },
   };
 
   if (!authorized) return null;
@@ -570,6 +574,17 @@ export default function DensityPage() {
             {t("density.editing")} #{editingId}
           </p>
         ) : null}
+
+        <Section step="00" title={t("density.fileName")} desc={t("density.fileNameHint")}>
+          <Field label={t("density.fileName")}>
+            <input
+              className={fieldClass}
+              value={form.fileName}
+              placeholder="density_V500 - new version 2025 1235.557 251-WHITE OFF"
+              onChange={(e) => patch({ fileName: e.target.value.slice(0, 180) })}
+            />
+          </Field>
+        </Section>
 
         <Section step="01" title={t("density.orderInfo")}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -714,55 +729,39 @@ export default function DensityPage() {
 
         <Section step="03" title={t("density.garmentDims")} desc={t("density.garmentRequired")}>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-              <Field label={t("density.thickness")} hint="0–50">
-                <input
-                  className={fieldClass}
-                  inputMode="decimal"
-                  placeholder="cm"
-                  value={form.gThickness}
-                  onChange={(e) => patch({ gThickness: e.target.value.replace(/[^\d.]/g, "") })}
-                />
-              </Field>
-            </div>
-            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-              <div className="mb-3 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/templates/density-examples/length-guide.jpg"
-                  alt=""
-                  className="mx-auto h-36 w-full object-contain p-3"
-                />
-              </div>
-              <Field label={t("density.length")} hint="0–200">
-                <input
-                  className={fieldClass}
-                  inputMode="decimal"
-                  placeholder="cm"
-                  value={form.gLength}
-                  onChange={(e) => patch({ gLength: e.target.value.replace(/[^\d.]/g, "") })}
-                />
-              </Field>
-            </div>
-            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-              <div className="mb-3 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/templates/density-examples/width-guide.jpg"
-                  alt=""
-                  className="mx-auto h-36 w-full object-contain p-3"
-                />
-              </div>
-              <Field label={t("density.width")} hint="0–200">
-                <input
-                  className={fieldClass}
-                  inputMode="decimal"
-                  placeholder="cm"
-                  value={form.gWidth}
-                  onChange={(e) => patch({ gWidth: e.target.value.replace(/[^\d.]/g, "") })}
-                />
-              </Field>
-            </div>
+            {DENSITY_GARMENT_PICTURES.map((rowDef) => {
+              const cm =
+                rowDef.key === "garmentThickness"
+                  ? { value: form.gThickness, patch: (v: string) => patch({ gThickness: v }), hint: "0–50" }
+                  : rowDef.key === "garmentLength"
+                    ? { value: form.gLength, patch: (v: string) => patch({ gLength: v }), hint: "0–200" }
+                    : { value: form.gWidth, patch: (v: string) => patch({ gWidth: v }), hint: "0–200" };
+              return (
+                <div key={rowDef.key} className="flex min-w-0 flex-col gap-3">
+                  <PhotoCard
+                    label={pictureCopy[rowDef.key].label}
+                    hint={pictureCopy[rowDef.key].hint}
+                    exampleSrc={rowDef.example}
+                    photo={photos[rowDef.key]}
+                    onPick={(file) => pickPhoto(file, rowDef.key)}
+                    onClear={() => setPhotos((prev) => ({ ...prev, [rowDef.key]: null }))}
+                    uploadLabel={t("density.upload")}
+                    changeLabel={t("density.changePhoto")}
+                    removeLabel={t("density.removePhoto")}
+                    exampleLabel={t("density.example")}
+                  />
+                  <Field label={pictureCopy[rowDef.key].label} hint={cm.hint}>
+                    <input
+                      className={fieldClass}
+                      inputMode="decimal"
+                      placeholder="cm"
+                      value={cm.value}
+                      onChange={(e) => cm.patch(e.target.value.replace(/[^\d.]/g, ""))}
+                    />
+                  </Field>
+                </div>
+              );
+            })}
           </div>
         </Section>
 

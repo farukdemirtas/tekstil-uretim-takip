@@ -187,7 +187,7 @@ const VALID_HOURS = [
 initDb();
 
 app.use(cors());
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: "12mb" }));
 
 function requireAuth(req, res, next) {
   if (req.path === "/api/health" || req.path === "/api/auth/login" || req.path === "/api/auth/sso-consume") {
@@ -358,7 +358,7 @@ function logActivity(req, action, resource, details) {
 }
 
 function sanitizeDensityPhotos(raw) {
-  const keys = ["cartonTop", "cartonSide", "cartonClosed"];
+  const keys = ["cartonTop", "cartonSide", "cartonClosed", "garmentThickness", "garmentLength", "garmentWidth"];
   const out = {};
   const src = raw && typeof raw === "object" ? raw : {};
   for (const key of keys) {
@@ -407,6 +407,7 @@ app.post("/api/density-reports", requirePermission("density"), async (req, res) 
       article: payload.article || body.article,
       poNumber: payload.poNumber || body.poNumber,
       boxType: payload.boxType || body.boxType,
+      fileName: payload.fileName || body.fileName,
       payload,
       photos: sanitizeDensityPhotos(body.photos),
     });
@@ -427,6 +428,7 @@ app.put("/api/density-reports/:id", requirePermission("density"), async (req, re
       article: payload.article || body.article,
       poNumber: payload.poNumber || body.poNumber,
       boxType: payload.boxType || body.boxType,
+      fileName: payload.fileName || body.fileName,
       payload,
       photos: sanitizeDensityPhotos(body.photos),
     });
