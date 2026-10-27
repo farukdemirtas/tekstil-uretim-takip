@@ -432,6 +432,39 @@ function dataUrlToBytes(dataUrl: string) {
   return bytes;
 }
 
+type SheetImage = {
+  type?: string;
+  range?: {
+    tl?: { nativeCol?: number; nativeRow?: number; col?: number; row?: number };
+    br?: { nativeCol?: number; nativeRow?: number; col?: number; row?: number };
+  };
+};
+
+function garmentAnchorOverlaps(
+  image: SheetImage,
+  box: { tlCol: number; tlRow: number; brCol: number; brRow: number },
+) {
+  const tl = image.range?.tl;
+  const br = image.range?.br;
+  if (!tl) return false;
+  const left = Number(tl.nativeCol ?? tl.col ?? 0);
+  const top = Number(tl.nativeRow ?? tl.row ?? 0);
+  const right = Number(br?.nativeCol ?? br?.col ?? left + 1);
+  const bottom = Number(br?.nativeRow ?? br?.row ?? top + 1);
+  return left < box.brCol && right > box.tlCol && top < box.brRow && bottom > box.tlRow;
+}
+
+/** Şablondaki örnek garment görsellerini yalnızca o alana fotoğraf yüklendiyse kaldır. */
+function removeTemplateGarmentImage(ws: Worksheet, box: (typeof DENSITY_GARMENT_PICTURES)[number]) {
+  const media = (ws as unknown as { _media?: SheetImage[] })._media;
+  if (!Array.isArray(media)) return;
+  for (let i = media.length - 1; i >= 0; i--) {
+    const item = media[i];
+    if (item?.type && item.type !== "image") continue;
+    if (garmentAnchorOverlaps(item, box)) media.splice(i, 1);
+  }
+}
+
 function addPhoto(
   wb: Workbook,
   ws: Worksheet,
@@ -563,6 +596,10 @@ export async function downloadDensityExcel(form: DensityForm, photos: DensityPho
     }
   });
 
+  DENSITY_GARMENT_PICTURES.forEach((box) => {
+    if (!photos[box.key]) return;
+    removeTemplateGarmentImage(ws, box);
+  });
   DENSITY_GARMENT_PICTURES.forEach((box) => {
     const photo = photos[box.key];
     if (!photo) return;

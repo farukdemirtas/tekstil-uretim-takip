@@ -5,7 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useI18n } from "@/components/I18nProvider";
-import { deleteDensityReport, listDensityReports, setAuthToken, type DensityReportSummary } from "@/lib/api";
+import { deleteDensityReport, getDensityReport, listDensityReports, setAuthToken, type DensityReportSummary } from "@/lib/api";
+import {
+  downloadDensityExcel,
+  mergeDensityForm,
+  mergeDensityPhotos,
+  type DensityForm,
+  type DensityPhotos,
+} from "@/lib/densityReport";
 import { hasPermission, isAdminRole } from "@/lib/permissions";
 
 export default function DensityRecordsPage() {
@@ -15,6 +22,7 @@ export default function DensityRecordsPage() {
   const [records, setRecords] = useState<DensityReportSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   async function refreshRecords() {
     setLoading(true);
@@ -42,6 +50,22 @@ export default function DensityRecordsPage() {
     void refreshRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
+
+  async function onDownloadRecord(id: number) {
+    setError(null);
+    setDownloadingId(id);
+    try {
+      const row = await getDensityReport(id);
+      await downloadDensityExcel(
+        mergeDensityForm(row.payload as Partial<DensityForm>),
+        mergeDensityPhotos(row.photos as DensityPhotos),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("density.downloadFailed"));
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   async function onDeleteRecord(id: number) {
     if (!window.confirm(t("density.confirmDelete"))) return;
@@ -154,6 +178,14 @@ export default function DensityRecordsPage() {
                         >
                           {t("density.loadRecord")}
                         </Link>
+                        <button
+                          type="button"
+                          disabled={downloadingId === row.id}
+                          onClick={() => void onDownloadRecord(row.id)}
+                          className="rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold text-teal-800 disabled:opacity-50 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200"
+                        >
+                          {downloadingId === row.id ? t("density.preparing") : t("density.download")}
+                        </button>
                         <button
                           type="button"
                           onClick={() => void onDeleteRecord(row.id)}
