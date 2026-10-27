@@ -81,10 +81,10 @@ export default function DensityRecordsPage() {
   if (!authorized) return null;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_rgba(13,148,136,0.12),_transparent_55%),linear-gradient(to_bottom,#f8fafc,#eef2f7)] px-3 py-4 sm:px-6 sm:py-6 dark:bg-[radial-gradient(ellipse_at_top,_rgba(13,148,136,0.16),_transparent_50%),linear-gradient(to_bottom,#020617,#0f172a)]">
-      <div className="mx-auto flex max-w-6xl flex-col gap-5">
-        <header className="overflow-hidden rounded-3xl border border-teal-700/20 bg-gradient-to-br from-teal-700 via-teal-600 to-emerald-600 p-4 text-white shadow-[0_18px_50px_-20px_rgba(13,148,136,0.7)] sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_rgba(13,148,136,0.12),_transparent_55%),linear-gradient(to_bottom,#f8fafc,#eef2f7)] px-3 py-3 sm:px-5 sm:py-6 dark:bg-[radial-gradient(ellipse_at_top,_rgba(13,148,136,0.16),_transparent_50%),linear-gradient(to_bottom,#020617,#0f172a)]">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-5">
+        <header className="overflow-hidden rounded-2xl border border-teal-700/20 bg-gradient-to-br from-teal-700 via-teal-600 to-emerald-600 p-3 text-white shadow-[0_18px_50px_-20px_rgba(13,148,136,0.7)] sm:rounded-3xl sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <Link
                 href="/"
@@ -100,13 +100,13 @@ export default function DensityRecordsPage() {
                 <p className="truncate text-[11px] text-teal-50/85 sm:text-xs">{t("density.recordsSubtitle")}</p>
               </div>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <div className="flex overflow-hidden rounded-xl bg-white/15 p-0.5 backdrop-blur">
                 <button
                   type="button"
                   onClick={() => setLocale("tr")}
                   aria-pressed={locale === "tr"}
-                  className={`rounded-[10px] px-3 py-1.5 text-xs font-semibold sm:text-sm ${
+                  className={`min-h-10 flex-1 rounded-[10px] px-3 py-1.5 text-xs font-semibold sm:flex-none sm:text-sm ${
                     locale === "tr" ? "bg-white text-teal-800 shadow-sm" : "text-white/85 hover:bg-white/10"
                   }`}
                 >
@@ -116,7 +116,7 @@ export default function DensityRecordsPage() {
                   type="button"
                   onClick={() => setLocale("en")}
                   aria-pressed={locale === "en"}
-                  className={`rounded-[10px] px-3 py-1.5 text-xs font-semibold sm:text-sm ${
+                  className={`min-h-10 flex-1 rounded-[10px] px-3 py-1.5 text-xs font-semibold sm:flex-none sm:text-sm ${
                     locale === "en" ? "bg-white text-teal-800 shadow-sm" : "text-white/85 hover:bg-white/10"
                   }`}
                 >
@@ -125,7 +125,7 @@ export default function DensityRecordsPage() {
               </div>
               <Link
                 href="/density"
-                className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-teal-800 shadow-sm hover:bg-teal-50 sm:text-sm"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-3 py-2 text-xs font-semibold text-teal-800 shadow-sm hover:bg-teal-50 sm:text-sm"
               >
                 {t("density.openForm")}
               </Link>
@@ -139,14 +139,14 @@ export default function DensityRecordsPage() {
           </p>
         ) : null}
 
-        <section className="overflow-hidden rounded-3xl border border-white/70 bg-white/90 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.28)] ring-1 ring-slate-200/70 dark:border-slate-700/80 dark:bg-slate-900/85 dark:ring-slate-700/60">
-          <div className="border-b border-slate-100 bg-gradient-to-r from-teal-50/90 via-white to-white px-4 py-3.5 sm:px-5 dark:border-slate-800 dark:from-teal-950/40 dark:via-slate-900 dark:to-slate-900">
+        <section className="overflow-hidden rounded-2xl border border-white/70 bg-white/90 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.28)] ring-1 ring-slate-200/70 sm:rounded-3xl dark:border-slate-700/80 dark:bg-slate-900/85 dark:ring-slate-700/60">
+          <div className="border-b border-slate-100 bg-gradient-to-r from-teal-50/90 via-white to-white px-3 py-3 sm:px-5 sm:py-3.5 dark:border-slate-800 dark:from-teal-950/40 dark:via-slate-900 dark:to-slate-900">
             <h2 className="text-sm font-bold tracking-tight text-slate-900 sm:text-base dark:text-white">
               {t("density.records")}
             </h2>
             <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{t("density.recordsHint")}</p>
           </div>
-          <div className="p-4 sm:p-5">
+          <div className="p-3 sm:p-5">
             {loading ? (
               <p className="text-sm text-slate-500 dark:text-slate-400">…</p>
             ) : records.length === 0 ? (
@@ -161,20 +161,20 @@ export default function DensityRecordsPage() {
                   return (
                     <li
                       key={row.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/50"
+                      className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-800/50"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{title}</p>
-                        <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                        <p className="break-words text-sm font-semibold text-slate-900 dark:text-white">{title}</p>
+                        <p className="mt-0.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
                           {row.updatedAt}
                           {row.createdBy ? ` · ${t("density.createdBy")} ${row.createdBy}` : ""}
                           {row.boxType ? ` · ${row.boxType}` : ""}
                         </p>
                       </div>
-                      <div className="flex gap-1.5">
+                      <div className="grid grid-cols-3 gap-1.5 sm:flex sm:w-auto">
                         <Link
                           href={`/density?id=${row.id}`}
-                          className="rounded-xl bg-teal-600 px-2.5 py-1.5 text-[11px] font-semibold text-white"
+                          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-teal-600 px-2.5 text-[11px] font-semibold text-white"
                         >
                           {t("density.loadRecord")}
                         </Link>
@@ -182,14 +182,14 @@ export default function DensityRecordsPage() {
                           type="button"
                           disabled={downloadingId === row.id}
                           onClick={() => void onDownloadRecord(row.id)}
-                          className="rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold text-teal-800 disabled:opacity-50 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200"
+                          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-800 disabled:opacity-50 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200"
                         >
                           {downloadingId === row.id ? t("density.preparing") : t("density.download")}
                         </button>
                         <button
                           type="button"
                           onClick={() => void onDeleteRecord(row.id)}
-                          className="rounded-xl border border-rose-200 px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 dark:border-rose-900 dark:text-rose-400"
+                          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-200 px-2.5 text-[11px] font-semibold text-rose-600 dark:border-rose-900 dark:text-rose-400"
                         >
                           {t("density.deleteRecord")}
                         </button>

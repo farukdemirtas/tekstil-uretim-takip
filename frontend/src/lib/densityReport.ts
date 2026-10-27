@@ -182,27 +182,34 @@ export type DensityPhoto = {
   ext: "jpeg" | "png";
 };
 
+export type DensityCartonPhotoKey = "cartonTop" | "cartonSide" | "cartonClosed";
 export type DensityPhotoKey =
-  | "cartonTop"
-  | "cartonSide"
-  | "cartonClosed"
+  | DensityCartonPhotoKey
   | "garmentThickness"
   | "garmentLength"
   | "garmentWidth";
 
-export type DensityPhotos = Record<DensityPhotoKey, DensityPhoto | null>;
+export type DensitySizePhotos = Record<DensityCartonPhotoKey, DensityPhoto | null>;
 
-export const DENSITY_PHOTO_KEYS: DensityPhotoKey[] = [
+export type DensityPhotos = Record<DensityPhotoKey, DensityPhoto | null> & {
+  sizePhotos: DensitySizePhotos[];
+};
+
+export const DENSITY_CARTON_PHOTO_KEYS: DensityCartonPhotoKey[] = [
   "cartonTop",
   "cartonSide",
   "cartonClosed",
+];
+
+export const DENSITY_PHOTO_KEYS: DensityPhotoKey[] = [
+  ...DENSITY_CARTON_PHOTO_KEYS,
   "garmentThickness",
   "garmentLength",
   "garmentWidth",
 ];
 
 export const DENSITY_PICTURE_ROWS: {
-  key: Extract<DensityPhotoKey, "cartonTop" | "cartonSide" | "cartonClosed">;
+  key: DensityCartonPhotoKey;
   example: string;
   tlRow: number;
   brRow: number;
@@ -212,7 +219,7 @@ export const DENSITY_PICTURE_ROWS: {
   { key: "cartonClosed", example: "/templates/density-examples/picture-3.png", tlRow: 34, brRow: 44 },
 ];
 
-/** Şablon birleşik hücreleri: G5:H10, J5:K10, M5:N10 (ExcelJS 0-tabanlı) */
+/** Şablon birleşik hücreleri (V500): G5:H10, I5:J10, K5:L10 — M-N Inner Cardboard (ExcelJS 0-tabanlı) */
 export const DENSITY_GARMENT_PICTURES: {
   key: Extract<DensityPhotoKey, "garmentThickness" | "garmentLength" | "garmentWidth">;
   example: string;
@@ -222,8 +229,8 @@ export const DENSITY_GARMENT_PICTURES: {
   brRow: number;
 }[] = [
   { key: "garmentThickness", example: "/templates/density-examples/garment-thickness.png", tlCol: 6, tlRow: 4, brCol: 8, brRow: 10 },
-  { key: "garmentLength", example: "/templates/density-examples/garment-length.png", tlCol: 9, tlRow: 4, brCol: 11, brRow: 10 },
-  { key: "garmentWidth", example: "/templates/density-examples/garment-width.png", tlCol: 12, tlRow: 4, brCol: 14, brRow: 10 },
+  { key: "garmentLength", example: "/templates/density-examples/garment-length.png", tlCol: 8, tlRow: 4, brCol: 10, brRow: 10 },
+  { key: "garmentWidth", example: "/templates/density-examples/garment-width.png", tlCol: 10, tlRow: 4, brCol: 12, brRow: 10 },
 ];
 
 export type DensitySizeSlot = {
@@ -250,12 +257,18 @@ export type DensityForm = {
   gThickness: string;
   gLength: string;
   gWidth: string;
+  innerLength: string;
+  innerWidth: string;
   sizeTypology: string;
   sizes: DensitySizeSlot[];
 };
 
 export function emptyDensitySizeSlot(): DensitySizeSlot {
   return { size: "", ppc: "", gw: "" };
+}
+
+export function emptyDensitySizePhotos(): DensitySizePhotos {
+  return { cartonTop: null, cartonSide: null, cartonClosed: null };
 }
 
 export function emptyDensityPhotos(): DensityPhotos {
@@ -266,12 +279,38 @@ export function emptyDensityPhotos(): DensityPhotos {
     garmentThickness: null,
     garmentLength: null,
     garmentWidth: null,
+    sizePhotos: Array.from({ length: 8 }, emptyDensitySizePhotos),
   };
 }
 
-export async function fileToDensityPhoto(file: File): Promise<DensityPhoto> {
+export function compactDensitySizePhotos(
+  sizes: DensitySizeSlot[],
+  sizePhotos: DensitySizePhotos[] | undefined,
+): DensitySizePhotos[] {
+  const src = Array.isArray(sizePhotos) ? sizePhotos : [];
+  const next = sizes
+    .map((slot, i) => ({ slot, photos: { ...(src[i] ?? emptyDensitySizePhotos()) } }))
+    .filter((row) => isFilledSizeSlot(row.slot))
+    .map((row) => row.photos);
+  while (next.length < 8) next.push(emptyDensitySizePhotos());
+  return next.slice(0, 8);
+}
+
+export function sizePhotoAt(
+  photos: DensityPhotos,
+  index: number,
+  key: DensityCartonPhotoKey,
+): DensityPhoto | null {
+  return photos.sizePhotos[index]?.[key] ?? photos[key] ?? null;
+}
+
+export async function fileToDensityPhoto(
+  file: File,
+  opts?: { max?: number; quality?: number },
+): Promise<DensityPhoto> {
   const bitmap = await createImageBitmap(file);
-  const max = 1400;
+  const max = opts?.max ?? 1400;
+  const quality = opts?.quality ?? 0.82;
   const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
@@ -282,7 +321,7 @@ export async function fileToDensityPhoto(file: File): Promise<DensityPhoto> {
   if (!ctx) throw new Error("Görsel işlenemedi");
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+  const dataUrl = canvas.toDataURL("image/jpeg", quality);
   return { dataUrl, ext: "jpeg" };
 }
 
@@ -305,6 +344,8 @@ export function emptyDensityForm(): DensityForm {
     gThickness: "",
     gLength: "",
     gWidth: "",
+    innerLength: "",
+    innerWidth: "",
     sizeTypology: "",
     sizes: Array.from({ length: 8 }, emptyDensitySizeSlot),
   };
@@ -372,6 +413,17 @@ export function mergeDensityPhotos(parsed: Partial<DensityPhotos> | null | undef
     const p = parsed[key];
     next[key] = p?.dataUrl ? p : null;
   }
+  const hasSizeArray = Array.isArray(parsed.sizePhotos);
+  next.sizePhotos = Array.from({ length: 8 }, (_, i) => {
+    const slot = hasSizeArray ? parsed.sizePhotos?.[i] : undefined;
+    const row = emptyDensitySizePhotos();
+    for (const key of DENSITY_CARTON_PHOTO_KEYS) {
+      if (slot?.[key]?.dataUrl) row[key] = slot[key];
+      else if (!hasSizeArray && next[key]?.dataUrl) row[key] = next[key];
+      else row[key] = null;
+    }
+    return row;
+  });
   return next;
 }
 
@@ -524,8 +576,10 @@ export async function downloadDensityExcel(form: DensityForm, photos: DensityPho
   setCell(ws, "C10", form.shipment || null);
   setCell(ws, "C11", form.gtop || null);
   setCell(ws, "H4", asNumberOrText(form.gThickness));
-  setCell(ws, "K4", asNumberOrText(form.gLength));
-  setCell(ws, "N4", asNumberOrText(form.gWidth));
+  setCell(ws, "J4", asNumberOrText(form.gLength));
+  setCell(ws, "L4", asNumberOrText(form.gWidth));
+  setCell(ws, "N5", asNumberOrText(form.innerLength));
+  setCell(ws, "N6", asNumberOrText(form.innerWidth));
 
   const sizes = compactDensitySizes(form.sizes);
 
@@ -584,17 +638,17 @@ export async function downloadDensityExcel(form: DensityForm, photos: DensityPho
     }
   }
 
-  DENSITY_PICTURE_ROWS.forEach((rowDef) => {
-    const photo = photos[rowDef.key];
-    if (!photo) return;
-    for (let i = 0; i < 8; i++) {
-      const slot = sizes[i] ?? emptyDensitySizeSlot();
-      if (!isFilledSizeSlot(slot)) continue;
-      const tlCol = SIZE_VALUE_COLS[i] - 2;
-      const brCol = SIZE_VALUE_COLS[i];
+  for (let i = 0; i < 8; i++) {
+    const slot = sizes[i] ?? emptyDensitySizeSlot();
+    if (!isFilledSizeSlot(slot)) continue;
+    const tlCol = SIZE_VALUE_COLS[i] - 2;
+    const brCol = SIZE_VALUE_COLS[i];
+    DENSITY_PICTURE_ROWS.forEach((rowDef) => {
+      const photo = sizePhotoAt(photos, i, rowDef.key);
+      if (!photo) return;
       addPhoto(wb, ws, photo, tlCol, rowDef.tlRow, brCol, rowDef.brRow);
-    }
-  });
+    });
+  }
 
   DENSITY_GARMENT_PICTURES.forEach((box) => {
     if (!photos[box.key]) return;

@@ -364,6 +364,8 @@ export type Messages = {
     width: string;
     attachGarmentPhoto: string;
     garmentPhotoHint: string;
+    innerCardboard: string;
+    innerCardboardHint: string;
     sizesTitle: string;
     sizesHint: string;
     removeSize: string;
@@ -377,6 +379,10 @@ export type Messages = {
     selectGw: string;
     photos: string;
     photosHint: string;
+    photosEmpty: string;
+    photosForSize: string;
+    takePhoto: string;
+    fromGallery: string;
     picture1: string;
     picture1Hint: string;
     picture2: string;

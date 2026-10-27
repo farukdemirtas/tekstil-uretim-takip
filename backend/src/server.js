@@ -187,7 +187,7 @@ const VALID_HOURS = [
 initDb();
 
 app.use(cors());
-app.use(express.json({ limit: "12mb" }));
+app.use(express.json({ limit: "32mb" }));
 
 function requireAuth(req, res, next) {
   if (req.path === "/api/health" || req.path === "/api/auth/login" || req.path === "/api/auth/sso-consume") {
@@ -357,24 +357,31 @@ function logActivity(req, action, resource, details) {
   });
 }
 
+function sanitizeDensityPhoto(p) {
+  if (!p || typeof p !== "object") return null;
+  const dataUrl = typeof p.dataUrl === "string" ? p.dataUrl : "";
+  const ext = p.ext === "png" ? "png" : "jpeg";
+  if (!dataUrl.startsWith("data:image/") || dataUrl.length > 1_800_000) return null;
+  return { dataUrl, ext };
+}
+
 function sanitizeDensityPhotos(raw) {
   const keys = ["cartonTop", "cartonSide", "cartonClosed", "garmentThickness", "garmentLength", "garmentWidth"];
-  const out = {};
+  const cartonKeys = ["cartonTop", "cartonSide", "cartonClosed"];
   const src = raw && typeof raw === "object" ? raw : {};
+  const out = {};
   for (const key of keys) {
-    const p = src[key];
-    if (!p || typeof p !== "object") {
-      out[key] = null;
-      continue;
-    }
-    const dataUrl = typeof p.dataUrl === "string" ? p.dataUrl : "";
-    const ext = p.ext === "png" ? "png" : "jpeg";
-    if (!dataUrl.startsWith("data:image/") || dataUrl.length > 1_800_000) {
-      out[key] = null;
-      continue;
-    }
-    out[key] = { dataUrl, ext };
+    out[key] = sanitizeDensityPhoto(src[key]);
   }
+  const rows = Array.isArray(src.sizePhotos) ? src.sizePhotos : [];
+  out.sizePhotos = Array.from({ length: 8 }, (_, i) => {
+    const slot = rows[i] && typeof rows[i] === "object" ? rows[i] : {};
+    const row = {};
+    for (const key of cartonKeys) {
+      row[key] = sanitizeDensityPhoto(slot[key]) || (!rows.length ? out[key] : null);
+    }
+    return row;
+  });
   return out;
 }
 
