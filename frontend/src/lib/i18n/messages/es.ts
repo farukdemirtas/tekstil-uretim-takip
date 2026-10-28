@@ -414,6 +414,7 @@ export const messages: Messages = {
     saving: "Guardando…",
     saved: "Registro guardado.",
     saveFailed: "No se pudo guardar",
+    photosNotSaved: "El formulario se guardó pero las fotos no cabían. Vuelva a guardar con fotos más pequeñas.",
     loadRecord: "Cargar",
     deleteRecord: "Eliminar",
     confirmDelete: "¿Eliminar este registro?",

@@ -415,6 +415,7 @@ export const messages: Messages = {
     saving: "Kaydediliyor…",
     saved: "Kayıt saklandı.",
     saveFailed: "Kayıt kaydedilemedi",
+    photosNotSaved: "Form kaydedildi ama görseller sığmadı. Daha küçük fotoğrafla tekrar kaydedin.",
     loadRecord: "Yükle",
     deleteRecord: "Sil",
     confirmDelete: "Bu kaydı silmek istiyor musunuz?",

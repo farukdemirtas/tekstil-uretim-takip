@@ -32,13 +32,16 @@ import {
   DENSITY_SPECIAL_DIMS,
   DENSITY_SPECIAL_VALUE,
   downloadDensityExcel,
+  densityPhotosHaveData,
   emptyDensityForm,
   emptyDensityPhotos,
   fileToDensityPhoto,
   loadDensityForm,
+  loadDensityLastId,
   mergeDensityForm,
   mergeDensityPhotos,
   persistDensityForm,
+  persistDensityLastId,
   type DensityCartonPhotoKey,
   type DensityForm,
   type DensityPhoto,
@@ -391,16 +394,23 @@ export default function DensityPage() {
     }
     setAuthToken(token);
     const idRaw = new URLSearchParams(window.location.search).get("id");
-    const id = Number(idRaw);
-    if (Number.isInteger(id) && id > 0) {
+    const fromQuery = Number(idRaw);
+    const id =
+      Number.isInteger(fromQuery) && fromQuery > 0 ? fromQuery : loadDensityLastId();
+    if (id) {
       void getDensityReport(id)
         .then((row) => {
           setForm(mergeDensityForm(row.payload as Partial<DensityForm>));
           setPhotos(mergeDensityPhotos(row.photos as DensityPhotos));
           setEditingId(row.id);
+          persistDensityLastId(row.id);
+          if (!Number.isInteger(fromQuery) || fromQuery <= 0) {
+            router.replace(`/density?id=${row.id}`);
+          }
           setAuthorized(true);
         })
         .catch((e) => {
+          persistDensityLastId(null);
           setForm(loadDensityForm());
           setError(e instanceof Error ? e.message : "Kayıt alınamadı");
           setAuthorized(true);
@@ -460,7 +470,7 @@ export default function DensityPage() {
 
   async function pickSizePhoto(file: File, index: number, key: DensityCartonPhotoKey) {
     try {
-      const photo = await fileToDensityPhoto(file, { max: 1000, quality: 0.72 });
+      const photo = await fileToDensityPhoto(file, { max: 960, quality: 0.68 });
       setPhotos((prev) => {
         const sizePhotos = Array.from({ length: 8 }, (_, i) => prev.sizePhotos[i] ?? emptyDensitySizePhotos());
         sizePhotos[index] = { ...sizePhotos[index], [key]: photo };
@@ -476,13 +486,21 @@ export default function DensityPage() {
     setSaving(true);
     try {
       const body = { payload: form, photos };
+      const hadPhotos = densityPhotosHaveData(photos);
       const row = editingId
         ? await updateDensityReport(editingId, body)
         : await saveDensityReport(body);
+      const storedPhotos = mergeDensityPhotos(row.photos as DensityPhotos);
+      setPhotos(storedPhotos);
       setEditingId(row.id);
+      persistDensityLastId(row.id);
       router.replace(`/density?id=${row.id}`);
-      setSavedHint(t("density.saved"));
-      window.setTimeout(() => setSavedHint(null), 2500);
+      if (hadPhotos && !densityPhotosHaveData(storedPhotos)) {
+        setError(t("density.photosNotSaved"));
+      } else {
+        setSavedHint(t("density.saved"));
+        window.setTimeout(() => setSavedHint(null), 2500);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("density.saveFailed"));
     } finally {
@@ -571,6 +589,7 @@ export default function DensityPage() {
                 type="button"
                 onClick={() => {
                   setEditingId(null);
+                  persistDensityLastId(null);
                   setForm(emptyDensityForm());
                   setPhotos(emptyDensityPhotos());
                   router.replace("/density");

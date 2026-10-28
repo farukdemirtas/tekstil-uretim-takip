@@ -195,7 +195,7 @@ const VALID_HOURS = [
 initDb();
 
 app.use(cors());
-app.use(express.json({ limit: "32mb" }));
+app.use(express.json({ limit: "64mb" }));
 
 function requireAuth(req, res, next) {
   if (req.path === "/api/health" || req.path === "/api/auth/login" || req.path === "/api/auth/sso-consume") {
@@ -391,11 +391,14 @@ async function mergeTakipsanTargetsForProductModel(model) {
   }
 }
 
+/** Telefon JPEG data URL (~4.5MB görsel). Küçük limit kayıtta fotoğrafları sessizce siliyordu. */
+const DENSITY_PHOTO_MAX_CHARS = 6_000_000;
+
 function sanitizeDensityPhoto(p) {
   if (!p || typeof p !== "object") return null;
   const dataUrl = typeof p.dataUrl === "string" ? p.dataUrl : "";
   const ext = p.ext === "png" ? "png" : "jpeg";
-  if (!dataUrl.startsWith("data:image/") || dataUrl.length > 1_800_000) return null;
+  if (!dataUrl.startsWith("data:image/") || dataUrl.length > DENSITY_PHOTO_MAX_CHARS) return null;
   return { dataUrl, ext };
 }
 

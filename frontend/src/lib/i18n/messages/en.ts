@@ -415,6 +415,7 @@ export const messages: Messages = {
     saving: "Saving…",
     saved: "Record saved.",
     saveFailed: "Could not save",
+    photosNotSaved: "The form was saved but pictures did not fit. Save again with smaller photos.",
     loadRecord: "Load",
     deleteRecord: "Delete",
     confirmDelete: "Delete this record?",

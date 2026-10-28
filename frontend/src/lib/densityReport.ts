@@ -304,14 +304,11 @@ export function sizePhotoAt(
   return photos.sizePhotos[index]?.[key] ?? photos[key] ?? null;
 }
 
-export async function fileToDensityPhoto(
-  file: File,
-  opts?: { max?: number; quality?: number },
-): Promise<DensityPhoto> {
-  const bitmap = await createImageBitmap(file);
-  const max = opts?.max ?? 1400;
-  const quality = opts?.quality ?? 0.82;
-  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+/** Kayıt gövdesine sığacak JPEG data URL üst sınırı (sunucu 6e6 kabul eder). */
+export const DENSITY_PHOTO_MAX_CHARS = 900_000;
+
+function drawBitmapToJpeg(bitmap: ImageBitmap, maxEdge: number, quality: number): DensityPhoto {
+  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");
@@ -320,9 +317,52 @@ export async function fileToDensityPhoto(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Görsel işlenemedi");
   ctx.drawImage(bitmap, 0, 0, w, h);
-  bitmap.close();
   const dataUrl = canvas.toDataURL("image/jpeg", quality);
   return { dataUrl, ext: "jpeg" };
+}
+
+export async function fileToDensityPhoto(
+  file: File,
+  opts?: { max?: number; quality?: number },
+): Promise<DensityPhoto> {
+  const bitmap = await createImageBitmap(file);
+  let max = opts?.max ?? 1100;
+  let quality = opts?.quality ?? 0.72;
+  try {
+    let photo = drawBitmapToJpeg(bitmap, max, quality);
+    for (let i = 0; i < 8 && photo.dataUrl.length > DENSITY_PHOTO_MAX_CHARS; i += 1) {
+      quality = Math.max(0.42, quality - 0.08);
+      max = Math.max(560, Math.round(max * 0.82));
+      photo = drawBitmapToJpeg(bitmap, max, quality);
+    }
+    return photo;
+  } finally {
+    bitmap.close();
+  }
+}
+
+export function densityPhotosHaveData(photos: DensityPhotos | null | undefined): boolean {
+  if (!photos) return false;
+  for (const key of DENSITY_PHOTO_KEYS) {
+    if (photos[key]?.dataUrl) return true;
+  }
+  return (photos.sizePhotos || []).some((row) =>
+    DENSITY_CARTON_PHOTO_KEYS.some((key) => Boolean(row?.[key]?.dataUrl)),
+  );
+}
+
+const LAST_ID_KEY = "yeva-density-last-id";
+
+export function persistDensityLastId(id: number | null) {
+  if (typeof window === "undefined") return;
+  if (id == null || !Number.isInteger(id) || id <= 0) window.localStorage.removeItem(LAST_ID_KEY);
+  else window.localStorage.setItem(LAST_ID_KEY, String(id));
+}
+
+export function loadDensityLastId(): number | null {
+  if (typeof window === "undefined") return null;
+  const n = Number(window.localStorage.getItem(LAST_ID_KEY));
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 export function emptyDensityForm(): DensityForm {

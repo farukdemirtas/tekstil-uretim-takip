@@ -414,6 +414,7 @@ export const messages: Messages = {
     saving: "Speichern…",
     saved: "Gespeichert.",
     saveFailed: "Speichern fehlgeschlagen",
+    photosNotSaved: "Formular gespeichert, Bilder passten nicht. Bitte kleinere Fotos speichern.",
     loadRecord: "Laden",
     deleteRecord: "Löschen",
     confirmDelete: "Diesen Eintrag löschen?",

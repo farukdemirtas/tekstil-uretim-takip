@@ -402,6 +402,7 @@ export type Messages = {
     saving: string;
     saved: string;
     saveFailed: string;
+    photosNotSaved: string;
     loadRecord: string;
     deleteRecord: string;
     confirmDelete: string;
