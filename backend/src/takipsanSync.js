@@ -125,7 +125,7 @@ export function getTakipsanClient() {
   return getSharedClient();
 }
 
-function parseConsignmentIds(raw) {
+export function parseConsignmentIds(raw) {
   return String(raw || "")
     .split(/[,+\s]+/)
     .map((s) => s.trim())
@@ -141,13 +141,17 @@ function pushConsignmentIds(ordered, seen, raw) {
   }
 }
 
-/**
- * Aktif ütü-paket modeline göre birleştirilecek tüm Takipsan sevkiyat ID'leri (sıralı, tekrarsız).
- * Ana (258152) + ikincil (258154) ayrı alanlarda veya ikincil alanda virgülle yazılabilir.
- */
-async function buildConsignmentIdList(productionDate, activeModel) {
+function envConsignmentIds() {
+  const ordered = [];
+  const seen = new Set();
+  pushConsignmentIds(ordered, seen, process.env.TAKIPSAN_CONSIGNMENT_ID);
+  pushConsignmentIds(ordered, seen, process.env.TAKIPSAN_SECONDARY_CONSIGNMENT_ID);
+  return ordered;
+}
+
+/** Modeldeki ana + ikincil sevkiyat ID'leri (env yedek). */
+export function consignmentIdsFromModel(activeModel) {
   const envPrimary = String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
-  const envSecondary = String(process.env.TAKIPSAN_SECONDARY_CONSIGNMENT_ID || "").trim();
   const ordered = [];
   const seen = new Set();
 
@@ -158,12 +162,21 @@ async function buildConsignmentIdList(productionDate, activeModel) {
   if (hasModelConsignment) {
     if (modelPrimary) pushConsignmentIds(ordered, seen, modelPrimary);
     pushConsignmentIds(ordered, seen, modelSecondary);
-    // Yalnızca ikincil tanımlıysa .env birincil de ekle (örn. 258152 + 258154)
     if (!modelPrimary && envPrimary) pushConsignmentIds(ordered, seen, envPrimary);
   } else {
-    if (envPrimary) pushConsignmentIds(ordered, seen, envPrimary);
-    if (envSecondary) pushConsignmentIds(ordered, seen, envSecondary);
+    for (const id of envConsignmentIds()) pushConsignmentIds(ordered, seen, id);
   }
+
+  return ordered;
+}
+
+/**
+ * Aktif ütü-paket modeline göre birleştirilecek tüm Takipsan sevkiyat ID'leri (sıralı, tekrarsız).
+ * Ana (258152) + ikincil (258154) ayrı alanlarda veya ikincil alanda virgülle yazılabilir.
+ */
+async function buildConsignmentIdList(productionDate, activeModel) {
+  const ordered = consignmentIdsFromModel(activeModel);
+  const seen = new Set(ordered);
 
   if (ordered.length <= 1) {
     try {
@@ -178,7 +191,9 @@ async function buildConsignmentIdList(productionDate, activeModel) {
     }
   }
 
-  if (ordered.length === 0 && envPrimary) pushConsignmentIds(ordered, seen, envPrimary);
+  if (ordered.length === 0) {
+    pushConsignmentIds(ordered, seen, process.env.TAKIPSAN_CONSIGNMENT_ID);
+  }
 
   return ordered;
 }
@@ -382,22 +397,7 @@ export function refreshTakipsanEnabledFlag() {
   return takipsanSyncState.enabled;
 }
 
-/**
- * Ayarlar / Hedef Takip: sevkiyattan ürün adı ve hedef adet önizlemesi.
- * @param {string} [overrideId] - Belirtilirse bu sevkiyat ID'si kullanılır; yoksa env'den alınır.
- */
-export async function fetchTakipsanConsignmentProductInfo(overrideId) {
-  if (!isTakipsanConfigured()) {
-    throw new Error(
-      "Takipsan entegrasyonu yapılandırılmamış (TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID)"
-    );
-  }
-  const consignmentId = overrideId
-    ? String(overrideId).trim()
-    : String(process.env.TAKIPSAN_CONSIGNMENT_ID || "").trim();
-  if (!consignmentId) throw new Error("Sevkiyat ID bulunamadı");
-  const client = getTakipsanClient();
-  const data = await client.fetchConsignmentReadData(consignmentId);
+function mapConsignmentReadToProductInfo(data, consignmentIds) {
   const productRef = String(data.productRef || data.productLabel || "").trim();
   const productName = String(data.productName || "").trim();
   const modelCode = String(data.modelCode || productRef || "").trim();
@@ -405,8 +405,10 @@ export async function fetchTakipsanConsignmentProductInfo(overrideId) {
     productRef ||
     buildTakipsanProductLabel(productName, modelCode) ||
     "";
+  const ids = Array.isArray(consignmentIds) ? consignmentIds.filter(Boolean) : [];
   return {
-    consignmentId,
+    consignmentId: ids.join("+") || String(data.consignmentId || "").trim(),
+    consignmentIds: ids,
     productLabel,
     productRef: productRef || productLabel,
     productName,
@@ -415,4 +417,45 @@ export async function fetchTakipsanConsignmentProductInfo(overrideId) {
     orderQuantity: Math.max(0, Math.floor(Number(data.orderQuantity) || 0)),
     readCount: Math.max(0, Math.floor(Number(data.readCount) || 0)),
   };
+}
+
+async function fetchMergedConsignmentReadData(ids) {
+  const ordered = [];
+  const seen = new Set();
+  for (const raw of ids || []) pushConsignmentIds(ordered, seen, raw);
+  if (ordered.length === 0) throw new Error("Sevkiyat ID bulunamadı");
+  const client = getTakipsanClient();
+  let data = await client.fetchConsignmentReadData(ordered[0]);
+  if (ordered.length > 1) {
+    data = await mergeExtraConsignments(client, data, ordered.slice(1));
+  }
+  return { data, consignmentIds: ordered };
+}
+
+/**
+ * Ayarlar / Hedef Takip: sevkiyattan ürün adı ve hedef adet önizlemesi.
+ * @param {string} [overrideId] - Belirtilirse bu sevkiyat ID'si (virgül/+ ile birden fazla) kullanılır.
+ */
+export async function fetchTakipsanConsignmentProductInfo(overrideId) {
+  if (!isTakipsanConfigured()) {
+    throw new Error(
+      "Takipsan entegrasyonu yapılandırılmamış (TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID)"
+    );
+  }
+  const fromOverride = parseConsignmentIds(overrideId);
+  const ids = fromOverride.length ? fromOverride : envConsignmentIds();
+  const { data, consignmentIds } = await fetchMergedConsignmentReadData(ids);
+  return mapConsignmentReadToProductInfo(data, consignmentIds);
+}
+
+/** Ürün modelindeki ana + ikincil sevkiyatları çekip hedefleri toplar. */
+export async function fetchTakipsanProductInfoForModel(model) {
+  if (!isTakipsanConfigured()) {
+    throw new Error(
+      "Takipsan entegrasyonu yapılandırılmamış (TAKIPSAN_USERNAME, TAKIPSAN_PASSWORD, TAKIPSAN_CONSIGNMENT_ID)"
+    );
+  }
+  const ids = consignmentIdsFromModel(model);
+  const { data, consignmentIds } = await fetchMergedConsignmentReadData(ids);
+  return mapConsignmentReadToProductInfo(data, consignmentIds);
 }

@@ -316,7 +316,7 @@ export default function ProductModelsSection() {
       setTakipsanOrderCode(info.orderCode);
       setTargetQuantity(info.orderQuantity);
       setSecondaryConsignmentId("");
-      setPrimaryConsignmentId("");
+      setPrimaryConsignmentId(id || String(info.consignmentId || "").split(/[+,\s]+/)[0] || "");
       setBaselines([emptyRow()]);
       setDailySummaryRows([]);
       setSessionStartDate(clampToWeekdayIso(todayWeekdayIso()));
@@ -434,9 +434,11 @@ export default function ProductModelsSection() {
       if (editingId === "new") {
         const created = await createProductModel(payload);
         savedId = created.id;
+        if (created.targetQuantity != null) setTargetQuantity(created.targetQuantity);
       } else {
-        await updateProductModel(editingId, payload);
+        const updated = await updateProductModel(editingId, payload);
         savedId = editingId;
+        if (updated.targetQuantity != null) setTargetQuantity(updated.targetQuantity);
       }
 
       const applyErrors: string[] = [];
@@ -758,7 +760,9 @@ export default function ProductModelsSection() {
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-400/30 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                       placeholder="Örn. 258154"
                     />
-                    <p className="mt-1 text-[11px] text-slate-400">İkinci PO (örn. 258154). Birden fazla: virgülle ayırın. Ana + ikincil birlikte toplanır.</p>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      İkinci PO (örn. 258154). Birden fazla: virgülle ayırın. Kaydet veya «Takipsan'dan al» ile ana + ikincil adetler toplanır.
+                    </p>
                   </div>
                   </>
                 ) : null}

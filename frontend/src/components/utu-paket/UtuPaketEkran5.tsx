@@ -56,11 +56,35 @@ const SLIDE_LABELS: Record<SlideKey, string> = {
   beden: "BEDEN TABLOSU",
 };
 
-function ekran5SlideHeading(productLabel: string, jobLabel: string): string {
-  const name = productLabel.trim();
+function Ekran5SlideTitle({
+  productLabel,
+  jobLabel,
+  badgeCls,
+}: {
+  productLabel?: string;
+  jobLabel: string;
+  badgeCls: string;
+}) {
+  const name = (productLabel ?? "").trim();
   const job = jobLabel.trim().toLocaleUpperCase("tr-TR");
-  if (name && job) return `${name} · ${job}`;
-  return name || job;
+  return (
+    <div className="flex w-full min-w-0 max-w-full shrink-0 flex-col items-center gap-1 px-1">
+      <h2
+        className={`max-w-full rounded-2xl bg-gradient-to-r ${badgeCls} px-5 py-2 text-center font-black uppercase tracking-[0.12em] text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-8 min-[1920px]:py-2.5`}
+        style={{ fontSize: "clamp(0.95rem, 2.1vw, 1.7rem)" }}
+      >
+        {job}
+      </h2>
+      {name ? (
+        <p
+          className="max-w-[min(100%,48rem)] px-2 text-center text-[11px] font-bold leading-snug text-slate-600 line-clamp-2 break-all sm:text-xs md:text-sm"
+          title={name}
+        >
+          {name}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function buildSlideList(opts: {
@@ -294,20 +318,9 @@ function SlidePanel({
   const pct = calcUtuPaketPercent(total, target);
   const remaining = Math.max(0, target - total);
   const showKoli = slideKey === "paketleme" && koliCount != null;
-  const heading = ekran5SlideHeading(productLabel ?? "", m.label);
-  const isNameHeading = Boolean(productLabel?.trim());
-
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 md:gap-4">
-      <div className="flex shrink-0 flex-col items-center justify-center gap-1.5">
-        <h2
-          className={`rounded-2xl bg-gradient-to-r ${m.badgeCls} px-6 py-2.5 text-center font-black text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-10 min-[1920px]:py-3 ${
-            isNameHeading ? "normal-case tracking-normal" : "uppercase tracking-[0.12em]"
-          }`}
-          style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}>
-          {heading}
-        </h2>
-      </div>
+      <Ekran5SlideTitle productLabel={productLabel} jobLabel={m.label} badgeCls={m.badgeCls} />
 
       <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 md:gap-6">
         <div
@@ -485,22 +498,15 @@ function BedenTableSlide({
   today: Record<string, number>;
   productLabel?: string;
 }) {
-  const heading = ekran5SlideHeading(productLabel ?? "", SLIDE_LABELS.beden);
-  const isNameHeading = Boolean(productLabel?.trim());
   const sizeCodes = utuPaketEkran5SizeCodes(targets, totals, today);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 md:gap-3">
-      <div className="flex shrink-0 flex-col items-center justify-center gap-1.5">
-        <h2
-          className={`rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 py-2.5 text-center font-black text-white shadow-lg shadow-slate-900/20 ring-2 ring-white/20 min-[1920px]:px-10 min-[1920px]:py-3 ${
-            isNameHeading ? "normal-case tracking-normal" : "uppercase tracking-[0.12em]"
-          }`}
-          style={{ fontSize: "clamp(1rem, 2.8vw, 2.25rem)" }}
-        >
-          {heading}
-        </h2>
-      </div>
+      <Ekran5SlideTitle
+        productLabel={productLabel}
+        jobLabel={SLIDE_LABELS.beden}
+        badgeCls="from-sky-600 to-indigo-600"
+      />
       <div
         className={`grid min-h-0 flex-1 gap-2 sm:gap-2.5 md:gap-3 ${
           sizeCodes.length > 5
@@ -567,7 +573,7 @@ function HedefModal({
 
         {/* Model bilgisi */}
         {productLabel ? (
-          <p className="mb-3 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+          <p className="mb-3 line-clamp-3 break-all rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200" title={productLabel}>
             {productLabel}
           </p>
         ) : null}
@@ -1265,7 +1271,9 @@ export default function UtuPaketEkran5({ dateIso, embedded = false }: Props) {
               <div className="flex flex-wrap items-baseline gap-2">
                 <p className="text-base font-extrabold text-neutral-950 md:text-lg">{formatDateTr(displayDate)}</p>
                     {headerProductLabel ? (
-                  <span className={`rounded-md px-2 py-0.5 text-xs font-bold ring-1 md:text-sm ${
+                  <span
+                    title={headerProductLabel}
+                    className={`max-w-[min(48vw,28rem)] truncate rounded-md px-2 py-0.5 text-xs font-bold ring-1 md:text-sm ${
                     isSecondarySlide
                       ? "bg-violet-100 text-violet-800 ring-violet-300"
                       : "bg-slate-100 text-slate-600 ring-slate-300"

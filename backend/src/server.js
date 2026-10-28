@@ -103,6 +103,7 @@ import {
   getUtuPaketEkran1Summary,
   getEkran1GenelIlerleme,
   refreshProductModelTargetsFromTakipsan,
+  syncUtuPaketPackagingTargetForModel,
   saveUtuPaketDay,
   setUtuPaketModelReferenceDate,
   deleteUtuPaketDay,
@@ -145,7 +146,14 @@ import {
 } from "./queries.js";
 import { mergePermissionsPatch, normalizePermissions, permissionsJsonForDb } from "./permissions.js";
 import { scheduleTakipsanSyncJob } from "./takipsanSyncJob.js";
-import { syncTakipsanToUtuPaket, takipsanSyncState, todayTurkeyIso, fetchTakipsanConsignmentProductInfo } from "./takipsanSync.js";
+import {
+  syncTakipsanToUtuPaket,
+  takipsanSyncState,
+  todayTurkeyIso,
+  fetchTakipsanConsignmentProductInfo,
+  fetchTakipsanProductInfoForModel,
+  consignmentIdsFromModel,
+} from "./takipsanSync.js";
 import { isTakipsanConfigured } from "./takipsanClient.js";
 import { scheduleIzinAttendanceSyncJob } from "./izinAttendanceSyncJob.js";
 import { syncIzinAttendanceToRoster, izinAttendanceSyncState } from "./izinAttendanceSync.js";
@@ -355,6 +363,32 @@ function logActivity(req, action, resource, details) {
     // eslint-disable-next-line no-console
     console.error("activity_logs:", e?.message || e);
   });
+}
+
+/** İki (veya daha fazla) sevkiyat ID kaydedilince Takipsan hedeflerini topla. */
+async function mergeTakipsanTargetsForProductModel(model) {
+  if (!model?.id || !isTakipsanConfigured() || !isProductModelTakipsanLinked(model)) {
+    return model;
+  }
+  const ids = consignmentIdsFromModel(model);
+  if (ids.length < 2) return model;
+  try {
+    const info = await fetchTakipsanProductInfoForModel(model);
+    await refreshProductModelTargetsFromTakipsan(info, model.id);
+    await syncUtuPaketPackagingTargetForModel(model.id, info.orderQuantity, { isTakipsanLinked: true });
+    const refreshed = await getProductModelWithBaselines(model.id);
+    const today = todayTurkeyIso();
+    const upm = await getUtuPaketModelForDate(today).catch(() => null);
+    if (upm?.modelId === Number(model.id)) {
+      await syncTakipsanToUtuPaket({ date: today }).catch((syncErr) => {
+        console.warn("[TakipsanSync] model kaydı sonrası senkron:", String(syncErr?.message ?? syncErr));
+      });
+    }
+    return refreshed || { ...model, targetQuantity: info.orderQuantity };
+  } catch (err) {
+    console.warn("[Takipsan] Sevkiyat birleştirme atlandı:", String(err?.message ?? err));
+    return model;
+  }
 }
 
 function sanitizeDensityPhoto(p) {
@@ -933,8 +967,9 @@ app.post("/api/product-models", requirePermission("ayarlar"), async (req, res) =
   try {
     const teamCodes = await listTeamCodes();
     const created = await createProductModel(req.body || {}, teamCodes);
+    const out = await mergeTakipsanTargetsForProductModel(created);
     logActivity(req, "urun_model_ekle", "product_models", { id: created.id, modelCode: created.modelCode });
-    res.status(201).json(created);
+    res.status(201).json(out);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
   }
@@ -946,9 +981,10 @@ app.put("/api/product-models/:id", requirePermission("ayarlar"), async (req, res
   try {
     const teamCodes = await listTeamCodes();
     const updated = await updateProductModel(id, req.body || {}, teamCodes);
+    const out = await mergeTakipsanTargetsForProductModel(updated);
     logActivity(req, "urun_model_guncelle", "product_models", { id, modelCode: updated.modelCode });
     void bumpEkranRefreshSignal().catch(() => {});
-    res.json(updated);
+    res.json(out);
   } catch (e) {
     res.status(400).json({ message: String(e.message || e) });
   }
@@ -1070,16 +1106,27 @@ app.post(
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: "Geçersiz id" });
     try {
-      const info = await fetchTakipsanConsignmentProductInfo();
+      const existing = await getProductModelWithBaselines(id);
+      if (!existing) return res.status(404).json({ message: "Bulunamadı" });
+      const info = await fetchTakipsanProductInfoForModel(existing);
       await refreshProductModelTargetsFromTakipsan(info, id);
+      await syncUtuPaketPackagingTargetForModel(id, info.orderQuantity, { isTakipsanLinked: true });
       const model = await getProductModelWithBaselines(id);
       if (!model) return res.status(404).json({ message: "Bulunamadı" });
+      const today = todayTurkeyIso();
+      const upm = await getUtuPaketModelForDate(today).catch(() => null);
+      if (upm?.modelId === id && isTakipsanConfigured()) {
+        await syncTakipsanToUtuPaket({ date: today }).catch((syncErr) => {
+          console.warn("[TakipsanSync] refresh-target senkron:", String(syncErr?.message ?? syncErr));
+        });
+      }
       return res.json({
         id: model.id,
         targetQuantity: model.targetQuantity,
         productLabel: info.productRef || info.productLabel,
         productRef: info.productRef || info.productLabel,
         orderQuantity: info.orderQuantity,
+        consignmentIds: info.consignmentIds || [],
       });
     } catch (e) {
       return res.status(500).json({ message: String(e.message || e) });

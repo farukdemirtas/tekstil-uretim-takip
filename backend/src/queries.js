@@ -2096,7 +2096,7 @@ async function getProductModelPackagingInfo(modelId) {
 }
 
 /** Manuel model hedefini utu_paket_meta.packaging_target ile senkronlar; eski Takipsan kalıntısını temizler */
-async function syncUtuPaketPackagingTargetForModel(modelId, targetQuantity, { isTakipsanLinked } = {}) {
+export async function syncUtuPaketPackagingTargetForModel(modelId, targetQuantity, { isTakipsanLinked } = {}) {
   const mid = Number(modelId);
   const t = Math.max(0, Math.floor(Number(targetQuantity) || 0));
   if (!Number.isFinite(mid) || mid < 1) return;
@@ -2780,8 +2780,11 @@ export async function createProductModel(payload, teamCodes) {
               productName: pname,
               targetQuantity: tqty,
               takipsanProductLabel: productLabel,
+              takipsanOrderCode: toc,
               sessionStartDate: sessionStart,
               utuPaketSessionStartDate: utuPaketSessionStart,
+              primaryConsignmentId,
+              secondaryConsignmentId,
             });
           } catch (e) {
             reject(e);
